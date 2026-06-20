@@ -16,8 +16,8 @@
 
 window.AppConfig = {
   // ⚠️ استبدل القيم التالية بمفاتيح مشروعك من Supabase
-  SUPABASE_URL: 'https://YOUR_PROJECT_ID.supabase.co',
-  SUPABASE_ANON_KEY: 'YOUR_ANON_PUBLIC_KEY_HERE',
+  SUPABASE_URL: 'https://hobhajqtgcyctfmcxkel.supabase.co',
+  SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhvYmhhanF0Z2N5Y3RmbWN4a2VsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4ODkzMDIsImV4cCI6MjA5NzQ2NTMwMn0.mTWqRmUyxShOSbwpnlHcmRU3FZ_KQ8OSLyG6sQzgmBY',
 
   // إعدادات التطبيق
   APP_NAME: 'نظام الجودة للتقييم والتدريب',
