@@ -1,0 +1,25 @@
+{
+  "name": "mahzam-quality-system",
+  "version": "1.0.0",
+  "description": "نظام الجودة للتقييم والتدريب - شركة محزم | Quality Evaluation & Training System for Mahzam Co.",
+  "type": "module",
+  "scripts": {
+    "dev": "npx serve -p 3000",
+    "build": "echo 'Static site - no build step required'",
+    "start": "npx serve -p 3000"
+  },
+  "keywords": [
+    "quality",
+    "evaluation",
+    "training",
+    "arabic",
+    "supabase",
+    "vercel",
+    "mahzam"
+  ],
+  "author": "Mahzam Co.",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=18"
+  }
+}
