@@ -1,0 +1,40 @@
+{
+  "name": "mahzam-quality-system",
+  "version": "2.1.0",
+  "description": "نظام الجودة للتقييم والتدريب - شركة محزم • Static web application for quality evaluation and training, RTL Arabic, with PDF/Excel exports.",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "dev": "npx serve public -p 3000",
+    "start": "npx serve public -p 3000",
+    "build": "echo 'Static site - public/ is the deploy artifact'",
+    "format": "npx prettier --write \"public/**/*.{html,css,js}\" \"*.{json,md}\"",
+    "validate": "node scripts/validate.js"
+  },
+  "keywords": [
+    "quality",
+    "evaluation",
+    "training",
+    "arabic",
+    "rtl",
+    "mahzam",
+    "supabase",
+    "vercel",
+    "static-site"
+  ],
+  "author": {
+    "name": "Mahzam Co.",
+    "url": "https://mahzam.com"
+  },
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/USERNAME/mahzam-quality-system.git"
+  },
+  "bugs": {
+    "url": "https://github.com/USERNAME/mahzam-quality-system/issues"
+  }
+}
