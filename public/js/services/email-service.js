@@ -345,6 +345,45 @@ window.EmailService = (function() {
     });
   }
 
+  /**
+   * sendLoginCodeEmail — يُستدعى أثناء تسجيل الدخول لإرسال كود OTP
+   * @param {Object} target { email, full_name }
+   * @param {string} code    6-digit code
+   * @param {number} ttlMin  validity in minutes (default 5)
+   */
+  async function sendLoginCodeEmail(target, code, ttlMin) {
+    if (!target || !target.email) {
+      _log('warn', '(loginCode) لا يوجد بريد للمستلم. تم التخطي.');
+      return { ok:false, skipped:true, reason:'no_email' };
+    }
+    if (!code) {
+      _log('warn', '(loginCode) لا يوجد كود. تم التخطي.');
+      return { ok:false, skipped:true, reason:'no_code' };
+    }
+    const ttl = (typeof ttlMin === 'number' && ttlMin > 0) ? ttlMin : 5;
+    return _send('loginCode', {
+      to_email:     target.email,
+      to_name:      target.full_name || target.email,
+      subject:      `كود الدخول إلى نظام الجودة - ${code}`,
+      event_label:  'كود تأكيد الدخول',
+      title:        '🔐 كود التحقق الثنائي',
+      intro:        `هذا هو كود التحقق الخاص بك لتسجيل الدخول إلى ${EMAILJS_CONFIG.systemName}. الكود صالح لمدة ${ttl} دقائق فقط.`,
+      field1_label: 'كود التحقق',
+      field1_value: code,
+      field2_label: 'مدة الصلاحية',
+      field2_value: `${ttl} دقائق`,
+      field3_label: 'البريد المستهدف',
+      field3_value: target.email,
+      field4_label: 'وقت الإصدار',
+      field4_value: new Date().toLocaleString('ar-SA'),
+      field5_label: 'تنبيه أمني',
+      field5_value: 'إذا لم تكن أنت من حاول الدخول، تجاهل هذه الرسالة وغيّر كلمة المرور فوراً.',
+      notes:        'لأمانك، لا تشارك هذا الكود مع أي شخص أبداً. فريق الدعم لن يطلب منك الكود.',
+      action_label: '',
+      action_url:   ''
+    }, { silent:true });
+  }
+
   // ============================================
   // الواجهة العامة
   // ============================================
@@ -353,12 +392,13 @@ window.EmailService = (function() {
     isReady: function() { _initialized || init(); return _ready; },
     isConfigured: _isConfigured,
     config: EMAILJS_CONFIG,    // للقراءة فقط (للديباغ)
-    // 5 دوال الإرسال:
+    // 6 دوال الإرسال:
     sendEvaluationEmail: sendEvaluationEmail,
     sendApprovalEmail:   sendApprovalEmail,
     sendActionEmail:     sendActionEmail,
     sendObjectionEmail:  sendObjectionEmail,
-    sendNewUserEmail:    sendNewUserEmail
+    sendNewUserEmail:    sendNewUserEmail,
+    sendLoginCodeEmail:  sendLoginCodeEmail
   };
 })();
 
