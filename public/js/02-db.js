@@ -264,14 +264,14 @@ p_actor_role: actor.role || '-'
 if (error) { console.error('delete_evaluation_cascade:', error.message); return { ok:false, message:error.message }; }
 const row = Array.isArray(data) ? data[0] : data;
 if (!row || !row.ok) return { ok:false, message:(row && row.message) || 'تعذّر الحذف' };
-// إعادة سحب البيانات من السحابة → كل الأقسام (لوحة/تقارير/ملف الموظف/اعتراضات/تدقيق) تتسق فوراً
-if (window.SupabaseSync && typeof window.SupabaseSync.pullAll === 'function') {
-try { await window.SupabaseSync.pullAll(); } catch(_){}
-} else {
+// السحابة حُذِفت ذرّياً. الآن إزالة محلية حاسمة + tombstone يمنع أي pull/push
+// لاحق (حتى لو كان in-flight قديماً) من إرجاع التقييم المحذوف.
+if (window.SupabaseSync && Array.isArray(window.SupabaseSync.deletedEvalIds)) {
+if (window.SupabaseSync.deletedEvalIds.indexOf(id) === -1) window.SupabaseSync.deletedEvalIds.push(id);
+}
 this.data.evaluations = this.data.evaluations.filter(e => e.id !== id);
 this.data.objections  = (this.data.objections||[]).filter(o => o.evaluation_id !== id);
 localStorage.setItem(this.KEY, JSON.stringify(this.data));
-}
 return { ok:true, employee_name:row.employee_name, deleted_objections:row.deleted_objections || 0 };
 }
 
