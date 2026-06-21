@@ -18,6 +18,11 @@ let currentUser = null;
 let currentPage = 'login';
 let currentParams = {};
 let charts = [];
+// تنقّل الأقسام: تتبّع التعديلات غير المحفوظة + حارس "آخر طلب يفوز" + debounce
+let _formDirty = false;
+let _navToken = 0;
+let _navDebounce = null;
+const _FORM_PAGES = ['new-evaluation', 'edit-evaluation'];
 
 function destroyCharts() {
 charts.forEach(c => { try { c.destroy(); } catch(e){} });
@@ -26,6 +31,7 @@ charts = [];
 
 function navigate(page, params={}) {
 destroyCharts();
+_formDirty = false;   // صفحة جديدة = لا تعديلات معلّقة
 currentPage = page;
 currentParams = params;
 const app = document.getElementById('app');
@@ -64,6 +70,61 @@ function logout() {
 currentUser = null;
 localStorage.removeItem('qe_current_user');
 navigate('login');
+}
+
+// ============================================
+// تنقّل الأقسام (القائمة الجانبية): جلب طازج + مؤشّر تحميل + حُرّاس
+// ============================================
+// تتبّع وجود تعديلات غير محفوظة داخل صفحات النماذج فقط (يُربط مرّة واحدة)
+if (!window.__dirtyTrackerBound) {
+window.__dirtyTrackerBound = true;
+const markDirty = e => {
+if (_FORM_PAGES.indexOf(currentPage) !== -1 && e.target && e.target.closest && e.target.closest('.content')) {
+_formDirty = true;
+}
+};
+document.addEventListener('input', markDirty);
+document.addEventListener('change', markDirty);
+}
+
+// نقطة الدخول الموحّدة من القائمة الجانبية (مع debounce 200ms ضد النقر المتسارع)
+function navigateToSection(page, params) {
+if (_navDebounce) clearTimeout(_navDebounce);
+_navDebounce = setTimeout(() => _doNavigateToSection(page, params || {}), 200);
+}
+
+async function _doNavigateToSection(page, params) {
+// حارس التعديلات غير المحفوظة
+if (_formDirty && !confirm('لديك تعديلات لم تُحفظ. هل تريد المغادرة دون حفظ؟')) return;
+_formDirty = false;
+const token = ++_navToken;                    // "آخر طلب يفوز" ضد التنقّل المتسارع
+const c = document.querySelector('.content'); // أبقِ القائمة والهيدر، بدّل المحتوى فقط
+if (c) c.innerHTML = `<div class="section-loading"><div class="spinner"></div><div>جاري تحميل أحدث البيانات…</div></div>`;
+try {
+// جلب طازج من القاعدة قبل العرض (يُحدّث DB.data بالكامل = كل الأقسام)
+if (window.sb && window.SupabaseSync && typeof SupabaseSync.pullAll === 'function') {
+const ok = await SupabaseSync.pullAll();
+if (token !== _navToken) return;            // ألغاه تنقّل أحدث
+if (ok === false) { _sectionError(page, params); return; }
+}
+if (token !== _navToken) return;
+navigate(page, params);
+} catch (err) {
+if (token !== _navToken) return;
+console.error('section load failed:', err);
+_sectionError(page, params);
+}
+}
+
+function _sectionError(page, params) {
+const c = document.querySelector('.content');
+if (!c) return;
+c.innerHTML = `<div class="section-error"><div style="font-size:44px">⚠️</div>
+<div style="font-weight:800;font-size:16px">تعذّر تحميل البيانات</div>
+<div style="color:var(--muted);font-size:13px">تحقّق من اتصال الإنترنت ثم أعد المحاولة.</div>
+<button class="btn btn-primary" id="sec-retry">🔄 إعادة المحاولة</button></div>`;
+const r = document.getElementById('sec-retry');
+if (r) r.addEventListener('click', () => navigateToSection(page, params));
 }
 
 // مربّع تأكيد خطر (زر تأكيد أحمر + إلغاء) — يُرجع Promise<boolean>
@@ -580,7 +641,7 @@ function attachLayoutHandlers() {
 document.querySelectorAll('[data-nav]').forEach(el => {
 if (el.dataset.bound === '1') return;
 el.dataset.bound = '1';
-el.addEventListener('click', () => navigate(el.dataset.nav));
+el.addEventListener('click', () => navigateToSection(el.dataset.nav));
 });
 const lo = document.getElementById('logout-btn');
 if (lo && lo.dataset.bound !== '1') {

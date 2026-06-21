@@ -43,7 +43,9 @@ const SUPABASE_CONFIG = {
   }
 
   window.sb = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
-    realtime: { params: { eventsPerSecond: 10 } }
+    realtime: { params: { eventsPerSecond: 10 } },
+    // تجاوز كاش المتصفّح لطلبات REST — كل قراءة تُجلب طازجة من القاعدة
+    global: { fetch: (url, opts) => fetch(url, Object.assign({}, opts, { cache: 'no-store' })) }
   });
   console.log('✓ Supabase client جاهز');
 })();
@@ -111,8 +113,9 @@ window.SupabaseSync = {
           const readFrom = (table === 'users') ? 'users_public' : table;
           const { data, error } = await window.sb.from(readFrom).select('*').order('id', { ascending: true });
           if (error) {
-            console.warn(`⚠️ Failed to pull ${table}:`, error.message);
-            continue;
+            // أوقف العملية كلها بدل الكتابة فوق بيانات سليمة ببيانات ناقصة/فارغة
+            console.warn(`⚠️ Failed to pull ${table} — aborting pull:`, error.message);
+            return false;
           }
           results[table] = data || [];
           console.log(`  ✓ ${table}: ${data.length} rows`);
