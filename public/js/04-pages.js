@@ -111,8 +111,13 @@ return `
 function attachLogin() {
 const form = document.getElementById('login-form');
 if (!form) return;
-form.addEventListener('submit', e => {
+// منع تكرار event listener عند إعادة الرسم
+if (form.dataset.bound === '1') return;
+form.dataset.bound = '1';
+
+form.addEventListener('submit', async e => {
 e.preventDefault();
+const btn = form.querySelector('button[type=submit]');
 const email = document.getElementById('login-email').value.trim();
 const password = document.getElementById('login-password').value;
 if (!Utils.validateEmail(email)) { Toast.error('البريد الإلكتروني غير صالح'); return; }
@@ -122,15 +127,25 @@ Toast.error('البريد الإلكتروني أو كلمة المرور غير
 DB.addAudit({ action:'failed_login', entity_type:'login', details:`محاولة دخول فاشلة - ${email}` });
 return;
 }
+// تعطيل الزر فوراً لمنع الضغط المتكرر
+if (btn && btn.dataset.busy === '1') return;
+if (btn) { btn.dataset.busy='1'; btn.disabled = true; btn.textContent = 'جاري الدخول...'; }
+try {
 currentUser = { id:user.id, username:user.username, full_name:user.full_name, role:user.role, email:user.email };
 localStorage.setItem('qe_current_user', JSON.stringify(currentUser));
 DB.addAudit({ action:'login', entity_type:'login', entity_id:user.id, details:`تسجيل دخول: ${user.full_name} (${user.email})` });
 Toast.success('مرحباً بك ' + user.full_name);
+// انتقال فوري بدون أي تأخير - لا حاجة لـ refresh
 if (user.must_change_password) {
-Toast.info && Toast.info('يجب تغيير كلمة المرور');
+if (Toast.info) Toast.info('يجب تغيير كلمة المرور');
 navigate('profile');
 } else {
 navigate('dashboard');
+}
+} catch(err) {
+console.error('Login error:', err);
+Toast.error('فشل تسجيل الدخول، حاول مرة أخرى');
+if (btn) { btn.dataset.busy='0'; btn.disabled = false; btn.textContent = 'دخول'; }
 }
 });
 
@@ -164,20 +179,33 @@ const body = `<div id="forgot-step1">
 const footer = `<button class="btn btn-secondary" onclick="Modal.close()">إغلاق</button><button class="btn btn-primary" id="fp-send">إرسال</button>`;
 Modal.show('🔑 استعادة كلمة المرور', body, footer);
 
-document.getElementById('fp-send').addEventListener('click', () => {
+document.getElementById('fp-send').addEventListener('click', async (e) => {
+const btn = e.currentTarget;
+if (btn.dataset.busy === '1') return;
 const step1 = document.getElementById('forgot-step1');
-if (step1.style.display !== 'none') {
+if (!step1 || step1.style.display === 'none') return;
+btn.dataset.busy = '1';
+const orig = btn.textContent;
+btn.disabled = true;
+btn.textContent = 'جاري الإرسال...';
+try {
 const email = document.getElementById('fp-email').value.trim();
-if (!Utils.validateEmail(email)) { Toast.error('بريد إلكتروني غير صالح'); return; }
+if (!Utils.validateEmail(email)) { Toast.error('بريد إلكتروني غير صالح'); btn.textContent = orig; btn.disabled = false; btn.dataset.busy='0'; return; }
 const u = DB.getUserByEmail(email);
-if (!u) { Toast.error('لا يوجد حساب بهذا البريد الإلكتروني'); return; }
-if (!u.is_active) { Toast.error('الحساب معطّل، تواصل مع المدير'); return; }
+if (!u) { Toast.error('لا يوجد حساب بهذا البريد الإلكتروني'); btn.textContent = orig; btn.disabled = false; btn.dataset.busy='0'; return; }
+if (!u.is_active) { Toast.error('الحساب معطّل، تواصل مع المدير'); btn.textContent = orig; btn.disabled = false; btn.dataset.busy='0'; return; }
 const tempPw = DB.resetUserPassword(u.id);
 step1.style.display = 'none';
 document.getElementById('forgot-step2').style.display = 'block';
 document.getElementById('fp-temp').value = tempPw;
-document.getElementById('fp-send').textContent = 'تم';
-document.getElementById('fp-send').disabled = true;
+btn.textContent = 'تم';
+Toast.success('تم إنشاء كلمة المرور المؤقتة');
+} catch(err) {
+console.error(err);
+Toast.error('فشلت العملية');
+btn.textContent = orig;
+btn.disabled = false;
+btn.dataset.busy = '0';
 }
 });
 }
@@ -684,12 +712,14 @@ ${!ed ? `<div style="background:#f1f5f9;padding:10px;border-radius:8px;font-size
 const footer = `<button class="btn btn-secondary" onclick="Modal.close()">إلغاء</button><button class="btn btn-primary" id="ef-save">${ed?'حفظ':'إضافة'}</button>`;
 Modal.show(ed?'تعديل بيانات الموظف':'إضافة موظف جديد', body, footer);
 
-document.getElementById('ef-save').addEventListener('click', () => {
+document.getElementById('ef-save').addEventListener('click', async (e) => {
+const btn = e.currentTarget;
+await submitWithFeedback(btn, 'جاري الحفظ...', null, async () => {
 const full_name = document.getElementById('ef-name').value.trim();
 const employee_number = document.getElementById('ef-num').value.trim();
 const position = document.getElementById('ef-pos').value.trim();
 const supEl = document.getElementById('ef-sup');
-if (!supEl) { Toast.error('يجب إضافة حساب مشرف أولاً من إدارة المستخدمين'); return; }
+if (!supEl) { Toast.error('يجب إضافة حساب مشرف أولاً من إدارة المستخدمين'); return false; }
 const supervisor_name = supEl.value;
 const supObj = DB.getSupervisors().find(s => s.full_name === supervisor_name);
 const supervisor_id = supObj ? supObj.id : null;
@@ -699,15 +729,13 @@ const department = document.getElementById('ef-dept').value.trim();
 
 if (!full_name || !employee_number || !position || !supervisor_name || !email) {
 Toast.error('يرجى تعبئة جميع الحقول المطلوبة');
-return;
+return false;
 }
-if (!Utils.validateEmail(email)) { Toast.error('بريد إلكتروني غير صالح'); return; }
+if (!Utils.validateEmail(email)) { Toast.error('بريد إلكتروني غير صالح'); return false; }
 
-try {
 if (ed) {
-// التحقق من تكرار البريد لمستخدم آخر
 const conflict = DB.getUserByEmail(email);
-if (conflict && conflict.id !== editId) { Toast.error('البريد الإلكتروني مستخدم مسبقاً'); return; }
+if (conflict && conflict.id !== editId) { Toast.error('البريد الإلكتروني مستخدم مسبقاً'); return false; }
 const oldSup = ed.supervisor_name;
 DB.updateUser(editId, { full_name, employee_number, position, supervisor_name, supervisor_id, email, phone, department });
 if (oldSup !== supervisor_name) {
@@ -715,13 +743,12 @@ DB.addAudit({ action:'change_supervisor', entity_type:'user', entity_id:editId, 
 }
 Toast.success('تم حفظ التعديلات');
 } else {
-// تحقق من تكرار الرقم الوظيفي
 const exists = DB.data.users.find(u => u.employee_number === employee_number);
-if (exists) { Toast.error('الرقم الوظيفي مستخدم مسبقاً'); return; }
-if (DB.getUserByEmail(email)) { Toast.error('البريد الإلكتروني مستخدم مسبقاً'); return; }
+if (exists) { Toast.error('الرقم الوظيفي مستخدم مسبقاً'); return false; }
+if (DB.getUserByEmail(email)) { Toast.error('البريد الإلكتروني مستخدم مسبقاً'); return false; }
 const password = document.getElementById('ef-pass').value;
 const vp = Utils.validatePassword(password);
-if (!vp.valid) { Toast.error(vp.errors[0]); return; }
+if (!vp.valid) { Toast.error(vp.errors[0]); return false; }
 DB.createUser({
 full_name,
 username: employee_number,
@@ -738,9 +765,12 @@ must_change_password: false
 });
 Toast.success('تم إضافة الموظف بنجاح');
 }
+// إغلاق المودال والانتقال (تتم تلقائياً عبر submitWithFeedback لإعادة رسم الصفحة الحالية)
+// نُعيد التنقل صراحة لصفحة الموظفين لأن نقطة الانطلاق قد تكون مختلفة
 Modal.close();
-navigate('employees');
-} catch(err) { Toast.error(err.message); }
+if (typeof navigate === 'function') navigate('employees');
+return true;
+});
 });
 }
 
@@ -838,7 +868,9 @@ ${!ed ? `<div style="background:#f1f5f9;padding:10px;border-radius:8px;font-size
 const footer = `<button class="btn btn-secondary" onclick="Modal.close()">إلغاء</button><button class="btn btn-primary" id="usr-save">${ed?'حفظ':'إضافة'}</button>`;
 Modal.show(ed?'تعديل بيانات المستخدم':'إضافة مستخدم جديد', body, footer);
 
-document.getElementById('usr-save').addEventListener('click', () => {
+document.getElementById('usr-save').addEventListener('click', async (e) => {
+const btn = e.currentTarget;
+await submitWithFeedback(btn, 'جاري الحفظ...', null, async () => {
 const full_name = document.getElementById('usr-name').value.trim();
 const email = document.getElementById('usr-email').value.trim();
 const phone = document.getElementById('usr-phone').value.trim();
@@ -849,23 +881,22 @@ const employee_number = (document.getElementById('usr-num')||{}).value || '';
 const supervisor_name = (document.getElementById('usr-sup')||{}).value || '';
 const supObj = supervisor_name ? DB.getSupervisors().find(s => s.full_name === supervisor_name) : null;
 const supervisor_id = supObj ? supObj.id : null;
-if (!full_name || !email) { Toast.error('يرجى تعبئة الحقول المطلوبة'); return; }
-if (!Utils.validateEmail(email)) { Toast.error('بريد إلكتروني غير صالح'); return; }
-if (role === 'employee' && !supervisor_name) { Toast.error('يجب اختيار المشرف للموظف'); return; }
+if (!full_name || !email) { Toast.error('يرجى تعبئة الحقول المطلوبة'); return false; }
+if (!Utils.validateEmail(email)) { Toast.error('بريد إلكتروني غير صالح'); return false; }
+if (role === 'employee' && !supervisor_name) { Toast.error('يجب اختيار المشرف للموظف'); return false; }
 
-try {
 if (ed) {
 const conflict = DB.getUserByEmail(email);
-if (conflict && conflict.id !== editId) { Toast.error('البريد مستخدم'); return; }
+if (conflict && conflict.id !== editId) { Toast.error('البريد مستخدم'); return false; }
 const upd = { full_name, email, phone, department, position };
 if (ed.role === 'employee') { upd.employee_number = employee_number; upd.supervisor_name = supervisor_name; upd.supervisor_id = supervisor_id; }
 DB.updateUser(editId, upd);
 Toast.success('تم حفظ التعديلات');
 } else {
-if (DB.getUserByEmail(email)) { Toast.error('البريد الإلكتروني مستخدم مسبقاً'); return; }
+if (DB.getUserByEmail(email)) { Toast.error('البريد الإلكتروني مستخدم مسبقاً'); return false; }
 const password = document.getElementById('usr-pass').value;
 const vp = Utils.validatePassword(password);
-if (!vp.valid) { Toast.error(vp.errors[0]); return; }
+if (!vp.valid) { Toast.error(vp.errors[0]); return false; }
 const username = role === 'employee' && employee_number ? employee_number : email.split('@')[0];
 DB.createUser({
 full_name, email, phone, department, position, role,
@@ -878,8 +909,9 @@ must_change_password: false
 Toast.success('تم إضافة المستخدم بنجاح');
 }
 Modal.close();
-navigate(ed && ed.role === 'employee' ? 'employees' : 'users');
-} catch(err) { Toast.error(err.message); }
+if (typeof navigate === 'function') navigate(ed && ed.role === 'employee' ? 'employees' : 'users');
+return true;
+});
 });
 }
 
@@ -911,17 +943,33 @@ const body = `<div id="rp-step1">
 const footer = `<button class="btn btn-secondary" onclick="Modal.close()">إغلاق</button><button class="btn btn-warning" id="rp-confirm">إعادة التعيين</button>`;
 Modal.show('🔑 إعادة تعيين كلمة المرور', body, footer);
 
-document.getElementById('rp-confirm').addEventListener('click', () => {
+document.getElementById('rp-confirm').addEventListener('click', async (e) => {
+const btn = e.currentTarget;
+if (btn.dataset.busy === '1') return;
+btn.dataset.busy = '1';
+const orig = btn.textContent;
+btn.disabled = true;
+btn.textContent = 'جاري المعالجة...';
+try {
 const step1 = document.getElementById('rp-step1');
 if (step1.style.display !== 'none') {
 const tempPw = DB.resetUserPassword(userId);
 step1.style.display = 'none';
 document.getElementById('rp-step2').style.display = 'block';
 document.getElementById('rp-temp').value = tempPw;
-const btn = document.getElementById('rp-confirm');
 btn.textContent = 'تم';
-btn.disabled = true;
 Toast.success('تم إعادة تعيين كلمة المرور');
+} else {
+btn.textContent = orig;
+btn.disabled = false;
+btn.dataset.busy = '0';
+}
+} catch(err) {
+console.error(err);
+Toast.error('فشلت العملية');
+btn.textContent = orig;
+btn.disabled = false;
+btn.dataset.busy = '0';
 }
 });
 }
@@ -1180,16 +1228,20 @@ ${ev.supervisor_action_at ? `<div style="background:#f1f5f9;padding:10px;border-
 const footer = `<button class="btn btn-secondary" onclick="Modal.close()">إلغاء</button><button class="btn btn-primary" id="sa-save">${isEdit?'تحديث':'حفظ الإجراء'}</button>`;
 Modal.show('⚖️ تسجيل إجراء المشرف', body, footer);
 
-document.getElementById('sa-save').addEventListener('click', () => {
+document.getElementById('sa-save').addEventListener('click', async (e) => {
+const btn = e.currentTarget;
+await submitWithFeedback(btn, 'جاري الحفظ...', null, async () => {
 const action = document.getElementById('sa-action').value;
 const action_other = (document.getElementById('sa-action-other')||{}).value || '';
 const notes = document.getElementById('sa-notes').value.trim();
-if (!action) { Toast.error('يرجى اختيار الإجراء'); return; }
-if (action === 'أخرى' && !action_other.trim()) { Toast.error('يرجى كتابة وصف الإجراء'); return; }
+if (!action) { Toast.error('يرجى اختيار الإجراء'); return false; }
+if (action === 'أخرى' && !action_other.trim()) { Toast.error('يرجى كتابة وصف الإجراء'); return false; }
 DB.recordSupervisorAction(evalId, { action, action_other: action_other.trim(), notes });
 Toast.success('تم تسجيل إجراء المشرف');
 Modal.close();
-navigate('view-evaluation', { id: evalId });
+if (typeof navigate === 'function') navigate('view-evaluation', { id: evalId });
+return true;
+});
 });
 }
 
@@ -1288,10 +1340,12 @@ document.getElementById('live-grade').innerHTML = Utils.gradeBadge(r.percentage)
 
 form.querySelectorAll('input[type=radio]').forEach(r => r.addEventListener('change', updateLive));
 
-form.addEventListener('submit', e => {
+form.addEventListener('submit', async e => {
 e.preventDefault();
+const btn = form.querySelector('button[type=submit]');
+await submitWithFeedback(btn, 'جاري حفظ التقييم...', null, async () => {
 const empId = parseInt(document.getElementById('ef-employee').value);
-if (!empId) { Toast.error('يرجى اختيار الموظف'); return; }
+if (!empId) { Toast.error('يرجى اختيار الموظف'); return false; }
 
 const items = collectItems();
 const r = calculateScores(items);
@@ -1301,12 +1355,11 @@ const observedOther = (document.getElementById('ef-observed-other')||{}).value |
 const action = document.getElementById('ef-action').value;
 const actionOther = (document.getElementById('ef-action-other')||{}).value || '';
 
-if (!observed) { Toast.error('يرجى اختيار الملاحظة المرصودة'); return; }
-if (observed === 'أخرى' && !observedOther.trim()) { Toast.error('يرجى كتابة وصف الملاحظة'); return; }
-if (!action) { Toast.error('يرجى اختيار الإجراء المتخذ'); return; }
-if (action === 'أخرى' && !actionOther.trim()) { Toast.error('يرجى كتابة وصف الإجراء'); return; }
+if (!observed) { Toast.error('يرجى اختيار الملاحظة المرصودة'); return false; }
+if (observed === 'أخرى' && !observedOther.trim()) { Toast.error('يرجى كتابة وصف الملاحظة'); return false; }
+if (!action) { Toast.error('يرجى اختيار الإجراء المتخذ'); return false; }
+if (action === 'أخرى' && !actionOther.trim()) { Toast.error('يرجى كتابة وصف الإجراء'); return false; }
 
-try {
 const newEval = DB.createEvaluation({
 employee_id: empId,
 evaluator_id: currentUser.id,
@@ -1324,9 +1377,13 @@ percentage: r.percentage,
 grade: r.grade,
 status: r.status
 });
+if (newEval && newEval._duplicate) {
+Toast.warning('تم رصد تكرار - استخدمنا التقييم السابق');
+}
 Toast.success(`تم حفظ التقييم بنجاح - ${r.percentage}% (${r.grade})`);
-navigate('view-evaluation', { id: newEval.id });
-} catch(err) { Toast.error('فشل حفظ التقييم: ' + err.message); }
+if (typeof navigate === 'function') navigate('view-evaluation', { id: newEval.id });
+return true;
+});
 });
 }
 
@@ -1505,8 +1562,8 @@ high, low
 const totalEmps = employees.length;
 const totalEvals = allEvals.length;
 const overallAvg = empData.length ? Math.round(empData.reduce((s,e)=>s+e.avg,0)/empData.length*10)/10 : 0;
-const excellent = empData.filter(e => e.avg >= 81).length;
-const needFollow = empData.filter(e => e.avg <= 75).length;
+const excellent = empData.filter(e => e.avg >= 85).length;
+const needFollow = empData.filter(e => e.avg <= 84).length;
 
 // Period label
 let periodLabel = 'كل البيانات';
@@ -1691,7 +1748,7 @@ return {
 'المتوسط %': avg,
 'أعلى نتيجة %': high,
 'أدنى نتيجة %': low,
-'التقدير': avg>=81?'ناجح':avg>=76?'جيد جداً':ue.length?'راسب':'-'
+'التقدير': ue.length ? (avg>=85?'ناجح':'راسب') : '-'
 };
 }).filter(r => r['عدد التقييمات'] > 0).sort((a,b) => b['المتوسط %'] - a['المتوسط %']);
 if (!data.length) { Toast.error('لا توجد بيانات للتصدير'); return; }
@@ -1715,7 +1772,7 @@ return { employee_number:e.employee_number||'-', name:e.full_name, position:e.po
 }).filter(e => e.count>0).sort((a,b) => b.avg - a.avg);
 if (!empData.length) { Toast.error('لا توجد بيانات للتصدير'); return; }
 const overallAvg = Math.round(empData.reduce((s,e)=>s+e.avg,0)/empData.length*10)/10;
-const rows = empData.map((e,i) => `<tr><td>${i+1}</td><td>${Utils.escape(e.employee_number)}</td><td>${Utils.escape(e.name)}</td><td>${Utils.escape(e.supervisor)}</td><td style="text-align:center">${e.count}</td><td style="text-align:center"><strong>${e.avg}%</strong></td><td style="text-align:center;color:#059669">${e.high}%</td><td style="text-align:center;color:#dc2626">${e.low}%</td><td>${e.avg>=81?'ناجح':e.avg>=76?'جيد جداً':'راسب'}</td></tr>`).join('');
+const rows = empData.map((e,i) => `<tr><td>${i+1}</td><td>${Utils.escape(e.employee_number)}</td><td>${Utils.escape(e.name)}</td><td>${Utils.escape(e.supervisor)}</td><td style="text-align:center">${e.count}</td><td style="text-align:center"><strong>${e.avg}%</strong></td><td style="text-align:center;color:#059669">${e.high}%</td><td style="text-align:center;color:#dc2626">${e.low}%</td><td>${e.avg>=85?'ناجح':'راسب'}</td></tr>`).join('');
 const html = `<div style="padding:30px;font-family:'Cairo',sans-serif;direction:rtl;background:white">${buildPDFHeader('تقرير الأداء الشامل', 'تحليل أداء فريق العمل', '#06579F')}<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px"><div style="background:#dbeafe;padding:14px;border-radius:8px;text-align:center"><div style="font-size:22px;font-weight:800;color:#06579F">${empData.length}</div><div style="color:#64748b;font-size:12px">موظف تم تقييمه</div></div><div style="background:#d1fae5;padding:14px;border-radius:8px;text-align:center"><div style="font-size:22px;font-weight:800;color:#059669">${overallAvg}%</div><div style="color:#64748b;font-size:12px">المتوسط العام</div></div><div style="background:#fef3c7;padding:14px;border-radius:8px;text-align:center"><div style="font-size:22px;font-weight:800;color:#d97706">${empData.filter(e=>e.avg>=90).length}</div><div style="color:#64748b;font-size:12px">أداء ممتاز</div></div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#06579F;color:white"><th style="padding:8px;border:1px solid #044a87">#</th><th style="padding:8px;border:1px solid #044a87">الرقم الوظيفي</th><th style="padding:8px;border:1px solid #044a87">الموظف</th><th style="padding:8px;border:1px solid #044a87">المشرف</th><th style="padding:8px;border:1px solid #044a87">التقييمات</th><th style="padding:8px;border:1px solid #044a87">المتوسط</th><th style="padding:8px;border:1px solid #044a87">أعلى</th><th style="padding:8px;border:1px solid #044a87">أدنى</th><th style="padding:8px;border:1px solid #044a87">التقدير</th></tr></thead><tbody style="background:white">${rows.replace(/<td/g,'<td style="padding:6px;border:1px solid #cbd5e1"').replace(/style="text-align:center"/g,'style="text-align:center;padding:6px;border:1px solid #cbd5e1"').replace(/style="text-align:center;color:#059669"/g,'style="text-align:center;color:#059669;padding:6px;border:1px solid #cbd5e1"').replace(/style="text-align:center;color:#dc2626"/g,'style="text-align:center;color:#dc2626;padding:6px;border:1px solid #cbd5e1"')}</tbody></table></div>`;
 await htmlToPDF(html, `تقرير_الأداء_${new Date().toISOString().slice(0,10)}.pdf`);
 }
@@ -1772,8 +1829,7 @@ const finalAvg = evaluated.length ? Math.round(evaluated.reduce((s,d)=>s+d.avg,0
 const totalEvals = evaluated.reduce((s,d) => s+d.count, 0);
 const distribution = { passed:0, good:0, failed:0 };
 evaluated.forEach(d => {
-if (d.avg >= 81) distribution.passed++;
-else if (d.avg >= 76) distribution.good++;
+if (d.avg >= 85) distribution.passed++;
 else distribution.failed++;
 });
 const byDept = {};
@@ -1848,8 +1904,8 @@ return `
 ${(()=>{
 const oe = getOverallEval(data);
 if (!oe.employees.length) return '';
-const gc = oe.finalAvg>=81?'#10b981':oe.finalAvg>=76?'#06b6d4':'#ef4444';
-const gl = oe.finalAvg>=81?'ناجح':oe.finalAvg>=76?'جيد جداً':'راسب';
+const gc = oe.finalAvg>=85?'#10b981':'#ef4444';
+const gl = oe.finalAvg>=85?'ناجح':'راسب';
 return `
 <div style="background:linear-gradient(135deg,#1B202C 0%,#202E4D 50%,#06579F 100%);color:white;margin-bottom:20px;display:flex;align-items:center;padding:22px 28px;gap:22px;border-radius:14px;box-shadow:0 8px 25px rgba(27,32,44,0.3);flex-wrap:wrap">
 <div style="font-size:54px">📊</div>
@@ -2593,17 +2649,25 @@ attachments.map((a,i) => `<div style="padding:8px;background:#f1f5f9;border-radi
 }
 
 const submit = document.getElementById('obj-submit');
-if (submit) submit.addEventListener('click', () => {
+if (submit) submit.addEventListener('click', async (e) => {
+const btn = e.currentTarget;
+await submitWithFeedback(btn, 'جاري الإرسال...', null, async () => {
 const reason = document.getElementById('obj-reason').value.trim();
-if (!reason || reason.length < 10) { Toast.error('يجب كتابة سبب الاعتراض بشكل واضح (10 أحرف على الأقل)'); return; }
+if (!reason || reason.length < 10) { Toast.error('يجب كتابة سبب الاعتراض بشكل واضح (10 أحرف على الأقل)'); return false; }
 const obj = DB.createObjection({
 evaluation_id: parseInt(evaluationId),
 employee_id: currentUser.id,
 reason,
 attachments
 });
+if (obj && obj._duplicate) {
+Toast.warning('تم رصد طلب مكرر - استخدمنا الاعتراض السابق');
+} else {
 Toast.success(`تم تقديم الاعتراض بنجاح (${obj.ref_number})`);
-navigate('view-objection', { id: obj.id });
+}
+if (typeof navigate === 'function') navigate('view-objection', { id: obj.id });
+return true;
+});
 });
 }
 
@@ -2707,35 +2771,51 @@ ${addCommentArea}
 function attachObjectionHandlers(id) {
 const oid = parseInt(id);
 const review = document.getElementById('obj-mark-review');
-if (review) review.addEventListener('click', () => {
+if (review) review.addEventListener('click', async (e) => {
+const btn = e.currentTarget;
+await submitWithFeedback(btn, 'جاري المعالجة...', null, async () => {
 DB.updateObjection(oid, { status: 'under_review' });
 DB.addAudit({ action:'review_objection', entity_type:'objection', entity_id:oid, details:`تحويل الاعتراض إلى قيد المراجعة` });
 Toast.success('تم تحويل الاعتراض إلى قيد المراجعة');
-navigate('view-objection', { id: oid });
+if (typeof navigate === 'function') navigate('view-objection', { id: oid });
+return true;
+});
 });
 const accept = document.getElementById('obj-accept');
-if (accept) accept.addEventListener('click', () => {
+if (accept) accept.addEventListener('click', async (e) => {
+const btn = e.currentTarget;
+await submitWithFeedback(btn, 'جاري القبول...', null, async () => {
 const resp = document.getElementById('obj-response').value.trim();
-if (!resp) { Toast.error('يجب كتابة رد على الاعتراض'); return; }
+if (!resp) { Toast.error('يجب كتابة رد على الاعتراض'); return false; }
 DB.resolveObjection(oid, 'accepted', resp);
 Toast.success('تم قبول الاعتراض');
-navigate('view-objection', { id: oid });
+if (typeof navigate === 'function') navigate('view-objection', { id: oid });
+return true;
+});
 });
 const reject = document.getElementById('obj-reject');
-if (reject) reject.addEventListener('click', () => {
+if (reject) reject.addEventListener('click', async (e) => {
+const btn = e.currentTarget;
+await submitWithFeedback(btn, 'جاري الرفض...', null, async () => {
 const resp = document.getElementById('obj-response').value.trim();
-if (!resp) { Toast.error('يجب كتابة رد على الاعتراض'); return; }
+if (!resp) { Toast.error('يجب كتابة رد على الاعتراض'); return false; }
 DB.resolveObjection(oid, 'rejected', resp);
 Toast.success('تم رفض الاعتراض');
-navigate('view-objection', { id: oid });
+if (typeof navigate === 'function') navigate('view-objection', { id: oid });
+return true;
+});
 });
 const addC = document.getElementById('obj-add-comment');
-if (addC) addC.addEventListener('click', () => {
+if (addC) addC.addEventListener('click', async (e) => {
+const btn = e.currentTarget;
+await submitWithFeedback(btn, 'جاري الإضافة...', null, async () => {
 const text = document.getElementById('obj-comment').value.trim();
-if (!text) { Toast.error('اكتب التعليق'); return; }
+if (!text) { Toast.error('اكتب التعليق'); return false; }
 DB.addObjectionComment(oid, text);
 Toast.success('تم إضافة التعليق');
-navigate('view-objection', { id: oid });
+if (typeof navigate === 'function') navigate('view-objection', { id: oid });
+return true;
+});
 });
 }
 
@@ -2866,35 +2946,45 @@ ${u.must_change_password ? '<div class="alert alert-warning" style="margin-botto
 
 function attachProfileHandlers() {
 const pf = document.getElementById('profile-form');
-if (pf) pf.addEventListener('submit', e => {
+if (pf) pf.addEventListener('submit', async e => {
 e.preventDefault();
+const btn = pf.querySelector('button[type=submit]');
+await submitWithFeedback(btn, 'جاري الحفظ...', null, async () => {
+const email = document.getElementById('pf-email').value.trim();
+if (!Utils.validateEmail(email)) { Toast.error('بريد إلكتروني غير صالح'); return false; }
 DB.updateUser(currentUser.id, {
 full_name: document.getElementById('pf-name').value.trim(),
-email: document.getElementById('pf-email').value.trim(),
+email,
 phone: document.getElementById('pf-phone').value.trim()
 });
 const u = DB.getUser(currentUser.id);
 currentUser.full_name = u.full_name; currentUser.email = u.email;
 localStorage.setItem('qe_current_user', JSON.stringify(currentUser));
 Toast.success('تم حفظ التعديلات');
-navigate('profile');
+if (typeof navigate === 'function') navigate('profile');
+return true;
+});
 });
 
 const pw = document.getElementById('pw-form');
-if (pw) pw.addEventListener('submit', e => {
+if (pw) pw.addEventListener('submit', async e => {
 e.preventDefault();
+const btn = pw.querySelector('button[type=submit]');
+await submitWithFeedback(btn, 'جاري التغيير...', null, async () => {
 const u = DB.getUser(currentUser.id);
 const cur = document.getElementById('pw-cur').value;
 const np = document.getElementById('pw-new').value;
 const cp = document.getElementById('pw-conf').value;
-if (u.password !== cur) { Toast.error('كلمة المرور الحالية غير صحيحة'); return; }
-if (np !== cp) { Toast.error('كلمتا المرور غير متطابقتين'); return; }
-if (np === cur) { Toast.error('كلمة المرور الجديدة يجب أن تختلف عن الحالية'); return; }
+if (u.password !== cur) { Toast.error('كلمة المرور الحالية غير صحيحة'); return false; }
+if (np !== cp) { Toast.error('كلمتا المرور غير متطابقتين'); return false; }
+if (np === cur) { Toast.error('كلمة المرور الجديدة يجب أن تختلف عن الحالية'); return false; }
 const vp = Utils.validatePassword(np);
-if (!vp.valid) { Toast.error(vp.errors[0]); return; }
+if (!vp.valid) { Toast.error(vp.errors[0]); return false; }
 DB.changePassword(currentUser.id, np);
 Toast.success('تم تغيير كلمة المرور بنجاح');
 pw.reset();
+return true;
+});
 });
 }
 
@@ -3366,10 +3456,12 @@ document.getElementById('live-grade').innerHTML = Utils.gradeBadge(r.percentage)
 
 form.querySelectorAll('input[type=radio]').forEach(r => r.addEventListener('change', updateLive));
 
-form.addEventListener('submit', e => {
+form.addEventListener('submit', async e => {
 e.preventDefault();
+const btn = form.querySelector('button[type=submit]');
+await submitWithFeedback(btn, 'جاري حفظ التعديلات...', null, async () => {
 const empId = parseInt(document.getElementById('ef-employee').value);
-if (!empId) { Toast.error('يرجى اختيار الموظف'); return; }
+if (!empId) { Toast.error('يرجى اختيار الموظف'); return false; }
 const items = collectItems();
 const r = calculateScores(items);
 
@@ -3378,10 +3470,10 @@ const observedOther = (document.getElementById('ef-observed-other')||{}).value |
 const action = document.getElementById('ef-action').value;
 const actionOther = (document.getElementById('ef-action-other')||{}).value || '';
 
-if (!observed) { Toast.error('يرجى اختيار الملاحظة المرصودة'); return; }
-if (observed === 'أخرى' && !observedOther.trim()) { Toast.error('يرجى كتابة وصف الملاحظة'); return; }
-if (!action) { Toast.error('يرجى اختيار الإجراء المتخذ'); return; }
-if (action === 'أخرى' && !actionOther.trim()) { Toast.error('يرجى كتابة وصف الإجراء'); return; }
+if (!observed) { Toast.error('يرجى اختيار الملاحظة المرصودة'); return false; }
+if (observed === 'أخرى' && !observedOther.trim()) { Toast.error('يرجى كتابة وصف الملاحظة'); return false; }
+if (!action) { Toast.error('يرجى اختيار الإجراء المتخذ'); return false; }
+if (action === 'أخرى' && !actionOther.trim()) { Toast.error('يرجى كتابة وصف الإجراء'); return false; }
 
 DB.updateEvaluation(evalId, {
 employee_id: empId,
@@ -3408,7 +3500,9 @@ type: 'info'
 });
 
 Toast.success(`تم حفظ التعديلات بنجاح - ${r.percentage}% (${r.grade})`);
-navigate('view-evaluation', { id: evalId });
+if (typeof navigate === 'function') navigate('view-evaluation', { id: evalId });
+return true;
+});
 });
 }
 
@@ -3571,13 +3665,15 @@ const body = `<form id="sec-form">
 const footer = `<button class="btn btn-secondary" onclick="Modal.close()">إلغاء</button><button class="btn btn-primary" id="sf-save">${ed?'حفظ':'إضافة'}</button>`;
 Modal.show(ed?'تعديل القسم الرئيسي':'إضافة قسم رئيسي', body, footer);
 
-document.getElementById('sf-save').addEventListener('click', () => {
+document.getElementById('sf-save').addEventListener('click', async (e) => {
+const btn = e.currentTarget;
+await submitWithFeedback(btn, 'جاري الحفظ...', null, async () => {
 const key = document.getElementById('sf-key').value.trim();
 const title = document.getElementById('sf-title').value.trim();
 const type = document.getElementById('sf-type').value;
 const weight = parseFloat(document.getElementById('sf-weight').value);
-if (!key || !title) { Toast.error('يرجى تعبئة كل الحقول'); return; }
-if (!ed && CRITERIA.sections.find(s => s.key === key)) { Toast.error('المفتاح موجود مسبقاً'); return; }
+if (!key || !title) { Toast.error('يرجى تعبئة كل الحقول'); return false; }
+if (!ed && CRITERIA.sections.find(s => s.key === key)) { Toast.error('المفتاح موجود مسبقاً'); return false; }
 
 if (ed) {
 ed.title = title; ed.type = type; ed.weight = weight;
@@ -3590,7 +3686,9 @@ subsections:[{ key:key+'_default', title:'القسم الفرعي الافترا
 DB.saveCriteria(CRITERIA);
 Modal.close();
 Toast.success('تم الحفظ');
-navigate('settings', { tab:'form' });
+if (typeof navigate === 'function') navigate('settings', { tab:'form' });
+return true;
+});
 });
 }
 
@@ -3607,12 +3705,14 @@ ${isNonCritical ? `<div class="form-group"><label class="form-label">الوزن 
 const footer = `<button class="btn btn-secondary" onclick="Modal.close()">إلغاء</button><button class="btn btn-primary" id="sbf-save">${ed?'حفظ':'إضافة'}</button>`;
 Modal.show(ed?'تعديل القسم الفرعي':'إضافة قسم فرعي', body, footer);
 
-document.getElementById('sbf-save').addEventListener('click', () => {
+document.getElementById('sbf-save').addEventListener('click', async (e) => {
+const btn = e.currentTarget;
+await submitWithFeedback(btn, 'جاري الحفظ...', null, async () => {
 const key = document.getElementById('sbf-key').value.trim();
 const title = document.getElementById('sbf-title').value.trim();
 const weight = isNonCritical ? parseFloat(document.getElementById('sbf-weight').value) : undefined;
-if (!key || !title) { Toast.error('يرجى تعبئة كل الحقول'); return; }
-if (!ed && sec.subsections.find(sub => sub.key === key)) { Toast.error('المفتاح موجود مسبقاً'); return; }
+if (!key || !title) { Toast.error('يرجى تعبئة كل الحقول'); return false; }
+if (!ed && sec.subsections.find(sub => sub.key === key)) { Toast.error('المفتاح موجود مسبقاً'); return false; }
 
 if (ed) {
 ed.title = title;
@@ -3623,7 +3723,9 @@ sec.subsections.push({ key, title, weight, items:[{ key:key+'_1', label:'بند 
 DB.saveCriteria(CRITERIA);
 Modal.close();
 Toast.success('تم الحفظ');
-navigate('settings', { tab:'form' });
+if (typeof navigate === 'function') navigate('settings', { tab:'form' });
+return true;
+});
 });
 }
 
@@ -3639,11 +3741,13 @@ const body = `<form id="item-form">
 const footer = `<button class="btn btn-secondary" onclick="Modal.close()">إلغاء</button><button class="btn btn-primary" id="itf-save">${ed?'حفظ':'إضافة'}</button>`;
 Modal.show(ed?'تعديل البند':'إضافة بند جديد', body, footer);
 
-document.getElementById('itf-save').addEventListener('click', () => {
+document.getElementById('itf-save').addEventListener('click', async (e) => {
+const btn = e.currentTarget;
+await submitWithFeedback(btn, 'جاري الحفظ...', null, async () => {
 const key = document.getElementById('itf-key').value.trim();
 const label = document.getElementById('itf-label').value.trim();
-if (!key || !label) { Toast.error('يرجى تعبئة كل الحقول'); return; }
-if (!ed && sub.items.find(i => i.key === key)) { Toast.error('المفتاح موجود مسبقاً'); return; }
+if (!key || !label) { Toast.error('يرجى تعبئة كل الحقول'); return false; }
+if (!ed && sub.items.find(i => i.key === key)) { Toast.error('المفتاح موجود مسبقاً'); return false; }
 
 if (ed) {
 ed.label = label;
@@ -3653,7 +3757,9 @@ sub.items.push({ key, label });
 DB.saveCriteria(CRITERIA);
 Modal.close();
 Toast.success('تم الحفظ');
-navigate('settings', { tab:'form' });
+if (typeof navigate === 'function') navigate('settings', { tab:'form' });
+return true;
+});
 });
 }
 
@@ -3663,12 +3769,15 @@ b.addEventListener('click', () => navigate('settings', { tab: b.dataset.navSetti
 });
 
 const reset = document.getElementById('reset-criteria-btn');
-if (reset) reset.addEventListener('click', () => {
-if (confirm('سيتم إعادة جميع الإعدادات إلى القيم الافتراضية. هل أنت متأكد؟')) {
+if (reset) reset.addEventListener('click', async (e) => {
+if (!confirm('سيتم إعادة جميع الإعدادات إلى القيم الافتراضية. هل أنت متأكد؟')) return;
+const btn = e.currentTarget;
+await submitWithFeedback(btn, 'جاري الاستعادة...', null, async () => {
 DB.resetCriteria();
 Toast.success('تمت استعادة الإعدادات الافتراضية');
-navigate('settings', { tab: 'form' });
-}
+if (typeof navigate === 'function') navigate('settings', { tab: 'form' });
+return true;
+});
 });
 
 if (tab === 'form') {
@@ -3676,28 +3785,34 @@ const addSecBtn = document.getElementById('add-section-btn');
 if (addSecBtn) addSecBtn.addEventListener('click', () => showSectionModal());
 
 document.querySelectorAll('[data-edit-section]').forEach(b => b.addEventListener('click', () => showSectionModal(b.dataset.editSection)));
-document.querySelectorAll('[data-del-section]').forEach(b => b.addEventListener('click', () => {
-if (confirm('سيتم حذف القسم وجميع بنوده. هل أنت متأكد؟')) {
+document.querySelectorAll('[data-del-section]').forEach(b => b.addEventListener('click', async (e) => {
+if (!confirm('سيتم حذف القسم وجميع بنوده. هل أنت متأكد؟')) return;
+const btn = e.currentTarget;
+await submitWithFeedback(btn, 'جاري الحذف...', null, async () => {
 CRITERIA.sections = CRITERIA.sections.filter(s => s.key !== b.dataset.delSection);
 DB.saveCriteria(CRITERIA);
 Toast.success('تم الحذف');
-navigate('settings', { tab:'form' });
-}
+if (typeof navigate === 'function') navigate('settings', { tab:'form' });
+return true;
+});
 }));
 document.querySelectorAll('[data-add-sub]').forEach(b => b.addEventListener('click', () => showSubsectionModal(b.dataset.addSub)));
 document.querySelectorAll('[data-edit-sub]').forEach(b => b.addEventListener('click', () => {
 const [sk, subk] = b.dataset.editSub.split('|');
 showSubsectionModal(sk, subk);
 }));
-document.querySelectorAll('[data-del-sub]').forEach(b => b.addEventListener('click', () => {
+document.querySelectorAll('[data-del-sub]').forEach(b => b.addEventListener('click', async (e) => {
 const [sk, subk] = b.dataset.delSub.split('|');
-if (confirm('سيتم حذف القسم الفرعي وجميع بنوده. هل أنت متأكد؟')) {
+if (!confirm('سيتم حذف القسم الفرعي وجميع بنوده. هل أنت متأكد؟')) return;
+const btn = e.currentTarget;
+await submitWithFeedback(btn, 'جاري الحذف...', null, async () => {
 const s = CRITERIA.sections.find(x => x.key === sk);
 s.subsections = s.subsections.filter(x => x.key !== subk);
 DB.saveCriteria(CRITERIA);
 Toast.success('تم الحذف');
-navigate('settings', { tab:'form' });
-}
+if (typeof navigate === 'function') navigate('settings', { tab:'form' });
+return true;
+});
 }));
 document.querySelectorAll('[data-add-item]').forEach(b => b.addEventListener('click', () => {
 const [sk, subk] = b.dataset.addItem.split('|');
@@ -3707,23 +3822,28 @@ document.querySelectorAll('[data-edit-item]').forEach(b => b.addEventListener('c
 const [sk, subk, itk] = b.dataset.editItem.split('|');
 showItemModal(sk, subk, itk);
 }));
-document.querySelectorAll('[data-del-item]').forEach(b => b.addEventListener('click', () => {
+document.querySelectorAll('[data-del-item]').forEach(b => b.addEventListener('click', async (e) => {
 const [sk, subk, itk] = b.dataset.delItem.split('|');
-if (confirm('هل تريد حذف هذا البند؟')) {
+if (!confirm('هل تريد حذف هذا البند؟')) return;
+const btn = e.currentTarget;
+await submitWithFeedback(btn, 'جاري الحذف...', null, async () => {
 const s = CRITERIA.sections.find(x => x.key === sk);
 const sub = s.subsections.find(x => x.key === subk);
 sub.items = sub.items.filter(i => i.key !== itk);
 DB.saveCriteria(CRITERIA);
 Toast.success('تم الحذف');
-navigate('settings', { tab:'form' });
-}
+if (typeof navigate === 'function') navigate('settings', { tab:'form' });
+return true;
+});
 }));
 }
 
 if (tab === 'weights') {
 const form = document.getElementById('weights-form');
-if (form) form.addEventListener('submit', e => {
+if (form) form.addEventListener('submit', async e => {
 e.preventDefault();
+const btn = form.querySelector('button[type=submit]');
+await submitWithFeedback(btn, 'جاري الحفظ...', null, async () => {
 const fd = new FormData(form);
 CRITERIA.sections.forEach(s => {
 const w = parseFloat(fd.get('weight-' + s.key));
@@ -3737,7 +3857,9 @@ if (!isNaN(sw)) sub.weight = sw;
 });
 DB.saveCriteria(CRITERIA);
 Toast.success('تم حفظ الأوزان');
-navigate('settings', { tab:'weights' });
+if (typeof navigate === 'function') navigate('settings', { tab:'weights' });
+return true;
+});
 });
 }
 
@@ -3750,13 +3872,16 @@ document.querySelectorAll('[data-edit-eval]').forEach(b => b.addEventListener('c
 e.stopPropagation();
 navigate('edit-evaluation', { id: parseInt(b.dataset.editEval) });
 }));
-document.querySelectorAll('[data-del-eval]').forEach(b => b.addEventListener('click', e => {
+document.querySelectorAll('[data-del-eval]').forEach(b => b.addEventListener('click', async e => {
 e.stopPropagation();
-if (confirm('هل أنت متأكد من حذف هذا التقييم؟')) {
+if (!confirm('هل أنت متأكد من حذف هذا التقييم؟')) return;
+const btn = b;
+await submitWithFeedback(btn, 'جاري الحذف...', null, async () => {
 DB.deleteEvaluation(parseInt(b.dataset.delEval));
 Toast.success('تم الحذف');
-navigate('settings', { tab:'evals' });
-}
+if (typeof navigate === 'function') navigate('settings', { tab:'evals' });
+return true;
+});
 }));
 }
 }
@@ -3802,13 +3927,15 @@ if (page === 'view-objection') attachObjectionHandlers(currentParams.id);
 
 // approve evaluation button
 const apprBtn = document.getElementById('approve-eval-btn');
-if (apprBtn) apprBtn.addEventListener('click', () => {
+if (apprBtn) apprBtn.addEventListener('click', async (e) => {
+const btn = e.currentTarget;
+await submitWithFeedback(btn, 'جاري الاعتماد...', null, async () => {
 const id = currentParams.id;
-try {
 DB.approveEvaluation(parseInt(id));
 Toast.success('تم اعتماد التقييم');
-navigate('view-evaluation', { id: parseInt(id) });
-} catch(err) { Toast.error(err.message); }
+if (typeof navigate === 'function') navigate('view-evaluation', { id: parseInt(id) });
+return true;
+});
 });
 
 // Supervisor action button
@@ -3856,17 +3983,20 @@ document.querySelectorAll('[data-reset-pw]').forEach(b => b.addEventListener('cl
 e.stopPropagation();
 showResetPasswordModal(parseInt(b.dataset.resetPw));
 }));
-document.querySelectorAll('[data-deact-user]').forEach(b => b.addEventListener('click', e => {
+document.querySelectorAll('[data-deact-user]').forEach(b => b.addEventListener('click', async e => {
 e.stopPropagation();
+const btn = b;
 const id = parseInt(b.dataset.deactUser);
 const u = DB.getUser(id);
 if (!u) return;
 if (id === currentUser.id) { Toast.error('لا يمكنك تعطيل حسابك'); return; }
-if (confirm(`هل تريد تعطيل حساب: ${u.full_name}؟`)) {
+if (!confirm(`هل تريد تعطيل حساب: ${u.full_name}؟`)) return;
+await submitWithFeedback(btn, 'جاري التعطيل...', null, async () => {
 DB.deactivateUser(id);
 Toast.success('تم تعطيل المستخدم');
-navigate('users');
-}
+if (typeof navigate === 'function') navigate('users');
+return true;
+});
 }));
 }
 
@@ -4004,14 +4134,17 @@ document.querySelectorAll('#eval-table tbody tr').forEach(tr => {
 tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none';
 });
 });
-document.querySelectorAll('[data-del-eval]').forEach(b => b.addEventListener('click', e => {
+document.querySelectorAll('[data-del-eval]').forEach(b => b.addEventListener('click', async e => {
 e.stopPropagation();
+const btn = b;
 const id = parseInt(b.dataset.delEval);
-if (confirm('هل أنت متأكد من حذف هذا التقييم؟')) {
+if (!confirm('هل أنت متأكد من حذف هذا التقييم؟')) return;
+await submitWithFeedback(btn, 'جاري الحذف...', null, async () => {
 DB.deleteEvaluation(id);
 Toast.success('تم حذف التقييم');
-navigate('evaluations');
-}
+if (typeof navigate === 'function') navigate('evaluations');
+return true;
+});
 }));
 const xls = document.getElementById('exp-xlsx');
 if (xls) xls.addEventListener('click', exportListXLSX);
