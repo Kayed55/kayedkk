@@ -411,15 +411,48 @@ btn.textContent = 'جاري الإرسال...';
 try {
 const email = document.getElementById('fp-email').value.trim();
 if (!Utils.validateEmail(email)) { Toast.error('بريد إلكتروني غير صالح'); btn.textContent = orig; btn.disabled = false; btn.dataset.busy='0'; return; }
+
+// إعادة التعيين عبر Supabase RPC مباشرةً (يكتب في القاعدة وليس فقط localStorage)
+let tempPw = null;
+let resetMsg = null;
+let resetUserData = null;
+if (window.sb && window.sb.rpc) {
+const { data, error } = await window.sb.rpc('request_password_reset', { p_email: email });
+if (error) { console.warn('request_password_reset error:', error.message); resetMsg = error.message; }
+if (Array.isArray(data) && data.length) {
+const row = data[0];
+if (row.ok) {
+tempPw = row.temp_password;
+resetUserData = { email: row.user_email, full_name: row.user_name };
+} else {
+resetMsg = row.message || 'فشلت العملية';
+}
+}
+}
+// مسار محلي احتياطي (لو Supabase غير متاح)
+if (!tempPw && (!window.sb || !window.sb.rpc)) {
 const u = DB.getUserByEmail(email);
-if (!u) { Toast.error('لا يوجد حساب بهذا البريد الإلكتروني'); btn.textContent = orig; btn.disabled = false; btn.dataset.busy='0'; return; }
-if (!u.is_active) { Toast.error('الحساب معطّل، تواصل مع المدير'); btn.textContent = orig; btn.disabled = false; btn.dataset.busy='0'; return; }
-const tempPw = DB.resetUserPassword(u.id);
+if (!u) { resetMsg = 'لا يوجد حساب بهذا البريد الإلكتروني'; }
+else if (!u.is_active) { resetMsg = 'الحساب معطّل، تواصل مع المدير'; }
+else { tempPw = DB.resetUserPassword(u.id); resetUserData = u; }
+}
+if (!tempPw) {
+Toast.error(resetMsg || 'تعذّر إنشاء كلمة المرور');
+btn.textContent = orig; btn.disabled = false; btn.dataset.busy='0';
+return;
+}
+
+// إرسال الكلمة المؤقتة عبر البريد (fire-and-forget) إن أمكن
+if (resetUserData && window.EmailService && typeof window.EmailService.sendNewUserEmail === 'function') {
+try { window.EmailService.sendNewUserEmail({ ...resetUserData, username: resetUserData.username || resetUserData.email, role: 'reset' }, tempPw).catch(()=>{}); } catch(_){}
+}
+
 step1.style.display = 'none';
 document.getElementById('forgot-step2').style.display = 'block';
 document.getElementById('fp-temp').value = tempPw;
 btn.textContent = 'تم';
 Toast.success('تم إنشاء كلمة المرور المؤقتة');
+DB.addAudit({ action:'password_reset_request', entity_type:'user', details:`طلب إعادة تعيين كلمة المرور - ${email}` });
 } catch(err) {
 console.error(err);
 Toast.error('فشلت العملية');
@@ -1173,12 +1206,38 @@ btn.textContent = 'جاري المعالجة...';
 try {
 const step1 = document.getElementById('rp-step1');
 if (step1.style.display !== 'none') {
-const tempPw = DB.resetUserPassword(userId);
+// إعادة التعيين عبر Supabase RPC مباشرةً (يكتب في القاعدة)
+let tempPw = null;
+let resetUser = null;
+let resetMsg = null;
+if (window.sb && window.sb.rpc) {
+const { data, error } = await window.sb.rpc('admin_reset_password', { p_user_id: userId });
+if (error) { console.warn('admin_reset_password error:', error.message); resetMsg = error.message; }
+if (Array.isArray(data) && data.length) {
+const row = data[0];
+if (row.ok) { tempPw = row.temp_password; resetUser = { email: row.user_email, full_name: row.user_name }; }
+else { resetMsg = row.message; }
+}
+}
+if (!tempPw && (!window.sb || !window.sb.rpc)) {
+tempPw = DB.resetUserPassword(userId);
+resetUser = DB.getUser(userId);
+}
+if (!tempPw) {
+Toast.error(resetMsg || 'تعذّر إعادة التعيين');
+btn.textContent = orig; btn.disabled = false; btn.dataset.busy='0';
+return;
+}
+// إرسال الكلمة المؤقتة عبر البريد للمستخدم
+if (resetUser && resetUser.email && window.EmailService && typeof window.EmailService.sendNewUserEmail === 'function') {
+try { window.EmailService.sendNewUserEmail({ ...resetUser, username: resetUser.username || resetUser.email, role: 'reset' }, tempPw).catch(()=>{}); } catch(_){}
+}
 step1.style.display = 'none';
 document.getElementById('rp-step2').style.display = 'block';
 document.getElementById('rp-temp').value = tempPw;
 btn.textContent = 'تم';
 Toast.success('تم إعادة تعيين كلمة المرور');
+DB.addAudit({ action:'admin_password_reset', entity_type:'user', entity_id:userId, details:`الإدمن أعاد تعيين كلمة مرور: ${resetUser ? resetUser.full_name : userId}` });
 } else {
 btn.textContent = orig;
 btn.disabled = false;
