@@ -7,7 +7,7 @@
 --radius:10px;
 }
 body{background:var(--bg);color:var(--text);min-height:100vh;line-height:1.6;-webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent;text-rendering:optimizeLegibility}
-/* ط¯ط¹ظ… safe-area ظ„ظ„ط£ط¬ظ‡ط²ط© ط°ط§طھ ط§ظ„ظ†ظˆطھط´ (iPhone X+, iPad Pro) */
+/* دعم safe-area للأجهزة ذات النوتش (iPhone X+, iPad Pro) */
 @supports(padding:max(0px)){
 .topbar{padding-left:max(24px,env(safe-area-inset-left));padding-right:max(24px,env(safe-area-inset-right))}
 .content{padding-left:max(24px,env(safe-area-inset-left));padding-right:max(24px,env(safe-area-inset-right));padding-bottom:max(24px,env(safe-area-inset-bottom))}
@@ -132,7 +132,7 @@ textarea.form-control{min-height:80px;resize:vertical}
 
 /* ============================================
    Table wrapper - horizontal scroll on overflow
-   ط§ط³طھط®ط¯ظ…: <div class="table-wrapper"><table class="table">...</table></div>
+   استخدم: <div class="table-wrapper"><table class="table">...</table></div>
    ============================================ */
 .table-wrapper{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:var(--radius)}
 .table-wrapper .table{min-width:600px}
@@ -145,14 +145,14 @@ textarea.form-control{min-height:80px;resize:vertical}
    - 480px : phone
    ============================================ */
 
-/* Tablet landscape (â‰¤1024px) */
+/* Tablet landscape (≤1024px) */
 @media (max-width:1024px){
 .stats-grid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
 .grid-2{grid-template-columns:1fr}
 .modal{max-width:90vw}
 }
 
-/* Tablet / small laptop (â‰¤900px) - sidebar collapses */
+/* Tablet / small laptop (≤900px) - sidebar collapses */
 @media (max-width:900px){
 .layout{grid-template-columns:1fr}
 .sidebar{position:fixed;top:0;right:0;width:260px;transform:translateX(100%);transition:0.3s;z-index:200}
@@ -161,9 +161,9 @@ textarea.form-control{min-height:80px;resize:vertical}
 .page-title{font-size:20px}
 }
 
-/* Tablet portrait (â‰¤768px) - touch targets + stacking */
+/* Tablet portrait (≤768px) - touch targets + stacking */
 @media (max-width:768px){
-/* ط¬ظ…ظٹط¹ ط§ظ„ط£ط²ط±ط§ط± ظˆط§ظ„ط­ظ‚ظˆظ„ touch-friendly (44px ط£ط¯ظ†ظ‰ ط­ط¯) */
+/* جميع الأزرار والحقول touch-friendly (44px أدنى حد) */
 .btn{min-height:44px;padding:12px 18px;font-size:15px}
 .btn-sm{min-height:36px;padding:8px 14px;font-size:13px}
 .form-control{min-height:44px;padding:12px 14px;font-size:15px}
@@ -192,12 +192,12 @@ select.form-control{min-height:44px}
 /* grids */
 .grid-3{grid-template-columns:1fr}
 
-/* ط¬ط¯ط§ظˆظ„ - طھظ…ط±ظٹط± ط£ظپظ‚ظٹ */
+/* جداول - تمرير أفقي */
 .table{font-size:13px}
 .table th,.table td{padding:10px 8px}
 .card-body > .table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
 
-/* modal ط¹ظ„ظ‰ ط¹ط±ط¶ ط§ظ„ط´ط§ط´ط© ط¨ط§ظ„ظƒط§ظ…ظ„ طھظ‚ط±ظٹط¨ط§ظ‹ */
+/* modal على عرض الشاشة بالكامل تقريباً */
 .modal{max-width:95vw;max-height:92vh;border-radius:12px}
 .modal-overlay{padding:10px}
 .modal-header{padding:14px}
@@ -205,26 +205,26 @@ select.form-control{min-height:44px}
 .modal-footer{padding:12px 14px;flex-wrap:wrap}
 .modal-footer .btn{flex:1;min-width:120px}
 
-/* login طµط؛ظ‘ط± */
+/* login صغّر */
 .login-card{padding:24px 20px;border-radius:14px}
 .login-logo{width:120px}
 .login-header h1{font-size:20px}
 
-/* ط¨ظ†ظˆط¯ ط§ظ„طھظ‚ظٹظٹظ… - ط¹ظ…ظˆط¯ظٹ */
+/* بنود التقييم - عمودي */
 .eval-item{flex-direction:column;align-items:stretch;gap:10px;padding:12px}
 .eval-item-label{min-width:0;font-size:14px}
 .eval-item-options{justify-content:space-between}
 .eval-item-options label{flex:1;justify-content:center;min-height:40px;padding:8px 6px;font-size:13px}
 
-/* chart ظٹط³طھط­ظˆط° ط¹ظ„ظ‰ ط§ط±طھظپط§ط¹ ط£ظ‚ظ„ */
+/* chart يستحوذ على ارتفاع أقل */
 .chart-container{height:240px}
 
-/* toast ط¹ظ„ظ‰ ط¹ط±ط¶ ط§ظ„ط´ط§ط´ط© */
+/* toast على عرض الشاشة */
 .toast-container{top:10px;left:10px;right:10px}
 .toast{min-width:0;width:100%}
 }
 
-/* Phone (â‰¤480px) - ط§ظ„ط­ط¯ ط§ظ„ط£ط¯ظ†ظ‰ */
+/* Phone (≤480px) - الحد الأدنى */
 @media (max-width:480px){
 .content{padding:10px}
 .page-title{font-size:17px}
@@ -235,39 +235,39 @@ select.form-control{min-height:44px}
 .card-body{padding:12px}
 .table{font-size:12px}
 .table th,.table td{padding:8px 6px}
-/* ط¥ط®ظپط§ط، ط§ظ„ط£ط¹ظ…ط¯ط© ط§ظ„ط«ط§ظ†ظˆظٹط© (ط£ط¶ظپ class="col-hide-sm" ط¹ظ„ظ‰ ط§ظ„ط£ط¹ظ…ط¯ط© ط§ظ„ط£ظ‚ظ„ ط£ظ‡ظ…ظٹط©) */
+/* إخفاء الأعمدة الثانوية (أضف class="col-hide-sm" على الأعمدة الأقل أهمية) */
 .col-hide-sm{display:none}
-/* badges ط£طµط؛ط± */
+/* badges أصغر */
 .badge{padding:3px 8px;font-size:11px}
-/* user-info: ط¥ط®ظپط§ط، ط§ظ„ط§ط³ظ… - ط£ظٹظ‚ظˆظ†ط© ظپظ‚ط· */
+/* user-info: إخفاء الاسم - أيقونة فقط */
 .user-info-name{display:none}
-/* login: ط£طµط؛ط± */
+/* login: أصغر */
 .login-card{padding:18px 14px}
 .login-logo{width:100px}
 .login-header h1{font-size:18px}
 /* eval options stack */
 .eval-item-options{flex-direction:column;gap:6px}
 .eval-item-options label{width:100%}
-/* chart ط£طµط؛ط± */
+/* chart أصغر */
 .chart-container{height:200px}
 }
 
 /* ============================================
-   Fluid typography & utilities (طھط¹ط²ظٹط² ط¥ط¶ط§ظپظٹ ط¨ط¹ط¯ ط¬ظ…ظٹط¹ breakpoints)
+   Fluid typography & utilities (تعزيز إضافي بعد جميع breakpoints)
    ============================================ */
 .page-title{font-size:clamp(17px,2.4vw,24px)}
 .topbar-title{font-size:clamp(15px,2vw,18px)}
 .stat-value{font-size:clamp(22px,3vw,28px)}
 .login-header h1{font-size:clamp(18px,3vw,24px)}
 
-/* Reduced motion - ط§ط­طھط±ط§ظ… طھظپط¶ظٹظ„ ط§ظ„ظ…ط³طھط®ط¯ظ… */
+/* Reduced motion - احترام تفضيل المستخدم */
 @media (prefers-reduced-motion: reduce){
 *,*::before,*::after{animation-duration:0.001ms !important;animation-iteration-count:1 !important;transition-duration:0.001ms !important;scroll-behavior:auto !important}
 .btn:hover{transform:none}
 .stat-card:hover{transform:none}
 }
 
-/* Focus visible - ظˆط¶ظˆط­ ط§ظ„طھط±ظƒظٹط² ظ„ط°ظˆظٹ ط§ظ„ط¥ط¹ط§ظ‚ط© */
+/* Focus visible - وضوح التركيز لذوي الإعاقة */
 .btn:focus-visible,.form-control:focus-visible,.menu-item:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
 
 /* Print-friendly */
