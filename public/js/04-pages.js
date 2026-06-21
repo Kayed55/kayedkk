@@ -99,6 +99,10 @@ return `
 </div>`;
 }
 
+// State pending OTP verification (between step 1 and step 2)
+let _pendingOTP = null; // { user_id, user_email, user_name, masked_email, expires_at, requested_at }
+let _otpTimer = null;
+
 function attachLogin() {
 const form = document.getElementById('login-form');
 if (!form) return;
@@ -112,41 +116,87 @@ const btn = form.querySelector('button[type=submit]');
 const email = document.getElementById('login-email').value.trim();
 const password = document.getElementById('login-password').value;
 if (!Utils.validateEmail(email)) { Toast.error('البريد الإلكتروني غير صالح'); return; }
-// التحقق الآمن عبر RPC في Supabase — كلمات السر لا تصل للمتصفح إطلاقاً
-let user = null;
+if (btn && btn.dataset.busy === '1') return;
+if (btn) { btn.dataset.busy='1'; btn.disabled = true; btn.textContent = 'جاري التحقق...'; }
+
+try {
+// === الخطوة 1: طلب كود OTP من Supabase ===
+let codeData = null;
 if (window.sb && window.sb.rpc) {
 try {
-const { data, error } = await window.sb.rpc('verify_login', { p_email: email, p_password: password });
-if (!error && Array.isArray(data) && data.length) user = data[0];
-} catch(e) { console.warn('RPC verify_login failed:', e && e.message); }
-} else {
-// مسار محلي (وضع بدون Supabase فقط)
-const local = DB.getUserByEmail(email);
-if (local && local.password && local.password === password && local.is_active) user = local;
+const { data, error } = await window.sb.rpc('request_login_code', { p_email: email, p_password: password });
+if (error) { console.warn('RPC request_login_code error:', error.message); }
+if (Array.isArray(data) && data.length) codeData = data[0];
+} catch(e) { console.warn('RPC request_login_code failed:', e && e.message); }
 }
-if (!user || !user.is_active) {
-Toast.error('البريد الإلكتروني أو كلمة المرور غير صحيحة');
+
+// مسار احتياطي محلي (لو Supabase غير متاح)
+if (!codeData) {
+const local = DB.getUserByEmail(email);
+if (local && local.password === password && local.is_active && local.email) {
+const code = String(Math.floor(100000 + Math.random()*900000));
+codeData = {
+ok: true,
+user_id: local.id,
+user_email: local.email,
+user_name: local.full_name,
+masked_email: local.email.replace(/(.{2}).*(@.*)/, '$1***$2'),
+code_to_send: code,
+expires_at: new Date(Date.now() + 5*60*1000).toISOString(),
+_local: true
+};
+}
+}
+
+if (!codeData || !codeData.ok) {
+const msg = (codeData && codeData.message) || 'البريد الإلكتروني أو كلمة المرور غير صحيحة';
+Toast.error(msg);
 DB.addAudit({ action:'failed_login', entity_type:'login', details:`محاولة دخول فاشلة - ${email}` });
+if (btn) { btn.dataset.busy='0'; btn.disabled = false; btn.textContent = 'دخول'; }
 return;
 }
-// تعطيل الزر فوراً لمنع الضغط المتكرر
-if (btn && btn.dataset.busy === '1') return;
-if (btn) { btn.dataset.busy='1'; btn.disabled = true; btn.textContent = 'جاري الدخول...'; }
+
+// === إرسال الكود عبر EmailJS ===
+if (window.EmailService && typeof window.EmailService.sendLoginCodeEmail === 'function') {
 try {
-currentUser = { id:user.id, username:user.username, full_name:user.full_name, role:user.role, email:user.email };
-localStorage.setItem('qe_current_user', JSON.stringify(currentUser));
-DB.addAudit({ action:'login', entity_type:'login', entity_id:user.id, details:`تسجيل دخول: ${user.full_name} (${user.email})` });
-Toast.success('مرحباً بك ' + user.full_name);
-// انتقال فوري بدون أي تأخير - لا حاجة لـ refresh
-if (user.must_change_password) {
-if (Toast.info) Toast.info('يجب تغيير كلمة المرور');
-navigate('profile');
+const sendRes = await window.EmailService.sendLoginCodeEmail(
+{ email: codeData.user_email, full_name: codeData.user_name },
+codeData.code_to_send, 5
+);
+if (sendRes && sendRes.ok) {
+Toast.success('تم إرسال كود الدخول إلى بريدك');
 } else {
-navigate('dashboard');
+const errMsg = (sendRes && sendRes.error) || 'تعذّر إرسال الكود';
+Toast.error('⚠️ ' + errMsg + ' - تواصل مع الإدارة');
+if (btn) { btn.dataset.busy='0'; btn.disabled = false; btn.textContent = 'دخول'; }
+return;
 }
+} catch(em) {
+console.error('Email send failed:', em);
+Toast.error('⚠️ تعذّر إرسال الكود - تواصل مع الإدارة');
+if (btn) { btn.dataset.busy='0'; btn.disabled = false; btn.textContent = 'دخول'; }
+return;
+}
+} else {
+Toast.error('⚠️ نظام البريد غير مهيّأ - راجع الإدارة');
+if (btn) { btn.dataset.busy='0'; btn.disabled = false; btn.textContent = 'دخول'; }
+return;
+}
+
+// تخزين بيانات OTP المعلّقة والانتقال لشاشة الإدخال
+_pendingOTP = {
+user_id: codeData.user_id,
+user_email: codeData.user_email,
+user_name: codeData.user_name,
+masked_email: codeData.masked_email,
+expires_at: codeData.expires_at,
+requested_at: Date.now(),
+_localCode: codeData._local ? codeData.code_to_send : null // للوضع المحلي فقط
+};
+showOTPScreen();
 } catch(err) {
-console.error('Login error:', err);
-Toast.error('فشل تسجيل الدخول، حاول مرة أخرى');
+console.error('Login step1 error:', err);
+Toast.error('حدث خطأ - حاول مرة أخرى');
 if (btn) { btn.dataset.busy='0'; btn.disabled = false; btn.textContent = 'دخول'; }
 }
 });
@@ -154,6 +204,174 @@ if (btn) { btn.dataset.busy='0'; btn.disabled = false; btn.textContent = 'دخو
 // Forgot password link
 const forgot = document.getElementById('forgot-pw-link');
 if (forgot) forgot.addEventListener('click', e => { e.preventDefault(); showForgotPasswordModal(); });
+}
+
+// ============================================
+// OTP Screen (Step 2)
+// ============================================
+function showOTPScreen() {
+if (!_pendingOTP) { navigate('login'); return; }
+const app = document.getElementById('app');
+app.innerHTML = `
+<div class="login-page">
+<div class="login-card">
+<div class="login-logo">${MAHZAM_LOGO_SVG}</div>
+<div class="login-header">
+<h1 style="color:#06579F;font-weight:800;font-size:22px">🔐 التحقق الثنائي</h1>
+<p style="font-size:14px;color:#475569;margin-top:10px;font-weight:600">
+أرسلنا كوداً مكوّناً من 6 أرقام إلى:<br>
+<strong style="color:#06579F;direction:ltr;display:inline-block;margin-top:4px;font-family:monospace">${Utils.escape(_pendingOTP.masked_email)}</strong>
+</p>
+<div style="height:3px;width:60px;background:linear-gradient(to left,#06579F,#202E4D);margin:14px auto;border-radius:2px"></div>
+</div>
+<form id="otp-form">
+<div class="form-group">
+<label class="form-label" style="text-align:center;display:block;margin-bottom:10px">📨 أدخل الكود</label>
+<input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6"
+class="form-control" id="otp-code" required autocomplete="one-time-code"
+placeholder="000000"
+style="text-align:center;font-size:24px;letter-spacing:8px;font-family:monospace;font-weight:700;direction:ltr">
+</div>
+<div id="otp-status" style="text-align:center;margin-bottom:14px;font-size:13px;color:var(--muted);min-height:18px">
+الكود صالح لمدة <span id="otp-countdown" style="color:#06579F;font-weight:700">5:00</span>
+</div>
+<button type="submit" class="btn btn-primary" style="width:100%;padding:12px;font-size:15px;margin-bottom:10px">تأكيد ودخول</button>
+<button type="button" id="otp-resend" class="btn btn-secondary" style="width:100%;padding:10px;font-size:13px" disabled>إعادة إرسال الكود (<span id="resend-countdown">60</span>ث)</button>
+<button type="button" id="otp-cancel" class="btn" style="width:100%;padding:8px;font-size:13px;background:transparent;color:#64748b;margin-top:8px">← الرجوع لتسجيل الدخول</button>
+</form>
+</div>
+</div>`;
+attachOTPHandlers();
+}
+
+function attachOTPHandlers() {
+const form = document.getElementById('otp-form');
+const codeInput = document.getElementById('otp-code');
+const countdownEl = document.getElementById('otp-countdown');
+const statusEl = document.getElementById('otp-status');
+const resendBtn = document.getElementById('otp-resend');
+const resendCountEl = document.getElementById('resend-countdown');
+const cancelBtn = document.getElementById('otp-cancel');
+
+if (codeInput) {
+codeInput.focus();
+codeInput.addEventListener('input', e => {
+e.target.value = e.target.value.replace(/[^0-9]/g, '').slice(0,6);
+});
+}
+
+// Countdown timer
+if (_otpTimer) clearInterval(_otpTimer);
+let resendSec = 60;
+_otpTimer = setInterval(() => {
+const expires = new Date(_pendingOTP.expires_at).getTime();
+const remain = Math.max(0, Math.floor((expires - Date.now()) / 1000));
+const mins = Math.floor(remain / 60);
+const secs = remain % 60;
+if (countdownEl) countdownEl.textContent = mins + ':' + String(secs).padStart(2,'0');
+if (remain === 0) {
+clearInterval(_otpTimer); _otpTimer = null;
+if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger);font-weight:700">⏰ انتهت صلاحية الكود</span>';
+}
+// تفعيل زر إعادة الإرسال بعد 60ث
+if (resendSec > 0) {
+resendSec--;
+if (resendCountEl) resendCountEl.textContent = resendSec;
+if (resendSec === 0 && resendBtn) {
+resendBtn.disabled = false;
+resendBtn.innerHTML = 'إعادة إرسال الكود';
+}
+}
+}, 1000);
+
+// Submit
+if (form) {
+form.addEventListener('submit', async e => {
+e.preventDefault();
+const btn = form.querySelector('button[type=submit]');
+const code = (codeInput.value || '').trim();
+if (code.length !== 6) { Toast.error('الكود يجب أن يكون 6 أرقام'); return; }
+if (btn.dataset.busy === '1') return;
+btn.dataset.busy='1'; btn.disabled = true; btn.textContent = 'جاري التحقق...';
+
+try {
+let result = null;
+// مسار Supabase
+if (window.sb && window.sb.rpc && !_pendingOTP._localCode) {
+const { data, error } = await window.sb.rpc('verify_login_code', {
+p_user_id: _pendingOTP.user_id, p_code: code
+});
+if (error) console.warn('verify_login_code error:', error.message);
+if (Array.isArray(data) && data.length) result = data[0];
+}
+// مسار محلي
+if (!result && _pendingOTP._localCode) {
+if (_pendingOTP._localCode === code &&
+new Date(_pendingOTP.expires_at).getTime() > Date.now()) {
+const u = DB.getUser(_pendingOTP.user_id);
+result = { ok:true, user_data: u };
+} else {
+result = { ok:false, message:'كود غير صحيح أو منتهي' };
+}
+}
+
+if (!result || !result.ok) {
+const msg = (result && result.message) || 'كود غير صحيح';
+Toast.error(msg);
+DB.addAudit({ action:'failed_otp', entity_type:'login', entity_id:_pendingOTP.user_id, details:`فشل OTP - ${_pendingOTP.user_email}` });
+codeInput.value=''; codeInput.focus();
+btn.dataset.busy='0'; btn.disabled = false; btn.textContent = 'تأكيد ودخول';
+return;
+}
+
+// نجاح
+const u = result.user_data || {};
+currentUser = { id:u.id, username:u.username, full_name:u.full_name, role:u.role, email:u.email };
+localStorage.setItem('qe_current_user', JSON.stringify(currentUser));
+DB.addAudit({ action:'login', entity_type:'login', entity_id:u.id, details:`دخول مع OTP: ${u.full_name} (${u.email})` });
+Toast.success('مرحباً بك ' + u.full_name);
+if (_otpTimer) { clearInterval(_otpTimer); _otpTimer = null; }
+_pendingOTP = null;
+if (u.must_change_password) {
+if (Toast.info) Toast.info('يجب تغيير كلمة المرور');
+navigate('profile');
+} else {
+navigate('dashboard');
+}
+} catch(err) {
+console.error('OTP verify error:', err);
+Toast.error('فشل التحقق - حاول مرة أخرى');
+btn.dataset.busy='0'; btn.disabled = false; btn.textContent = 'تأكيد ودخول';
+}
+});
+}
+
+// Resend
+if (resendBtn) {
+resendBtn.addEventListener('click', async () => {
+if (resendBtn.disabled) return;
+resendBtn.disabled = true; resendBtn.textContent = 'جاري الإرسال...';
+try {
+// نطلب كوداً جديداً عبر RPC مرة أخرى — يحتاج كلمة المرور، لذا نعود لشاشة الدخول
+Toast.info('للحصول على كود جديد، الرجاء الدخول مرة أخرى');
+if (_otpTimer) { clearInterval(_otpTimer); _otpTimer = null; }
+_pendingOTP = null;
+navigate('login');
+} catch(e) {
+console.error(e);
+resendBtn.disabled = false; resendBtn.textContent = 'إعادة إرسال الكود';
+}
+});
+}
+
+// Cancel
+if (cancelBtn) {
+cancelBtn.addEventListener('click', () => {
+if (_otpTimer) { clearInterval(_otpTimer); _otpTimer = null; }
+_pendingOTP = null;
+navigate('login');
+});
+}
 }
 
 // نسيت كلمة المرور - محاكاة إرسال البريد
