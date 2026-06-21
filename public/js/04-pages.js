@@ -121,8 +121,19 @@ const btn = form.querySelector('button[type=submit]');
 const email = document.getElementById('login-email').value.trim();
 const password = document.getElementById('login-password').value;
 if (!Utils.validateEmail(email)) { Toast.error('البريد الإلكتروني غير صالح'); return; }
-const user = DB.getUserByEmail(email);
-if (!user || user.password !== password || !user.is_active) {
+// التحقق الآمن عبر RPC في Supabase — كلمات السر لا تصل للمتصفح إطلاقاً
+let user = null;
+if (window.sb && window.sb.rpc) {
+try {
+const { data, error } = await window.sb.rpc('verify_login', { p_email: email, p_password: password });
+if (!error && Array.isArray(data) && data.length) user = data[0];
+} catch(e) { console.warn('RPC verify_login failed:', e && e.message); }
+} else {
+// مسار محلي (وضع بدون Supabase فقط)
+const local = DB.getUserByEmail(email);
+if (local && local.password && local.password === password && local.is_active) user = local;
+}
+if (!user || !user.is_active) {
 Toast.error('البريد الإلكتروني أو كلمة المرور غير صحيحة');
 DB.addAudit({ action:'failed_login', entity_type:'login', details:`محاولة دخول فاشلة - ${email}` });
 return;
@@ -2971,16 +2982,27 @@ if (pw) pw.addEventListener('submit', async e => {
 e.preventDefault();
 const btn = pw.querySelector('button[type=submit]');
 await submitWithFeedback(btn, 'جاري التغيير...', null, async () => {
-const u = DB.getUser(currentUser.id);
 const cur = document.getElementById('pw-cur').value;
 const np = document.getElementById('pw-new').value;
 const cp = document.getElementById('pw-conf').value;
-if (u.password !== cur) { Toast.error('كلمة المرور الحالية غير صحيحة'); return false; }
 if (np !== cp) { Toast.error('كلمتا المرور غير متطابقتين'); return false; }
 if (np === cur) { Toast.error('كلمة المرور الجديدة يجب أن تختلف عن الحالية'); return false; }
 const vp = Utils.validatePassword(np);
 if (!vp.valid) { Toast.error(vp.errors[0]); return false; }
-DB.changePassword(currentUser.id, np);
+// التغيير عبر RPC آمنة في Supabase (تتحقق من القديمة ثم تُحدِّث ذرياً)
+let ok = false;
+if (window.sb && window.sb.rpc) {
+try {
+const { data, error } = await window.sb.rpc('change_password', { p_user_id: currentUser.id, p_old_password: cur, p_new_password: np });
+ok = !error && data === true;
+} catch(e) { console.warn('RPC change_password failed:', e && e.message); }
+} else {
+const u = DB.getUser(currentUser.id);
+if (u && u.password === cur) { DB.changePassword(currentUser.id, np); ok = true; }
+}
+if (!ok) { Toast.error('كلمة المرور الحالية غير صحيحة'); return false; }
+// تحديث محلي خفيف (الـ pull التلقائي سيُزامن باقي الحقول)
+try { const u2 = DB.getUser(currentUser.id); if (u2) { u2.must_change_password = false; u2.password_changed_at = new Date().toISOString(); DB.save(); } } catch(_) {}
 Toast.success('تم تغيير كلمة المرور بنجاح');
 pw.reset();
 return true;
