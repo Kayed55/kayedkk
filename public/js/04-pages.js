@@ -82,7 +82,7 @@ return `
 <form id="login-form">
 <div class="form-group">
 <label class="form-label">📧 البريد الإلكتروني</label>
-<input type="email" class="form-control" id="login-email" required placeholder="admin@example.com" autocomplete="email">
+<input type="email" class="form-control" id="login-email" required placeholder="your.email@company.com" autocomplete="email">
 </div>
 <div class="form-group">
 <label class="form-label">🔒 كلمة المرور</label>
@@ -95,15 +95,6 @@ return `
 <div style="font-size:15px;font-weight:700;margin-bottom:4px">🌟 مرحباً بكم في ${SYSTEM_NAME}</div>
 <div style="font-size:12px;opacity:0.9">${COMPANY_NAME} - منظومة متكاملة لإدارة جودة الأداء</div>
 </div>
-<details style="margin-top:14px">
-<summary style="cursor:pointer;font-size:12px;color:var(--muted);font-weight:600">عرض الحسابات التجريبية</summary>
-<div class="alert alert-info" style="margin-top:8px;font-size:12px">
-المدير: <code>admin@example.com / Admin@123</code><br>
-موظف الجودة: <code>quality@example.com / Quality@123</code><br>
-المشرف: <code>supervisor@example.com / Super@123</code><br>
-موظف: <code>emp001@example.com / Emp@123A!</code>
-</div>
-</details>
 </div>
 </div>`;
 }
