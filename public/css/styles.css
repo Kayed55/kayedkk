@@ -6,7 +6,13 @@
 --shadow:0 1px 3px rgba(0,0,0,0.08);--shadow-lg:0 10px 25px rgba(0,0,0,0.1);
 --radius:10px;
 }
-body{background:var(--bg);color:var(--text);min-height:100vh;line-height:1.6}
+body{background:var(--bg);color:var(--text);min-height:100vh;line-height:1.6;-webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent;text-rendering:optimizeLegibility}
+/* دعم safe-area للأجهزة ذات النوتش (iPhone X+, iPad Pro) */
+@supports(padding:max(0px)){
+.topbar{padding-left:max(24px,env(safe-area-inset-left));padding-right:max(24px,env(safe-area-inset-right))}
+.content{padding-left:max(24px,env(safe-area-inset-left));padding-right:max(24px,env(safe-area-inset-right));padding-bottom:max(24px,env(safe-area-inset-bottom))}
+.toast-container{top:max(20px,env(safe-area-inset-top));left:max(20px,env(safe-area-inset-left))}
+}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 18px;border:none;border-radius:var(--radius);font-size:14px;font-weight:600;cursor:pointer;transition:0.2s;text-decoration:none;font-family:inherit;white-space:nowrap}
 .btn:hover{transform:translateY(-1px);box-shadow:var(--shadow-lg)}
 .btn-primary{background:var(--primary);color:white}
@@ -124,10 +130,150 @@ textarea.form-control{min-height:80px;resize:vertical}
 .subsection-title{font-size:15px;font-weight:700;color:var(--primary);margin:14px 0 8px;padding:8px 12px;background:#dbeafe;border-radius:8px}
 .chart-container{position:relative;height:280px}
 
+/* ============================================
+   Table wrapper - horizontal scroll on overflow
+   استخدم: <div class="table-wrapper"><table class="table">...</table></div>
+   ============================================ */
+.table-wrapper{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:var(--radius)}
+.table-wrapper .table{min-width:600px}
+
+/* ============================================
+   Responsive breakpoints
+   - 1024px: tablet landscape
+   - 900px : tablet / small laptop (original)
+   - 768px : tablet portrait
+   - 480px : phone
+   ============================================ */
+
+/* Tablet landscape (≤1024px) */
+@media (max-width:1024px){
+.stats-grid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+.grid-2{grid-template-columns:1fr}
+.modal{max-width:90vw}
+}
+
+/* Tablet / small laptop (≤900px) - sidebar collapses */
 @media (max-width:900px){
 .layout{grid-template-columns:1fr}
 .sidebar{position:fixed;top:0;right:0;width:260px;transform:translateX(100%);transition:0.3s;z-index:200}
 .sidebar.show{transform:translateX(0)}
 .content{padding:14px}
 .page-title{font-size:20px}
+}
+
+/* Tablet portrait (≤768px) - touch targets + stacking */
+@media (max-width:768px){
+/* جميع الأزرار والحقول touch-friendly (44px أدنى حد) */
+.btn{min-height:44px;padding:12px 18px;font-size:15px}
+.btn-sm{min-height:36px;padding:8px 14px;font-size:13px}
+.form-control{min-height:44px;padding:12px 14px;font-size:15px}
+select.form-control{min-height:44px}
+.menu-item{min-height:44px;padding:14px 16px}
+.modal-close{min-width:44px;min-height:44px;font-size:28px}
+
+/* layout */
+.content{padding:12px}
+.topbar{padding:10px 14px;flex-wrap:wrap;gap:10px}
+.topbar-title{font-size:16px}
+.topbar-actions{gap:8px}
+.user-info{padding:4px 8px 4px 4px}
+
+/* page header */
+.page-header{flex-direction:column;align-items:flex-start;gap:10px}
+.page-title{font-size:18px}
+
+/* stats + cards single-column */
+.stats-grid{grid-template-columns:1fr;gap:12px}
+.stat-card{padding:16px}
+.stat-value{font-size:24px}
+.card-body{padding:14px}
+.card-header{padding:14px;flex-direction:column;align-items:flex-start;gap:8px}
+
+/* grids */
+.grid-3{grid-template-columns:1fr}
+
+/* جداول - تمرير أفقي */
+.table{font-size:13px}
+.table th,.table td{padding:10px 8px}
+.card-body > .table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+/* modal على عرض الشاشة بالكامل تقريباً */
+.modal{max-width:95vw;max-height:92vh;border-radius:12px}
+.modal-overlay{padding:10px}
+.modal-header{padding:14px}
+.modal-body{padding:14px}
+.modal-footer{padding:12px 14px;flex-wrap:wrap}
+.modal-footer .btn{flex:1;min-width:120px}
+
+/* login صغّر */
+.login-card{padding:24px 20px;border-radius:14px}
+.login-logo{width:120px}
+.login-header h1{font-size:20px}
+
+/* بنود التقييم - عمودي */
+.eval-item{flex-direction:column;align-items:stretch;gap:10px;padding:12px}
+.eval-item-label{min-width:0;font-size:14px}
+.eval-item-options{justify-content:space-between}
+.eval-item-options label{flex:1;justify-content:center;min-height:40px;padding:8px 6px;font-size:13px}
+
+/* chart يستحوذ على ارتفاع أقل */
+.chart-container{height:240px}
+
+/* toast على عرض الشاشة */
+.toast-container{top:10px;left:10px;right:10px}
+.toast{min-width:0;width:100%}
+}
+
+/* Phone (≤480px) - الحد الأدنى */
+@media (max-width:480px){
+.content{padding:10px}
+.page-title{font-size:17px}
+.page-subtitle{font-size:12px}
+.stat-value{font-size:22px}
+.stat-icon{width:40px;height:40px;font-size:18px}
+.card-header{padding:12px}
+.card-body{padding:12px}
+.table{font-size:12px}
+.table th,.table td{padding:8px 6px}
+/* إخفاء الأعمدة الثانوية (أضف class="col-hide-sm" على الأعمدة الأقل أهمية) */
+.col-hide-sm{display:none}
+/* badges أصغر */
+.badge{padding:3px 8px;font-size:11px}
+/* user-info: إخفاء الاسم - أيقونة فقط */
+.user-info-name{display:none}
+/* login: أصغر */
+.login-card{padding:18px 14px}
+.login-logo{width:100px}
+.login-header h1{font-size:18px}
+/* eval options stack */
+.eval-item-options{flex-direction:column;gap:6px}
+.eval-item-options label{width:100%}
+/* chart أصغر */
+.chart-container{height:200px}
+}
+
+/* ============================================
+   Fluid typography & utilities (تعزيز إضافي بعد جميع breakpoints)
+   ============================================ */
+.page-title{font-size:clamp(17px,2.4vw,24px)}
+.topbar-title{font-size:clamp(15px,2vw,18px)}
+.stat-value{font-size:clamp(22px,3vw,28px)}
+.login-header h1{font-size:clamp(18px,3vw,24px)}
+
+/* Reduced motion - احترام تفضيل المستخدم */
+@media (prefers-reduced-motion: reduce){
+*,*::before,*::after{animation-duration:0.001ms !important;animation-iteration-count:1 !important;transition-duration:0.001ms !important;scroll-behavior:auto !important}
+.btn:hover{transform:none}
+.stat-card:hover{transform:none}
+}
+
+/* Focus visible - وضوح التركيز لذوي الإعاقة */
+.btn:focus-visible,.form-control:focus-visible,.menu-item:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+
+/* Print-friendly */
+@media print{
+.sidebar,.topbar-actions,.btn,.modal-overlay,.toast-container{display:none !important}
+.layout{grid-template-columns:1fr}
+.content{padding:0}
+.card{box-shadow:none;border:1px solid #ddd}
 }
