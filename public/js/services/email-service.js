@@ -25,7 +25,9 @@
 // ثوابت القالب الموحّد
 // ============================================
 const UNIVERSAL_TEMPLATE_ID = 'template_universal';
-const COMPANY_NAME = 'شركة محزم';
+// ملاحظة: COMPANY_NAME معرّف عالميًا في 01-constants.js (يُحمّل قبل هذا الملف).
+// لا نُعيد تعريفه هنا بـ const وإلا حدث تعارض "Identifier already declared"
+// يُفشل تنفيذ الملف كله فلا يُعرَّف window.EmailService.
 const SYSTEM_URL   = 'https://kayedkk.vercel.app';
 
 // ============================================
@@ -44,6 +46,11 @@ const EMAILJS_CONFIG = {
   companyName: COMPANY_NAME,
   logLevel:   'warn'                                      // 'silent' | 'warn' | 'info'
 };
+
+// === EmailJS DEBUG (مؤقّت) — يؤكّد أن الملف نُفِّذ فعلاً وقيمة enabled في الإنتاج ===
+console.log('[EmailJS DEBUG] email-service.js loaded — enabled:', EMAILJS_CONFIG.enabled,
+            '| template:', UNIVERSAL_TEMPLATE_ID, '| company:', (typeof COMPANY_NAME !== 'undefined' ? COMPANY_NAME : '(COMPANY_NAME undefined!)'));
+// === END DEBUG ===
 
 
 // ============================================
