@@ -1,457 +1,290 @@
 /*!
  * نظام الجودة للتقييم والتدريب - شركة محزم
  *
- * Module: Database Layer (localStorage-based)
- * CRUD operations: users, evaluations, notifications, objections, audit, criteria, stats
+ * Module: Core Utilities
+ * Contains: calculateScores, Utils (formatters, validators), Perms (RBAC), Toast, Modal
  *
- * @module db
+ * @module core
  * @copyright (c) 2026 Mahzam Co.
  */
 'use strict';
 
 // ============================================
-// طبقة البيانات - localStorage
+// حساب الدرجات
 // ============================================
-const DB = {
-KEY: 'qe_system_v6',
-data: null,
+function calculateScores(items) {
+const A = CRITERIA.answers;
+const sectionScores = {};
+const errors = [];
 
-init() {
-const saved = localStorage.getItem(this.KEY);
-if (saved) {
-try {
-this.data = JSON.parse(saved);
-if (!this.data.criteria) this.data.criteria = JSON.parse(JSON.stringify(DEFAULT_CRITERIA));
-if (!this.data.objections) this.data.objections = [];
-if (!this.data.audit_logs) this.data.audit_logs = [];
-if (!this.data.nextObjectionId) this.data.nextObjectionId = 1;
-if (!this.data.nextAuditId) this.data.nextAuditId = 1;
-CRITERIA = this.data.criteria;
+CRITERIA.sections.forEach(s => {
+if (s.type === 'critical') {
+// كل البنود في القسم: لو فيه أي خطأ → 0، وإلا → كامل الوزن
+let hasError = false;
+s.subsections.forEach(sub => {
+sub.items.forEach(it => {
+const a = items[it.key] || A.OK;
+if (a === A.ERR) {
+hasError = true;
+errors.push({ section:s.title, subsection:sub.title, item:it.label });
+}
+});
+});
+sectionScores[s.key] = hasError ? 0 : s.weight;
+} else {
+// القسم الرابع: مرجح حسب الأقسام الفرعية
+let total = 0;
+s.subsections.forEach(sub => {
+const items_ = sub.items;
+const applicable = items_.filter(it => (items[it.key] || A.OK) !== A.NA);
+const correct = applicable.filter(it => (items[it.key] || A.OK) === A.OK);
+const subScore = applicable.length ? (correct.length / applicable.length) * sub.weight : sub.weight;
+total += subScore;
+items_.forEach(it => {
+if ((items[it.key] || A.OK) === A.ERR) {
+errors.push({ section:s.title, subsection:sub.title, item:it.label });
+}
+});
+});
+sectionScores[s.key] = Math.round(total * 10) / 10;
+}
+});
+
+const totalScore = Math.round(Object.values(sectionScores).reduce((a,b)=>a+b, 0) * 10) / 10;
+const percentage = totalScore;
+
+// التصنيف الجديد:
+// 84% وأقل = راسب | 85% وأعلى = ناجح
+let grade, status;
+if (percentage <= 84) { grade = 'راسب'; status = 'راسب'; }
+else { grade = 'ناجح'; status = 'ناجح'; }
+
+return { sectionScores, totalScore, percentage, grade, status, errors };
+}
+
+// ============================================
+// أدوات
+// ============================================
+const Utils = {
+escape(s) { return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); },
+formatDate(d) { if (!d) return '-'; const dt = new Date(d); return `${dt.getDate().toString().padStart(2,'0')}/${(dt.getMonth()+1).toString().padStart(2,'0')}/${dt.getFullYear()}`; },
+getInitials(n) { return (n||'?').split(' ').map(w=>w[0]).slice(0,2).join(''); },
+roleLabel(r) { return {admin:'مدير النظام', quality_officer:'موظف الجودة', supervisor:'مشرف', employee:'موظف'}[r] || r; },
+roleBadge(r) { const colors = {admin:'#1e40af', quality_officer:'#0891b2', supervisor:'#7c3aed', employee:'#64748b'}; return `<span class="badge" style="background:${colors[r]||'#64748b'}33;color:${colors[r]||'#64748b'}">${this.roleLabel(r)}</span>`; },
+// التصنيف: 84 وأقل = راسب | 85+ = ناجح
+gradeBadge(p) {
+let cls = 'badge-danger', txt = 'راسب';
+if (p >= 85) { cls = 'badge-success'; txt = 'ناجح'; }
+return `<span class="badge ${cls}">${txt} ${p}%</span>`;
+},
+gradeLabel(p) {
+return p >= 85 ? 'ناجح' : 'راسب';
+},
+timeAgo(d) {
+const diff = (Date.now() - new Date(d).getTime()) / 1000;
+if (diff < 60) return 'قبل لحظات';
+if (diff < 3600) return `قبل ${Math.floor(diff/60)} دقيقة`;
+if (diff < 86400) return `قبل ${Math.floor(diff/3600)} ساعة`;
+return `قبل ${Math.floor(diff/86400)} يوم`;
+},
+formatDateTime(d) { if (!d) return '-'; const dt = new Date(d); return `${this.formatDate(d)} ${dt.getHours().toString().padStart(2,'0')}:${dt.getMinutes().toString().padStart(2,'0')}`; },
+objectionStatus(s) {
+const map = {
+pending: { label:'قيد الانتظار', cls:'badge-warning' },
+under_review: { label:'قيد المراجعة', cls:'badge-info' },
+accepted: { label:'مقبول', cls:'badge-success' },
+rejected: { label:'مرفوض', cls:'badge-danger' }
+};
+const o = map[s] || { label:s, cls:'badge-info' };
+return `<span class="badge ${o.cls}">${o.label}</span>`;
+},
+formatBytes(b) { if (!b) return '0 B'; if (b < 1024) return b + ' B'; if (b < 1048576) return (b/1024).toFixed(1) + ' KB'; return (b/1048576).toFixed(2) + ' MB'; },
+
+// Password policy validation
+validatePassword(pw) {
+const errors = [];
+if (!pw || pw.length < 8) errors.push('يجب أن تكون كلمة المرور 8 أحرف على الأقل');
+if (!/[A-Za-z]/.test(pw)) errors.push('يجب أن تحتوي على حرف واحد على الأقل');
+if (!/[0-9]/.test(pw)) errors.push('يجب أن تحتوي على رقم واحد على الأقل');
+if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(pw)) errors.push('يجب أن تحتوي على رمز خاص (@!#$%^&*) واحد على الأقل');
+return { valid: errors.length === 0, errors };
+},
+// Email validation
+validateEmail(em) {
+return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em||'');
+},
+// Generate strong temp password
+generateTempPassword() {
+const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz';
+const numbers = '23456789';
+const symbols = '!@#$%&*';
+let p = '';
+p += letters.charAt(Math.floor(Math.random()*letters.length));
+p += numbers.charAt(Math.floor(Math.random()*numbers.length));
+p += symbols.charAt(Math.floor(Math.random()*symbols.length));
+const all = letters + numbers + symbols;
+for (let i=0; i<7; i++) p += all.charAt(Math.floor(Math.random()*all.length));
+return p.split('').sort(()=>Math.random()-0.5).join('');
+}
+};
+
+// ============================================
+// Permissions - نظام الصلاحيات
+// ============================================
+const Perms = {
+// roles: admin (full), quality_officer (eval+objection management), supervisor (view team), employee (view own)
+can(action) {
+if (!currentUser) return false;
+const r = currentUser.role;
+const map = {
+'manage_users': ['admin'],
+'view_audit_log': ['admin','quality_officer'],
+'manage_settings': ['admin'],
+'create_evaluation': ['admin','quality_officer'],
+'edit_evaluation': ['admin','quality_officer'],
+'approve_evaluation': ['admin','quality_officer'],
+'delete_evaluation': ['admin','quality_officer'],
+'view_all_evaluations': ['admin','quality_officer'],
+'view_all_reports': ['admin','quality_officer'],
+'view_team_reports': ['admin','quality_officer','supervisor'],
+'manage_objections': ['admin','quality_officer'],
+'submit_objection': ['employee'],
+'view_team_objections': ['admin','quality_officer','supervisor'],
+'view_employees': ['admin','quality_officer','supervisor']
+};
+return (map[action] || []).includes(r);
+}
+};
+
+// Ensure toast & modal containers exist (idempotent)
+function ensureUIContainers() {
+if (!document.getElementById('toast-container')) {
+const c = document.createElement('div');
+c.id = 'toast-container';
+c.className = 'toast-container';
+document.body.appendChild(c);
+}
+if (!document.getElementById('modal-container')) {
+const m = document.createElement('div');
+m.id = 'modal-container';
+document.body.appendChild(m);
+}
+}
+
+// Toast
+const Toast = {
+show(msg, type='info') {
+ensureUIContainers();
+const c = document.getElementById('toast-container');
+const t = document.createElement('div');
+t.className = 'toast ' + type;
+t.textContent = msg;
+c.appendChild(t);
+setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 3500);
+},
+success(m){this.show(m,'success')},
+error(m){this.show(m,'error')},
+warning(m){this.show(m,'warning')},
+info(m){this.show(m,'info')}
+};
+
+// Modal
+const Modal = {
+show(title, body, footer) {
+ensureUIContainers();
+document.getElementById('modal-container').innerHTML = `
+<div class="modal-overlay show" onclick="if(event.target===this)Modal.close()">
+<div class="modal" role="dialog" aria-modal="true" aria-label="${(title||'').replace(/<[^>]+>/g,'').replace(/"/g,'&quot;')}">
+<div class="modal-header"><div class="modal-title">${title}</div><button class="modal-close" onclick="Modal.close()" aria-label="إغلاق">×</button></div>
+<div class="modal-body">${body}</div>
+${footer ? `<div class="modal-footer">${footer}</div>` : ''}
+</div></div>`;
+// منع تمرير الخلفية أثناء فتح المودال
+document.body.style.overflow = 'hidden';
+},
+close() {
+const m = document.getElementById('modal-container');
+if (m) m.innerHTML = '';
+document.body.style.overflow = '';
+},
+isOpen() {
+const m = document.getElementById('modal-container');
+return !!(m && m.querySelector('.modal-overlay.show'));
+}
+};
+
+// إغلاق المودال بمفتاح ESC - يُربط مرة واحدة فقط
+if (typeof document !== 'undefined' && !window.__modalEscBound) {
+window.__modalEscBound = true;
+document.addEventListener('keydown', (e) => {
+if (e.key === 'Escape' && Modal.isOpen()) Modal.close();
+});
+}
+
+// ============================================
+// submitWithFeedback - الدالة المساعدة الموحّدة لجميع عمليات الحفظ
+// ============================================
+// - تُعطّل الزر وتُظهر "جاري الحفظ..."
+// - تنتظر الدالة غير المتزامنة
+// - عند النجاح: تعرض رسالة، تُغلق المودال، تُعيد رسم الصفحة الحالية
+// - عند الخطأ: تعرض Toast.error برسالة واضحة
+// - تمنع الضغطات المتكررة (re-entry guard)
+// - استخدام: await submitWithFeedback(btn, 'جاري الحفظ...', 'تم الحفظ', async () => { ... });
+// - إذا أرجعت الدالة المتداخلة `false` فلن تُغلَق المودال ولن تُعاد الصفحة (للتحقّق الفاشل)
+async function submitWithFeedback(btn, savingText, successText, asyncFn) {
+if (typeof asyncFn !== 'function') {
+console.warn('submitWithFeedback: asyncFn must be a function');
 return;
-} catch(e){}
 }
-this.data = {
-users: [
-{id:1, username:'admin', password:'Admin@123', full_name:'مدير النظام', email:'admin@example.com', phone:'', role:'admin', department:'الإدارة', position:'مدير النظام', employee_number:'ADM001', supervisor_name:'-', is_active:true, must_change_password:false, created_at:new Date().toISOString()},
-{id:2, username:'qo1', password:'Quality@123', full_name:'خالد موظف الجودة', email:'quality@example.com', phone:'', role:'quality_officer', department:'قسم الجودة', position:'موظف جودة', employee_number:'QO001', supervisor_name:'مدير النظام', is_active:true, must_change_password:false, created_at:new Date().toISOString()},
-{id:3, username:'supervisor', password:'Super@123', full_name:'محمد المشرف', email:'supervisor@example.com', phone:'', role:'supervisor', department:'قسم الجودة', position:'مشرف جودة', employee_number:'SUP001', supervisor_name:'-', is_active:true, must_change_password:false, created_at:new Date().toISOString()},
-{id:4, username:'EMP001', password:'Emp@123A!', full_name:'أحمد علي', email:'emp001@example.com', phone:'', role:'employee', department:'قسم الجودة', position:'موظف خدمة', employee_number:'EMP001', supervisor_name:'محمد المشرف', supervisor_id:3, is_active:true, must_change_password:false, created_at:new Date().toISOString()},
-{id:5, username:'EMP002', password:'Emp@123A!', full_name:'سارة محمد', email:'emp002@example.com', phone:'', role:'employee', department:'قسم الجودة', position:'موظف خدمة', employee_number:'EMP002', supervisor_name:'محمد المشرف', supervisor_id:3, is_active:true, must_change_password:false, created_at:new Date().toISOString()},
-{id:6, username:'EMP003', password:'Emp@123A!', full_name:'فهد سعد', email:'emp003@example.com', phone:'', role:'employee', department:'قسم الجودة', position:'موظف خدمة', employee_number:'EMP003', supervisor_name:'محمد المشرف', supervisor_id:3, is_active:true, must_change_password:false, created_at:new Date().toISOString()},
-{id:7, username:'EMP004', password:'Emp@123A!', full_name:'نورة خالد', email:'emp004@example.com', phone:'', role:'employee', department:'قسم الجودة', position:'موظف خدمة', employee_number:'EMP004', supervisor_name:'محمد المشرف', supervisor_id:3, is_active:true, must_change_password:false, created_at:new Date().toISOString()},
-{id:8, username:'EMP005', password:'Emp@123A!', full_name:'عبدالله أحمد', email:'emp005@example.com', phone:'', role:'employee', department:'قسم الجودة', position:'موظف خدمة', employee_number:'EMP005', supervisor_name:'محمد المشرف', supervisor_id:3, is_active:true, must_change_password:false, created_at:new Date().toISOString()}
-],
-evaluations: [],
-notifications: [],
-objections: [],
-audit_logs: [],
-criteria: JSON.parse(JSON.stringify(DEFAULT_CRITERIA)),
-nextUserId: 9,
-nextEvalId: 1,
-nextNotifId: 1,
-nextObjectionId: 1,
-nextAuditId: 1
-};
-CRITERIA = this.data.criteria;
-this.save();
-},
-
-save() { localStorage.setItem(this.KEY, JSON.stringify(this.data)); },
-
-// تحديث المعايير
-saveCriteria(newCriteria) {
-this.data.criteria = newCriteria;
-CRITERIA = this.data.criteria;
-this.save();
-},
-
-resetCriteria() {
-this.data.criteria = JSON.parse(JSON.stringify(DEFAULT_CRITERIA));
-CRITERIA = this.data.criteria;
-this.save();
-},
-
-// Users
-getUsers(filter={}) {
-return this.data.users.filter(u => {
-if (filter.role && u.role !== filter.role) return false;
-if (filter.active && !u.is_active) return false;
-return true;
-});
-},
-getUser(id) { return this.data.users.find(u => u.id === id); },
-getUserByUsername(u) { return this.data.users.find(x => x.username === u); },
-getUserByEmail(em) { if (!em) return null; const e = em.trim().toLowerCase(); return this.data.users.find(x => (x.email||'').toLowerCase() === e); },
-getSupervisors() { return this.data.users.filter(u => u.role === 'supervisor' && u.is_active !== false).sort((a,b) => (a.full_name||'').localeCompare(b.full_name||'','ar')); },
-resetUserPassword(userId) {
-const u = this.getUser(userId);
-if (!u) return null;
-const tempPw = Utils.generateTempPassword();
-u.password = tempPw;
-u.must_change_password = true;
-u.password_reset_at = new Date().toISOString();
-this.save();
-this.addAudit({ action:'reset_password', entity_type:'user', entity_id:userId, details:`إعادة تعيين كلمة مرور المستخدم: ${u.full_name}` });
-return tempPw;
-},
-changePassword(userId, newPw) {
-const u = this.getUser(userId);
-if (!u) return null;
-u.password = newPw;
-u.must_change_password = false;
-u.password_changed_at = new Date().toISOString();
-this.save();
-this.addAudit({ action:'change_password', entity_type:'user', entity_id:userId, details:`تغيير كلمة مرور: ${u.full_name}` });
-return u;
-},
-createUser(user) {
-if (this.getUserByUsername(user.username)) throw new Error('اسم المستخدم موجود مسبقاً');
-const id = this.data.nextUserId++;
-const newUser = { id, ...user, is_active:true, created_at:new Date().toISOString() };
-this.data.users.push(newUser);
-this.save();
-this.addAudit({ action:'create_user', entity_type:'user', entity_id:id, details:`إنشاء مستخدم: ${newUser.full_name} (${Utils.roleLabel(newUser.role)})` });
-return newUser;
-},
-updateUser(id, updates) {
-const u = this.getUser(id);
-if (!u) return null;
-Object.assign(u, updates, { updated_at:new Date().toISOString() });
-this.save();
-this.addAudit({ action:'update_user', entity_type:'user', entity_id:id, details:`تعديل بيانات المستخدم: ${u.full_name}` });
-return u;
-},
-deactivateUser(id) {
-const u = this.getUser(id);
-if (u) { u.is_active = false; this.save(); this.addAudit({ action:'deactivate_user', entity_type:'user', entity_id:id, details:`تعطيل المستخدم: ${u.full_name}` }); }
-},
-
-// Evaluations
-getEvaluations(filter={}) {
-let evals = this.data.evaluations.slice();
-if (filter.employee_id) evals = evals.filter(e => e.employee_id === filter.employee_id);
-if (filter.evaluator_id) evals = evals.filter(e => e.evaluator_id === filter.evaluator_id);
-return evals.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
-},
-getEvaluation(id) { return this.data.evaluations.find(e => e.id === id); },
-
-createEvaluation(data) {
-const id = this.data.nextEvalId++;
-const newEval = {
-id,
-employee_id: data.employee_id,
-evaluator_id: data.evaluator_id,
-evaluation_date: data.evaluation_date,
-call_type: data.call_type || '',
-observed_issue: data.observed_issue || '',
-observed_issue_other: data.observed_issue_other || '',
-action_taken: data.action_taken || '',
-action_taken_other: data.action_taken_other || '',
-// إجراء المشرف - يُسجل لاحقاً
-supervisor_action: '',
-supervisor_action_other: '',
-supervisor_notes: '',
-supervisor_action_by: null,
-supervisor_action_by_name: '',
-supervisor_action_at: null,
-notes: data.notes || '',
-items: data.items,
-section_scores: data.section_scores,
-total_score: data.total_score,
-percentage: data.percentage,
-grade: data.grade,
-status: data.status,
-created_at: new Date().toISOString(),
-updated_at: new Date().toISOString()
-};
-this.data.evaluations.push(newEval);
-
-// إشعار للموظف
-this.createNotification({
-user_id: data.employee_id,
-title: 'تم استلام تقييم جديد',
-message: `تم تقييمك بنسبة ${data.percentage}% - ${data.grade}`,
-type: data.status === 'ناجح' ? 'success' : 'warning'
-});
-
-this.save();
-const emp = this.getUser(data.employee_id);
-this.addAudit({ action:'create_evaluation', entity_type:'evaluation', entity_id:id, details:`إنشاء تقييم #${id} للموظف ${emp?emp.full_name:''} - ${data.percentage}%` });
-return newEval;
-},
-
-updateEvaluation(id, updates) {
-const ev = this.getEvaluation(id);
-if (!ev) return null;
-Object.assign(ev, updates, { updated_at:new Date().toISOString() });
-this.save();
-const emp = this.getUser(ev.employee_id);
-this.addAudit({ action:'update_evaluation', entity_type:'evaluation', entity_id:id, details:`تعديل تقييم #${id} للموظف ${emp?emp.full_name:''}` });
-return ev;
-},
-
-// تسجيل إجراء المشرف على التقييم
-recordSupervisorAction(id, data) {
-const ev = this.getEvaluation(id);
-if (!ev) return null;
-ev.supervisor_action = data.action || '';
-ev.supervisor_action_other = data.action_other || '';
-ev.supervisor_notes = data.notes || '';
-ev.supervisor_action_by = currentUser ? currentUser.id : null;
-ev.supervisor_action_by_name = currentUser ? currentUser.full_name : '';
-ev.supervisor_action_at = new Date().toISOString();
-ev.updated_at = new Date().toISOString();
-this.save();
-const emp = this.getUser(ev.employee_id);
-this.addAudit({ action:'supervisor_action', entity_type:'evaluation', entity_id:id, details:`تسجيل إجراء المشرف على تقييم #${id} (${emp?emp.full_name:''}): ${data.action || ''}` });
-// إشعار للموظف
-this.createNotification({
-user_id: ev.employee_id,
-title: 'تم تسجيل إجراء على تقييمك',
-message: `قام المشرف باتخاذ إجراء: ${data.action || ''}`
-});
-return ev;
-},
-
-approveEvaluation(id) {
-const ev = this.getEvaluation(id);
-if (!ev) return null;
-if (!ev.action_taken) { throw new Error('لا يمكن اعتماد التقييم بدون تحديد "الإجراء المتخذ"'); }
-ev.approved = true;
-ev.approved_at = new Date().toISOString();
-ev.approved_by = currentUser ? currentUser.id : null;
-this.save();
-this.addAudit({ action:'approve_evaluation', entity_type:'evaluation', entity_id:id, details:`اعتماد تقييم #${id}` });
-return ev;
-},
-
-deleteEvaluation(id) {
-const ev = this.getEvaluation(id);
-this.data.evaluations = this.data.evaluations.filter(e => e.id !== id);
-this.save();
-if (ev) this.addAudit({ action:'delete_evaluation', entity_type:'evaluation', entity_id:id, details:`حذف تقييم #${id}` });
-},
-
-getAvgScore(employeeId) {
-const evals = this.data.evaluations.filter(e => e.employee_id === employeeId);
-if (!evals.length) return 0;
-return Math.round(evals.reduce((s,e) => s+e.percentage, 0) / evals.length * 10) / 10;
-},
-
-// Notifications
-getNotifications(userId) {
-return this.data.notifications.filter(n => n.user_id === userId)
-.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
-},
-createNotification(n) {
-const id = this.data.nextNotifId++;
-this.data.notifications.push({ id, ...n, is_read:false, created_at:new Date().toISOString() });
-this.save();
-},
-markAllRead(userId) {
-this.data.notifications.filter(n => n.user_id === userId).forEach(n => n.is_read = true);
-this.save();
-},
-
-// Dashboard
-getDashboardStats(userId=null) {
-const isEmp = userId !== null;
-let evals = this.data.evaluations.slice();
-if (isEmp) evals = evals.filter(e => e.employee_id === userId);
-
-const total = evals.length;
-const avg = total ? Math.round(evals.reduce((s,e)=>s+e.percentage,0)/total*10)/10 : 0;
-const passed = evals.filter(e => e.status === 'ناجح').length;
-const failed = total - passed;
-
-const now = new Date();
-const todayStr = now.toISOString().substring(0,10);
-const weekAgo = new Date(now.getTime() - 7*24*60*60*1000);
-const monthAgo = new Date(now.getTime() - 30*24*60*60*1000);
-const today = evals.filter(e => e.evaluation_date === todayStr).length;
-const week = evals.filter(e => new Date(e.created_at) >= weekAgo).length;
-const month = evals.filter(e => new Date(e.created_at) >= monthAgo).length;
-
-const employees = this.data.users.filter(u => u.role === 'employee' && u.is_active);
-const performers = employees.map(u => {
-const ue = this.data.evaluations.filter(e => e.employee_id === u.id);
-// آخر تقييم معتمد (إن وُجد)، وإلا آخر تقييم بشكل عام
-const sorted = ue.slice().sort((a,b) => new Date(b.evaluation_date) - new Date(a.evaluation_date));
-const lastApproved = sorted.find(e => e.approved) || sorted[0];
-return {
-id:u.id, name:u.full_name,
-count: ue.length,
-avg: ue.length ? Math.round(ue.reduce((s,e)=>s+e.percentage,0)/ue.length*10)/10 : 0,
-lastEvalPct: lastApproved ? lastApproved.percentage : null,
-lastEvalDate: lastApproved ? lastApproved.evaluation_date : null,
-lastEvalApproved: !!(lastApproved && lastApproved.approved)
-};
-}).filter(p => p.count > 0);
-
-const top = isEmp ? [] : performers.slice().sort((a,b)=>b.avg-a.avg).slice(0,5);
-// "يحتاجون متابعة" = الموظفون الراسبون فقط (آخر تقييم ≤ 75%) بناءً على آخر تقييم معتمد
-// إذا لم يوجد تقييم معتمد، يُعتمد على آخر تقييم بشكل عام
-const low = isEmp ? [] : performers
-.filter(p => p.lastEvalPct !== null && p.lastEvalPct <= 75)
-.sort((a,b) => a.lastEvalPct - b.lastEvalPct)
-.slice(0,10);
-
-// Monthly trend (6 months)
-const trend = [];
-for (let i = 5; i >= 0; i--) {
-const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
-const ds = d.toISOString().substring(0,7);
-const me = evals.filter(e => (e.created_at||'').substring(0,7) === ds);
-const labels = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
-trend.push({
-month: labels[d.getMonth()],
-count: me.length,
-avg: me.length ? Math.round(me.reduce((s,e)=>s+e.percentage,0)/me.length*10)/10 : 0
-});
+// منع الضغطات المتكررة
+if (btn && btn.dataset && btn.dataset.busy === '1') return;
+let originalText = '', originalDisabled = false, originalHTML = '';
+if (btn) {
+btn.dataset.busy = '1';
+originalDisabled = !!btn.disabled;
+originalText = btn.textContent;
+originalHTML = btn.innerHTML;
+btn.disabled = true;
+btn.setAttribute('aria-busy', 'true');
+btn.textContent = savingText || 'جاري الحفظ...';
+}
+let result;
+try {
+result = await asyncFn();
+if (result === false) {
+// إشارة من المتداخلة بأن التحقق فشل أو لا حاجة لإغلاق المودال
+return result;
+}
+if (successText) {
+try { Toast.success(successText); } catch(_) {}
+}
+// إغلاق المودال إن وُجد
+try { if (typeof Modal !== 'undefined') Modal.close(); } catch(_) {}
+// إعادة رسم الصفحة الحالية لتحديث الواجهة فوراً
+try {
+if (typeof navigate === 'function' && typeof currentPage !== 'undefined' && currentPage && currentPage !== 'login') {
+const params = (typeof currentParams !== 'undefined') ? currentParams : {};
+navigate(currentPage, params);
+}
+} catch(_) {}
+return result;
+} catch (e) {
+console.error('submitWithFeedback error:', e);
+const msg = (e && e.message) ? e.message : 'حدث خطأ أثناء الحفظ، حاول مرة أخرى';
+try { Toast.error(msg); } catch(_) {}
+return undefined;
+} finally {
+if (btn) {
+btn.dataset.busy = '0';
+btn.disabled = originalDisabled;
+btn.removeAttribute('aria-busy');
+// استعادة المحتوى الأصلي (HTML للاحتفاظ بالأيقونات)
+if (originalHTML !== originalText) btn.innerHTML = originalHTML;
+else btn.textContent = originalText;
+}
+}
 }
 
-const grades = { 'ناجح':0, 'جيد جداً':0, 'راسب':0 };
-evals.forEach(e => { if (grades[e.grade] !== undefined) grades[e.grade]++; });
-
-const recent = evals.slice().sort((a,b) => new Date(b.created_at) - new Date(a.created_at)).slice(0,10);
-
-// Objections counts
-const objs = this.data.objections || [];
-const objOpen = objs.filter(o => o.status === 'pending' || o.status === 'under_review').length;
-const objClosed = objs.filter(o => o.status === 'accepted' || o.status === 'rejected').length;
-
-return {
-total, avg, passed, failed,
-today, week, month,
-top, low, trend, grades, recent,
-objOpen, objClosed
-};
-},
-
-// ============================================
-// Objections - الاعتراضات
-// ============================================
-getObjections(filter={}) {
-let list = (this.data.objections || []).slice();
-if (filter.employee_id) list = list.filter(o => o.employee_id === filter.employee_id);
-if (filter.evaluation_id) list = list.filter(o => o.evaluation_id === filter.evaluation_id);
-if (filter.status) list = list.filter(o => o.status === filter.status);
-if (filter.supervisor_name) {
-list = list.filter(o => {
-const emp = this.getUser(o.employee_id);
-return emp && emp.supervisor_name === filter.supervisor_name;
-});
-}
-return list.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
-},
-getObjection(id) { return (this.data.objections || []).find(o => o.id === id); },
-createObjection(data) {
-const id = this.data.nextObjectionId++;
-const year = new Date().getFullYear();
-const seq = String(id).padStart(4,'0');
-const ref = `OBJ-${year}-${seq}`;
-const obj = {
-id,
-ref_number: ref,
-evaluation_id: data.evaluation_id,
-employee_id: data.employee_id,
-reason: data.reason,
-attachments: data.attachments || [],
-status: 'pending',
-comments: [],
-created_at: new Date().toISOString(),
-updated_at: new Date().toISOString(),
-resolved_at: null,
-resolved_by: null,
-decision: null
-};
-if (!this.data.objections) this.data.objections = [];
-this.data.objections.push(obj);
-this.save();
-this.addAudit({ action:'submit_objection', entity_type:'objection', entity_id:id, details:`تم تقديم اعتراض ${ref}` });
-return obj;
-},
-updateObjection(id, updates) {
-const o = this.getObjection(id);
-if (!o) return null;
-Object.assign(o, updates, { updated_at: new Date().toISOString() });
-this.save();
-return o;
-},
-addObjectionComment(id, comment) {
-const o = this.getObjection(id);
-if (!o) return null;
-if (!o.comments) o.comments = [];
-o.comments.push({
-user_id: currentUser ? currentUser.id : null,
-user_name: currentUser ? currentUser.full_name : '-',
-role: currentUser ? currentUser.role : '',
-text: comment,
-created_at: new Date().toISOString()
-});
-o.updated_at = new Date().toISOString();
-this.save();
-return o;
-},
-resolveObjection(id, decision, response) {
-const o = this.getObjection(id);
-if (!o) return null;
-o.status = decision; // 'accepted' or 'rejected'
-o.decision = decision;
-o.resolved_at = new Date().toISOString();
-o.resolved_by = currentUser ? currentUser.id : null;
-if (response) {
-if (!o.comments) o.comments = [];
-o.comments.push({
-user_id: currentUser ? currentUser.id : null,
-user_name: currentUser ? currentUser.full_name : '-',
-role: currentUser ? currentUser.role : '',
-text: response,
-created_at: new Date().toISOString(),
-is_resolution: true
-});
-}
-this.save();
-this.addAudit({ action:'resolve_objection', entity_type:'objection', entity_id:id, details:`تم البت في الاعتراض ${o.ref_number} - ${decision==='accepted'?'مقبول':'مرفوض'}` });
-// notify employee
-this.createNotification({
-user_id: o.employee_id,
-title: 'تم الرد على اعتراضك',
-message: `الاعتراض ${o.ref_number}: ${decision==='accepted'?'تم قبوله':'تم رفضه'}`
-});
-return o;
-},
-
-// ============================================
-// Audit Log - سجل العمليات
-// ============================================
-addAudit(data) {
-if (!this.data.audit_logs) this.data.audit_logs = [];
-if (!this.data.nextAuditId) this.data.nextAuditId = 1;
-const log = {
-id: this.data.nextAuditId++,
-user_id: currentUser ? currentUser.id : null,
-user_name: currentUser ? currentUser.full_name : 'النظام',
-role: currentUser ? currentUser.role : '-',
-action: data.action,
-entity_type: data.entity_type || '-',
-entity_id: data.entity_id || null,
-details: data.details || '',
-timestamp: new Date().toISOString()
-};
-this.data.audit_logs.push(log);
-// keep last 2000
-if (this.data.audit_logs.length > 2000) this.data.audit_logs = this.data.audit_logs.slice(-2000);
-this.save();
-return log;
-},
-getAuditLogs(filter={}) {
-let list = (this.data.audit_logs || []).slice();
-if (filter.user_id) list = list.filter(l => l.user_id === filter.user_id);
-if (filter.action) list = list.filter(l => l.action === filter.action);
-if (filter.entity_type) list = list.filter(l => l.entity_type === filter.entity_type);
-if (filter.from) { const f = new Date(filter.from); list = list.filter(l => new Date(l.timestamp) >= f); }
-if (filter.to) { const t = new Date(filter.to); list = list.filter(l => new Date(l.timestamp) <= t); }
-return list.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
-}
-};
+// Expose globally for inline handlers
+window.submitWithFeedback = submitWithFeedback;
+window.ensureUIContainers = ensureUIContainers;
