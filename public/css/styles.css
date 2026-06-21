@@ -62,7 +62,10 @@ textarea.form-control{min-height:80px;resize:vertical}
 .menu-toggle{display:none;background:none;border:none;font-size:26px;line-height:1;color:var(--primary-dark);cursor:pointer;padding:4px 10px;border-radius:8px}
 .menu-toggle:hover{background:var(--bg)}
 /* خلفية معتمة خلف السايدبار على الجوال */
-.sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:150}
+.sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:999}
+/* زر إغلاق (×) داخل السايدبار - يظهر على الجوال فقط */
+.sidebar-close{display:none;position:absolute;top:12px;left:12px;background:rgba(255,255,255,0.12);border:none;color:#fff;font-size:26px;line-height:1;cursor:pointer;width:40px;height:40px;border-radius:10px;align-items:center;justify-content:center;z-index:1}
+.sidebar-close:hover{background:rgba(255,255,255,0.22)}
 .topbar{background:white;border-bottom:1px solid var(--border);padding:14px 24px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:50;box-shadow:var(--shadow)}
 .topbar-title{font-size:18px;font-weight:700}
 .topbar-actions{display:flex;align-items:center;gap:14px}
@@ -157,19 +160,24 @@ textarea.form-control{min-height:80px;resize:vertical}
 .modal{max-width:90vw}
 }
 
-/* Tablet / small laptop (≤900px) - sidebar collapses */
+/* Tablet / small laptop (≤900px) - السايدبار يبقى ظاهراً، تعديلات طفيفة فقط */
 @media (max-width:900px){
-.layout{grid-template-columns:1fr}
-.sidebar{position:fixed;top:0;right:0;width:min(280px,82vw);transform:translateX(100%);transition:transform 0.3s ease;z-index:200;box-shadow:-8px 0 24px rgba(0,0,0,0.25)}
-.sidebar.show{transform:translateX(0)}
-.sidebar-backdrop.show{display:block}
-.menu-toggle{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px}
 .content{padding:14px}
 .page-title{font-size:20px}
 }
 
 /* Tablet portrait (≤768px) - touch targets + stacking */
 @media (max-width:768px){
+/* === القائمة الجانبية كدُرج منزلق (RTL) === */
+.layout{grid-template-columns:1fr}
+.sidebar{position:fixed;top:0;right:0;height:100vh;width:min(280px,80vw);transform:translateX(100%);transition:transform 0.3s ease;z-index:1000;box-shadow:-8px 0 24px rgba(0,0,0,0.3)}
+.sidebar.show{transform:translateX(0)}
+.sidebar-backdrop.show{display:block}
+.menu-toggle{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px}
+.sidebar-close{display:inline-flex}
+/* قفل تمرير الصفحة خلف القائمة المفتوحة */
+body.sidebar-open{overflow:hidden}
+
 /* جميع الأزرار والحقول touch-friendly (44px أدنى حد) */
 .btn{min-height:44px;padding:12px 18px;font-size:15px}
 .btn-sm{min-height:36px;padding:8px 14px;font-size:13px}
