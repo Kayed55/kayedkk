@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="نظام الجودة للتقييم والتدريب - شركة محزم">
+  <meta name="theme-color" content="#06579F">
+  <meta name="author" content="Mahzam Co.">
+  <title>نظام الجودة للتقييم والتدريب | شركة محزم</title>
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="/assets/logo.svg">
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- App Stylesheet -->
+  <link rel="stylesheet" href="/css/styles.css">
+
+  <!-- Third-party Libraries (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.7.0/jspdf.plugin.autotable.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <!-- Supabase SDK (Cloud Backend + Realtime) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- EmailJS SDK (Transactional Email) -->
+  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+</head>
+<body>
+  <!-- Container for the app (populated dynamically by the router) -->
+  <div id="app">
+    <noscript>
+      <div style="padding:40px;text-align:center;font-family:'Cairo',sans-serif">
+        <h1 style="color:#06579F">⚠️ يتطلب هذا النظام تفعيل JavaScript</h1>
+        <p>الرجاء تفعيل JavaScript في متصفحك ثم إعادة تحميل الصفحة.</p>
+      </div>
+    </noscript>
+  </div>
+
+  <!--
+    App modules (load order matters):
+      00-supabase-sync.js → طبقة المزامنة مع Supabase + Realtime
+      01-constants.js → الشعار + الأسماء + معايير التقييم
+      02-db.js       → طبقة قاعدة البيانات (CRUD)
+      03-core.js     → calculateScores + Utils + Perms + Toast + Modal
+      services/email-service.js → طبقة الإشعارات البريدية (EmailJS)
+      04-pages.js    → جميع الصفحات + PDF/Excel exports
+      05-app.js      → التشغيل وبدء الجلسة
+  -->
+  <script src="/js/00-supabase-sync.js?v=5"></script>
+  <script src="/js/01-constants.js?v=5"></script>
+  <script src="/js/02-db.js?v=5"></script>
+  <script src="/js/03-core.js?v=5"></script>
+  <script src="/js/services/email-service.js?v=5"></script>
+  <script src="/js/04-pages.js?v=5"></script>
+  <script src="/js/05-app.js?v=5"></script>
+</body>
+</html>
