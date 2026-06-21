@@ -1,12 +1,13 @@
 /*!
  * نظام الجودة للتقييم والتدريب - شركة محزم
  *
- * Module: Supabase Sync Layer
+ * Module: Supabase Sync Layer (with Realtime)
  *
  * يربط النظام بـ Supabase ويعمل كطبقة مزامنة:
  *  - عند بدء التشغيل: يجلب كل البيانات من Supabase ويضعها في localStorage
  *  - بعد كل تعديل: يدفع التغييرات إلى Supabase (في الخلفية)
- *  - دورياً (كل 30 ثانية): يتحقق من تحديثات من أجهزة أخرى
+ *  - Realtime: يستمع لتغييرات الجداول من أجهزة أخرى ويُحدّث الواجهة فوراً
+ *  - دورياً (كل 30 ثانية): يتحقق من تحديثات (احتياطي)
  *
  * هذا الملف يجب أن يُحمَّل قبل 02-db.js
  *
@@ -19,10 +20,12 @@
 // إعدادات Supabase - ✏️ عدّل هذه القيم
 // ============================================
 const SUPABASE_CONFIG = {
-  url: 'https://hobhajqtgcyctfmcxkel.supabase.co',         // ← من Settings → API → Project URL
-  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhvYmhhanF0Z2N5Y3RmbWN4a2VsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4ODkzMDIsImV4cCI6MjA5NzQ2NTMwMn0.mTWqRmUyxShOSbwpnlHcmRU3FZ_KQ8OSLyG6sQzgmBY',                // ← من Settings → API → anon public key
-  syncInterval: 30000,                                  // مزامنة كل 30 ثانية
-  enableAutoSync: true                                  // فعّل/عطّل المزامنة التلقائية
+  url: 'https://YOUR_PROJECT_ID.supabase.co',         // ← من Settings → API → Project URL
+  anonKey: 'YOUR_ANON_PUBLIC_KEY_HERE',                // ← من Settings → API → anon public key
+  syncInterval: 30000,                                  // مزامنة احتياطية كل 30 ثانية
+  enableAutoSync: true,                                 // فعّل/عطّل المزامنة الدورية
+  enableRealtime: true,                                 // فعّل/عطّل Realtime subscriptions
+  uiRefreshDebounce: 250                                // تأخير إعادة رسم الواجهة (ms)
 };
 
 // ============================================
@@ -30,7 +33,7 @@ const SUPABASE_CONFIG = {
 // ============================================
 (function initSupabase() {
   if (typeof window.supabase === 'undefined') {
-    console.warn('⚠️ Supabase SDK غير محمّل. تأكد من إضافة <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script> في index.html');
+    console.warn('⚠️ Supabase SDK غير محمّل. أضف <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script> في index.html');
     return;
   }
 
@@ -39,7 +42,9 @@ const SUPABASE_CONFIG = {
     return;
   }
 
-  window.sb = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
+  window.sb = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
+    realtime: { params: { eventsPerSecond: 10 } }
+  });
   console.log('✓ Supabase client جاهز');
 })();
 
@@ -50,66 +55,113 @@ window.SupabaseSync = {
   ready: false,
   lastSync: null,
   syncInProgress: false,
+  pendingPull: null,             // promise لمنع pulls متزامنة
+  uiRefreshTimer: null,          // debounce timer لإعادة الرسم
+  realtimeChannels: [],          // قنوات Realtime المفتوحة
+  _hooked: false,                // علم لمنع hook مزدوج
 
   // قائمة الجداول التي ستتم مزامنتها (الترتيب مهم بسبب foreign keys)
   TABLES: ['users', 'criteria_config', 'evaluations', 'notifications', 'objections', 'audit_logs'],
 
   /**
-   * جلب جميع البيانات من Supabase وحفظها في localStorage
-   * يُستدعى مرة عند بدء التشغيل
+   * إعادة رسم الصفحة الحالية مع debounce لتفادي الرسم المتكرر
+   *
+   * Fix (2026-06): كانت الدالة تستخدم window.currentPage / window.currentParams
+   *   لكنّ تصاريح `let currentPage = ...` في 04-pages.js لا تُنشئ خصائص على
+   *   كائن window (بخلاف var/function). نتيجة ذلك كانت الشروط تفشل دائماً
+   *   ولم تُعَد رسم الواجهة عند وصول أحداث Realtime، مما أدى إلى عدم ظهور
+   *   تعديلات الحفظ والاعتماد إلا بعد تحديث الصفحة.
+   *   الحل: قراءة المتغيرات من نطاق السكربت العام مباشرةً (lexical scope)
+   *   بدلاً من window.X مع حماية بـ typeof لو لم يُحمَّل 04-pages.js بعد.
    */
-  async pullAll() {
-    if (!window.sb) return false;
-    try {
-      console.log('⬇️ Pulling data from Supabase...');
-      const results = {};
-
-      for (const table of this.TABLES) {
-        const { data, error } = await window.sb.from(table).select('*').order('id', { ascending: true });
-        if (error) {
-          console.warn(`⚠️ Failed to pull ${table}:`, error.message);
-          continue;
+  scheduleUIRefresh() {
+    if (this.uiRefreshTimer) clearTimeout(this.uiRefreshTimer);
+    this.uiRefreshTimer = setTimeout(() => {
+      this.uiRefreshTimer = null;
+      try {
+        // نقرأ المتغيرات من نطاق السكربت العام، لا من window
+        const _nav = (typeof navigate === 'function') ? navigate : null;
+        const _page = (typeof currentPage !== 'undefined') ? currentPage : null;
+        const _params = (typeof currentParams !== 'undefined') ? currentParams : {};
+        if (_nav && _page && _page !== 'login') {
+          _nav(_page, _params);
         }
-        results[table] = data || [];
-        console.log(`  ✓ ${table}: ${data.length} rows`);
+      } catch (e) {
+        console.warn('UI refresh failed:', e && e.message);
       }
-
-      // تحويل criteria_config إلى الصيغة المتوقعة في DB
-      let criteria = null;
-      if (results.criteria_config && results.criteria_config.length) {
-        const row = results.criteria_config.find(r => r.config_key === 'criteria');
-        if (row) criteria = row.config_value;
-      }
-
-      // بناء data في الصيغة المتوقعة من 02-db.js
-      const dbData = {
-        users: results.users || [],
-        evaluations: results.evaluations || [],
-        notifications: results.notifications || [],
-        objections: results.objections || [],
-        audit_logs: results.audit_logs || [],
-        criteria: criteria || (window.DEFAULT_CRITERIA ? JSON.parse(JSON.stringify(window.DEFAULT_CRITERIA)) : {}),
-        nextUserId: Math.max(0, ...(results.users || []).map(u => u.id)) + 1,
-        nextEvalId: Math.max(0, ...(results.evaluations || []).map(e => e.id)) + 1,
-        nextNotifId: Math.max(0, ...(results.notifications || []).map(n => n.id)) + 1,
-        nextObjectionId: Math.max(0, ...(results.objections || []).map(o => o.id)) + 1,
-        nextAuditId: Math.max(0, ...(results.audit_logs || []).map(a => a.id)) + 1
-      };
-
-      // حفظ في localStorage بنفس مفتاح DB
-      localStorage.setItem('qe_system_v6', JSON.stringify(dbData));
-      this.ready = true;
-      this.lastSync = Date.now();
-      console.log('✅ Pull complete. Data ready in localStorage.');
-      return true;
-    } catch (e) {
-      console.error('❌ Pull failed:', e);
-      return false;
-    }
+    }, SUPABASE_CONFIG.uiRefreshDebounce);
   },
 
   /**
-   * دفع كل البيانات الحالية في localStorage إلى Supabase (Bulk upsert)
+   * جلب جميع البيانات من Supabase وحفظها في localStorage
+   * - يستخدم pendingPull لمنع pulls متزامنة (deduplication)
+   */
+  async pullAll() {
+    if (!window.sb) return false;
+    if (this.pendingPull) return this.pendingPull;
+
+    this.pendingPull = (async () => {
+      try {
+        console.log('⬇️ Pulling data from Supabase...');
+        const results = {};
+
+        for (const table of this.TABLES) {
+          const { data, error } = await window.sb.from(table).select('*').order('id', { ascending: true });
+          if (error) {
+            console.warn(`⚠️ Failed to pull ${table}:`, error.message);
+            continue;
+          }
+          results[table] = data || [];
+          console.log(`  ✓ ${table}: ${data.length} rows`);
+        }
+
+        // تحويل criteria_config إلى الصيغة المتوقعة في DB
+        let criteria = null;
+        if (results.criteria_config && results.criteria_config.length) {
+          const row = results.criteria_config.find(r => r.config_key === 'criteria');
+          if (row) criteria = row.config_value;
+        }
+
+        // بناء data في الصيغة المتوقعة من 02-db.js
+        const dbData = {
+          users: results.users || [],
+          evaluations: results.evaluations || [],
+          notifications: results.notifications || [],
+          objections: results.objections || [],
+          audit_logs: results.audit_logs || [],
+          criteria: criteria || (window.DEFAULT_CRITERIA ? JSON.parse(JSON.stringify(window.DEFAULT_CRITERIA)) : {}),
+          nextUserId: Math.max(0, ...(results.users || []).map(u => u.id)) + 1,
+          nextEvalId: Math.max(0, ...(results.evaluations || []).map(e => e.id)) + 1,
+          nextNotifId: Math.max(0, ...(results.notifications || []).map(n => n.id)) + 1,
+          nextObjectionId: Math.max(0, ...(results.objections || []).map(o => o.id)) + 1,
+          nextAuditId: Math.max(0, ...(results.audit_logs || []).map(a => a.id)) + 1
+        };
+
+        // حفظ في localStorage بنفس مفتاح DB
+        localStorage.setItem('qe_system_v6', JSON.stringify(dbData));
+
+        // إعادة تحميل DB ليعكس البيانات الجديدة في الذاكرة
+        if (window.DB && typeof window.DB.init === 'function') {
+          window.DB.init();
+        }
+
+        this.ready = true;
+        this.lastSync = Date.now();
+        console.log('✅ Pull complete.');
+        return true;
+      } catch (e) {
+        console.error('❌ Pull failed:', e);
+        return false;
+      } finally {
+        this.pendingPull = null;
+      }
+    })();
+
+    return this.pendingPull;
+  },
+
+  /**
+   * دفع كل البيانات الحالية في localStorage إلى Supabase
    */
   async pushAll() {
     if (!window.sb) return false;
@@ -178,28 +230,72 @@ window.SupabaseSync = {
   },
 
   /**
-   * مزامنة دورية في الخلفية
-   * يدفع البيانات المحلية إلى Supabase ثم يسحب أي تحديثات جديدة
+   * المزامنة الدورية (احتياطية - Realtime يغطيها عادةً)
    */
   startAutoSync() {
     if (!SUPABASE_CONFIG.enableAutoSync) return;
     setInterval(async () => {
-      if (this.syncInProgress) return;
+      if (this.syncInProgress || this.pendingPull) return;
       await this.pushAll();
       await this.pullAll();
-      // إعادة تحميل DB من localStorage بعد المزامنة
-      if (window.DB && typeof window.DB.init === 'function') {
-        window.DB.init();
-      }
     }, SUPABASE_CONFIG.syncInterval);
     console.log(`🔄 Auto-sync enabled (every ${SUPABASE_CONFIG.syncInterval / 1000}s)`);
   },
 
   /**
+   * إعداد Realtime subscriptions لكل جدول
+   * عند أي تغيير: pullAll() ثم scheduleUIRefresh()
+   */
+  setupRealtime() {
+    if (!window.sb) return;
+    if (!SUPABASE_CONFIG.enableRealtime) {
+      console.log('ℹ️ Realtime معطّل في الإعدادات');
+      return;
+    }
+    if (this.realtimeChannels.length > 0) {
+      console.log('ℹ️ Realtime channels مُفعّلة بالفعل');
+      return;
+    }
+
+    this.TABLES.forEach(table => {
+      const channel = window.sb
+        .channel(`public:${table}`)
+        .on('postgres_changes',
+          { event: '*', schema: 'public', table: table },
+          async (payload) => {
+            // تجاهل الأحداث أثناء عملية push محلية لتفادي حلقات
+            if (this.syncInProgress) return;
+            console.log(`🔔 Realtime ${table} ${payload.eventType}`);
+            await this.pullAll();
+            this.scheduleUIRefresh();
+          }
+        )
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            console.log(`📡 Realtime مُفعّل: ${table}`);
+          }
+        });
+      this.realtimeChannels.push(channel);
+    });
+  },
+
+  /**
+   * إغلاق كل قنوات Realtime
+   */
+  teardownRealtime() {
+    if (!window.sb) return;
+    this.realtimeChannels.forEach(ch => {
+      try { window.sb.removeChannel(ch); } catch (_) {}
+    });
+    this.realtimeChannels = [];
+  },
+
+  /**
    * Hook بعد كل تعديل في DB لدفع التغييرات لـ Supabase
-   * يُستدعى تلقائياً من خلال wrapping DB.save
+   * - idempotent: لن يُربط مرتين
    */
   hookDBSave() {
+    if (this._hooked) return;
     if (!window.DB || typeof window.DB.save !== 'function') {
       console.warn('⚠️ DB غير جاهز، لن يتم hook الـ save');
       return;
@@ -211,6 +307,7 @@ window.SupabaseSync = {
       this.pushAll().catch(e => console.warn('Background push failed:', e.message));
       return result;
     };
+    this._hooked = true;
     console.log('✓ DB.save hooked - كل تعديل سيُدفع لـ Supabase تلقائياً');
   }
 };
@@ -227,14 +324,15 @@ window.addEventListener('DOMContentLoaded', async () => {
   // 1. اسحب البيانات من Supabase أولاً (لتجاوز ما في localStorage)
   await window.SupabaseSync.pullAll();
 
-  // 2. إعادة تحميل DB ليأخذ البيانات الجديدة
-  if (window.DB && typeof window.DB.init === 'function') {
-    window.DB.init();
-  }
-
-  // 3. اربط hook لدفع كل تعديل لاحق إلى Supabase
+  // 2. اربط hook لدفع كل تعديل لاحق إلى Supabase
   window.SupabaseSync.hookDBSave();
 
-  // 4. شغّل المزامنة الدورية
+  // 3. فعّل Realtime subscriptions
+  window.SupabaseSync.setupRealtime();
+
+  // 4. شغّل المزامنة الدورية الاحتياطية
   window.SupabaseSync.startAutoSync();
+
+  // 5. إعادة رسم الصفحة الحالية بعد المزامنة الأولى
+  window.SupabaseSync.scheduleUIRefresh();
 });
