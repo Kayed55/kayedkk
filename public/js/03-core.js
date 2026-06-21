@@ -53,12 +53,11 @@ sectionScores[s.key] = Math.round(total * 10) / 10;
 const totalScore = Math.round(Object.values(sectionScores).reduce((a,b)=>a+b, 0) * 10) / 10;
 const percentage = totalScore;
 
-// التصنيف الجديد:
-// 75% وأقل = راسب | 76-80% = جيد جداً | 81-100% = ناجح
+// التصنيف الثنائي:
+// 84% وأقل = راسب | 85-100% = ناجح
 let grade, status;
-if (percentage <= 84) { grade = 'راسب'; status = 'راسب'; }
-//else if (percentage <= 80) { grade = 'جيد جداً'; status = 'ناجح'; }
-else { grade = 'ناجح'; status = 'ناجح'; }
+if (percentage >= 85) { grade = 'ناجح'; status = 'ناجح'; }
+else { grade = 'راسب'; status = 'راسب'; }
 
 return { sectionScores, totalScore, percentage, grade, status, errors };
 }
@@ -72,17 +71,14 @@ formatDate(d) { if (!d) return '-'; const dt = new Date(d); return `${dt.getDate
 getInitials(n) { return (n||'?').split(' ').map(w=>w[0]).slice(0,2).join(''); },
 roleLabel(r) { return {admin:'مدير النلاإ', quality_officer:'موظف الجودة', supervisor:'مشرف', employee:'موغف'}[r] || r; },
 roleBadge(r) { const colors = {admin:'#1e40af', quality_officer:'#0891b2', supervisor:'#7c3aed', employee:'#64748b'}; return `<span class="badge" style="background:${colors[r]||'#64748b'}33;color:${colors[r]||'#64748b'}">${this.roleLabel(r)}</span>`; },
-// التصنيف: 75 وأقل = راسب | 76-80 = جيد جداً | 81+ = ناجح
+// التصنيف الثنائي: 84 وأقل = راسب | 85+ = ناجح
 gradeBadge(p) {
 let cls = 'badge-danger', txt = 'راسب';
-if (p >= 81) { cls = 'badge-success'; txt = 'ناجح'; }
-else if (p >= 76) { cls = 'badge-info'; txt = 'جيد جداً'; }
+if (p >= 85) { cls = 'badge-success'; txt = 'ناجح'; }
 return `<span class="badge ${cls}">${txt} ${p}%</span>`;
 },
 gradeLabel(p) {
-if (p >= 81) return 'ناجح';
-if (p >= 76) return 'جيد جداً';
-return 'راسب';
+return p >= 85 ? 'ناجح' : 'راسب';
 },
 timeAgo(d) {
 const diff = (Date.now() - new Date(d).getTime()) / 1000;

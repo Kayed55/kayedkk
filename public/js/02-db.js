@@ -361,7 +361,7 @@ avg: me.length ? Math.round(me.reduce((s,e)=>s+e.percentage,0)/me.length*10)/10 
 });
 }
 
-const grades = { 'ناجح':0, 'جيد جداً':0, 'راسب':0 };
+const grades = { 'ناجح':0, 'راسب':0 };
 evals.forEach(e => { if (grades[e.grade] !== undefined) grades[e.grade]++; });
 
 const recent = evals.slice().sort((a,b) => new Date(b.created_at) - new Date(a.created_at)).slice(0,10);
