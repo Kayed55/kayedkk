@@ -70,7 +70,7 @@ const Utils = {
 escape(s) { return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); },
 formatDate(d) { if (!d) return '-'; const dt = new Date(d); return `${dt.getDate().toString().padStart(2,'0')}/${(dt.getMonth()+1).toString().padStart(2,'0')}/${dt.getFullYear()}`; },
 getInitials(n) { return (n||'?').split(' ').map(w=>w[0]).slice(0,2).join(''); },
-roleLabel(r) { return {admin:'مدير النظام', quality_officer:'موظف الجودة', supervisor:'مشرف', employee:'موظف'}[r] || r; },
+roleLabel(r) { return {admin:'مدير النلاإ', quality_officer:'موظف الجودة', supervisor:'مشرف', employee:'موغف'}[r] || r; },
 roleBadge(r) { const colors = {admin:'#1e40af', quality_officer:'#0891b2', supervisor:'#7c3aed', employee:'#64748b'}; return `<span class="badge" style="background:${colors[r]||'#64748b'}33;color:${colors[r]||'#64748b'}">${this.roleLabel(r)}</span>`; },
 // التصنيف: 75 وأقل = راسب | 76-80 = جيد جداً | 81+ = ناجح
 gradeBadge(p) {
@@ -160,9 +160,25 @@ return (map[action] || []).includes(r);
 }
 };
 
+// Ensure toast & modal containers exist (idempotent)
+function ensureUIContainers() {
+if (!document.getElementById('toast-container')) {
+const c = document.createElement('div');
+c.id = 'toast-container';
+c.className = 'toast-container';
+document.body.appendChild(c);
+}
+if (!document.getElementById('modal-container')) {
+const m = document.createElement('div');
+m.id = 'modal-container';
+document.body.appendChild(m);
+}
+}
+
 // Toast
 const Toast = {
 show(msg, type='info') {
+ensureUIContainers();
 const c = document.getElementById('toast-container');
 const t = document.createElement('div');
 t.className = 'toast ' + type;
@@ -179,13 +195,100 @@ info(m){this.show(m,'info')}
 // Modal
 const Modal = {
 show(title, body, footer) {
+ensureUIContainers();
 document.getElementById('modal-container').innerHTML = `
 <div class="modal-overlay show" onclick="if(event.target===this)Modal.close()">
-<div class="modal">
-<div class="modal-header"><div class="modal-title">${title}</div><button class="modal-close" onclick="Modal.close()">×</button></div>
+<div class="modal" role="dialog" aria-modal="true" aria-label="${(title||'').replace(/<[^>]+>/g,'').replace(/"/g,'&quot;')}">
+<div class="modal-header"><div class="modal-title">${title}</div><button class="modal-close" onclick="Modal.close()" aria-label="إغلاق">×</button></div>
 <div class="modal-body">${body}</div>
 ${footer ? `<div class="modal-footer">${footer}</div>` : ''}
 </div></div>`;
+// منع تمرير الخلفية أثناء فتح المودال
+document.body.style.overflow = 'hidden';
 },
-close() { document.getElementById('modal-container').innerHTML = ''; }
+close() {
+const m = document.getElementById('modal-container');
+if (m) m.innerHTML = '';
+document.body.style.overflow = '';
+},
+isOpen() {
+const m = document.getElementById('modal-container');
+return !!(m && m.querySelector('.modal-overlay.show'));
+}
 };
+
+// إغلاق المودال بمفتاح ESC - يُربط مرة واحدة فقط
+if (typeof document !== 'undefined' && !window.__modalEscBound) {
+window.__modalEscBound = true;
+document.addEventListener('keydown', (e) => {
+if (e.key === 'Escape' && Modal.isOpen()) Modal.close();
+});
+}
+
+// ============================================
+// submitWithFeedback - الدالة المساعدة الموحّدة لجميع عمليات الحفظ
+// ============================================
+// - تُعطّل الزر وتُظهر "جاري الحفظ..."
+// - تنتظر الدالة غير المتزامنة
+// - عند النجاح: تعرض رسالة، تُغلق المودال، تُعيد رسم الصفحة الحالية
+// - عند الخطأ: تعرض Toast.error برسالة واضحة
+// - تمنع الضغطات المتكررة (re-entry guard)
+// - استخدام: await submitWithFeedback(btn, 'جاري الحفظ...', 'تم الحفظ', async () => { ... });
+// - إذا أرجعت الدالة المتداخلة `false` فلن تُغلَق المودال ولن تُعاد الصفحة (للتحقّق الفاشل)
+async function submitWithFeedback(btn, savingText, successText, asyncFn) {
+if (typeof asyncFn !== 'function') {
+console.warn('submitWithFeedback: asyncFn must be a function');
+return;
+}
+// منع الضغطات المتكررة
+if (btn && btn.dataset && btn.dataset.busy === '1') return;
+let originalText = '', originalDisabled = false, originalHTML = '';
+if (btn) {
+btn.dataset.busy = '1';
+originalDisabled = !!btn.disabled;
+originalText = btn.textContent;
+originalHTML = btn.innerHTML;
+btn.disabled = true;
+btn.setAttribute('aria-busy', 'true');
+btn.textContent = savingText || 'جاري الحفظ...';
+}
+let result;
+try {
+result = await asyncFn();
+if (result === false) {
+// إشارة من المتداخلة بأن التحقق فشل أو لا حاجة لإغلاق المودال
+return result;
+}
+if (successText) {
+try { Toast.success(successText); } catch(_) {}
+}
+// إغلاق المودال إن وُجد
+try { if (typeof Modal !== 'undefined') Modal.close(); } catch(_) {}
+// إعادة رسم الصفحة الحالية لتحديث الواجهة فوراً
+try {
+if (typeof navigate === 'function' && typeof currentPage !== 'undefined' && currentPage && currentPage !== 'login') {
+const params = (typeof currentParams !== 'undefined') ? currentParams : {};
+navigate(currentPage, params);
+}
+} catch(_) {}
+return result;
+} catch (e) {
+console.error('submitWithFeedback error:', e);
+const msg = (e && e.message) ? e.message : 'حدث خطأ أثناء الحفظ، حاول مرة أخرى';
+try { Toast.error(msg); } catch(_) {}
+return undefined;
+} finally {
+if (btn) {
+btn.dataset.busy = '0';
+btn.disabled = originalDisabled;
+btn.removeAttribute('aria-busy');
+// استعادة المحتوى الأصلي (HTML للاحتفاظ بالأيقونات)
+if (originalHTML !== originalText) btn.innerHTML = originalHTML;
+else btn.textContent = originalText;
+}
+}
+}
+
+// Expose globally for inline handlers
+window.submitWithFeedback = submitWithFeedback;
+window.ensureUIContainers = ensureUIContainers;
