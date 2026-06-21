@@ -252,11 +252,18 @@ return `
 }
 
 function attachLayoutHandlers() {
+// idempotent: عناصر العرض جديدة بعد كل navigate (innerHTML)، لكن نضع حارس dataset.bound
+// كطبقة دفاع إضافية لمنع الربط المكرر إذا تم استدعاء الدالة مرتين على نفس الـ DOM.
 document.querySelectorAll('[data-nav]').forEach(el => {
+if (el.dataset.bound === '1') return;
+el.dataset.bound = '1';
 el.addEventListener('click', () => navigate(el.dataset.nav));
 });
 const lo = document.getElementById('logout-btn');
-if (lo) lo.addEventListener('click', logout);
+if (lo && lo.dataset.bound !== '1') {
+lo.dataset.bound = '1';
+lo.addEventListener('click', logout);
+}
 }
 
 // ============================================
