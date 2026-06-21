@@ -56,8 +56,8 @@ const percentage = totalScore;
 // التصنيف الجديد:
 // 75% وأقل = راسب | 76-80% = جيد جداً | 81-100% = ناجح
 let grade, status;
-if (percentage <= 75) { grade = 'راسب'; status = 'راسب'; }
-else if (percentage <= 80) { grade = 'جيد جداً'; status = 'ناجح'; }
+if (percentage <= 84) { grade = 'راسب'; status = 'راسب'; }
+//else if (percentage <= 80) { grade = 'جيد جداً'; status = 'ناجح'; }
 else { grade = 'ناجح'; status = 'ناجح'; }
 
 return { sectionScores, totalScore, percentage, grade, status, errors };
