@@ -14,9 +14,8 @@
       ]
     },
     {
-      "source": "/(css|js|assets)/(.*)",
-      "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      { "source": "/(css|js|assets)/(.*)", 
+  "headers": [{ "key": "Cache-Control", "value": "public, max-age=300, must-revalidate" }] }
       ]
     },
     {
