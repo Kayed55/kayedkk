@@ -20,8 +20,8 @@
 // إعدادات Supabase - ✏️ عدّل هذه القيم
 // ============================================
 const SUPABASE_CONFIG = {
-  url: 'https://YOUR_PROJECT_ID.supabase.co',         // ← من Settings → API → Project URL
-  anonKey: 'YOUR_ANON_PUBLIC_KEY_HERE',                // ← من Settings → API → anon public key
+  url: 'https://hobhajqtgcyctfmcxkel.supabase.co',         // ← من Settings → API → Project URL
+  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhvYmhhanF0Z2N5Y3RmbWN4a2VsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4ODkzMDIsImV4cCI6MjA5NzQ2NTMwMn0.mTWqRmUyxShOSbwpnlHcmRU3FZ_KQ8OSLyG6sQzgmBY',                // ← من Settings → API → anon public key
   syncInterval: 30000,                                  // مزامنة احتياطية كل 30 ثانية
   enableAutoSync: true,                                 // فعّل/عطّل المزامنة الدورية
   enableRealtime: true,                                 // فعّل/عطّل Realtime subscriptions
