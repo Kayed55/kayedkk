@@ -505,9 +505,11 @@ return `
 <div class="menu-item" id="logout-btn"><span>🚪</span><span>تسجيل الخروج</span></div>
 </div>
 </aside>
+<div class="sidebar-backdrop" id="sidebar-backdrop"></div>
 <div class="main-content">
 <header class="topbar">
 <div style="display:flex;align-items:center;gap:14px">
+<button class="menu-toggle" id="menu-toggle" aria-label="فتح القائمة">☰</button>
 <div style="width:42px;height:42px;background:linear-gradient(135deg,#06579F,#202E4D);border-radius:10px;padding:5px;display:flex;align-items:center;justify-content:center">${MAHZAM_LOGO_LIGHT_SVG}</div>
 <div>
 <div class="topbar-title">${titles[currentPage] || ''}</div>
@@ -545,6 +547,31 @@ if (lo && lo.dataset.bound !== '1') {
 lo.dataset.bound = '1';
 lo.addEventListener('click', logout);
 }
+
+// === قائمة الجوال (هامبرغر + خلفية) ===
+const sb = document.querySelector('.sidebar');
+const bd = document.getElementById('sidebar-backdrop');
+const closeSidebar = () => { if (sb) sb.classList.remove('show'); if (bd) bd.classList.remove('show'); };
+const mt = document.getElementById('menu-toggle');
+if (mt && mt.dataset.bound !== '1') {
+mt.dataset.bound = '1';
+mt.addEventListener('click', e => {
+e.stopPropagation();
+const open = sb && sb.classList.contains('show');
+if (open) { closeSidebar(); }
+else { if (sb) sb.classList.add('show'); if (bd) bd.classList.add('show'); }
+});
+}
+if (bd && bd.dataset.bound !== '1') {
+bd.dataset.bound = '1';
+bd.addEventListener('click', closeSidebar);
+}
+// إغلاق القائمة عند اختيار عنصر تنقّل أو تسجيل الخروج (قبل إعادة الرسم)
+document.querySelectorAll('.sidebar [data-nav], #logout-btn').forEach(el => {
+if (el.dataset.boundClose === '1') return;
+el.dataset.boundClose = '1';
+el.addEventListener('click', closeSidebar);
+});
 }
 
 // ============================================
@@ -2567,7 +2594,7 @@ const impRows = Object.entries(data.improvementByAction).map(([action, m]) => `<
 
 const html = `<div style="padding:30px;font-family:'Cairo',sans-serif;direction:rtl;background:white">
 ${buildPDFHeader('⚖️ تقرير الإجراءات المتخذة', 'تحليل الإجراءات التصحيحية ونسبة التحسن', '#06579F')}
-<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px">
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:18px">
 <div style="background:#dbeafe;padding:12px;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:800;color:#06579F">${totalEvals}</div><div style="color:#64748b;font-size:11px">إجمالي التقييمات</div></div>
 <div style="background:#cffafe;padding:12px;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:800;color:#0891b2">${totalObs}</div><div style="color:#64748b;font-size:11px">ملاحظات مرصودة</div></div>
 <div style="background:#fef3c7;padding:12px;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:800;color:#d97706">${DB.data.evaluations.filter(e => e.action_taken).length}</div><div style="color:#64748b;font-size:11px">إجراءات متخذة</div></div>
@@ -2771,7 +2798,7 @@ return `<tr><td style="padding:6px;border:1px solid #cbd5e1;text-align:center">$
 }).join('');
 const html = `<div style="padding:30px;font-family:'Cairo',sans-serif;direction:rtl;background:white">
 ${buildPDFHeader('❌ تقرير الأخطاء المتكررة', arabicMonthName(monthKey), '#dc2626')}
-<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px">
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:18px">
 <div style="background:#fee2e2;padding:14px;border-radius:8px;text-align:center"><div style="font-size:22px;font-weight:800;color:#dc2626">${data.total}</div><div style="color:#64748b;font-size:12px">إجمالي الأخطاء</div></div>
 <div style="background:#dbeafe;padding:14px;border-radius:8px;text-align:center"><div style="font-size:22px;font-weight:800;color:#06579F">${data.evals.length}</div><div style="color:#64748b;font-size:12px">تقييمات الشهر</div></div>
 <div style="background:#cffafe;padding:14px;border-radius:8px;text-align:center"><div style="font-size:22px;font-weight:800;color:#0891b2">${data.sorted.length}</div><div style="color:#64748b;font-size:12px">أنواع الأخطاء</div></div>
@@ -3532,7 +3559,7 @@ const failed = evals.length - passed;
 
 const html = `
 ${buildPDFHeader('📊 تقرير التقييمات', `تاريخ التقرير: ${dateStr}`, '#06579F')}
-<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px">
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:20px">
 <div style="background:#dbeafe;padding:14px;border-radius:10px;text-align:center"><div style="font-size:24px;font-weight:800;color:#06579F">${evals.length}</div><div style="font-size:12px;color:#475569">إجمالي التقييمات</div></div>
 <div style="background:#d1fae5;padding:14px;border-radius:10px;text-align:center"><div style="font-size:24px;font-weight:800;color:#065f46">${totalAvg}%</div><div style="font-size:12px;color:#475569">متوسط الأداء</div></div>
 <div style="background:#cffafe;padding:14px;border-radius:10px;text-align:center"><div style="font-size:24px;font-weight:800;color:#0e7490">${passed}</div><div style="font-size:12px;color:#475569">ناجح</div></div>
@@ -3603,7 +3630,7 @@ return `<div style="padding:7px 14px;border-top:1px solid #f1f5f9;display:flex;j
 const html = `
 ${buildPDFHeader('📋 تقرير تقييم الجودة', `رقم التقييم: #${ev.id} - تاريخ الطباعة: ${dateStr}`, '#06579F')}
 
-<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px">
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px">
 <div style="background:#f8fafc;padding:12px;border-radius:10px;border:1px solid #e2e8f0">
 <div style="font-size:11px;color:#64748b;margin-bottom:4px">الموظف المُقيَّم</div>
 <div style="font-size:14px;font-weight:700;color:#1e293b">👤 ${Utils.escape(emp?emp.full_name:'-')}</div>
