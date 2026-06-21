@@ -2,18 +2,31 @@
  * نظام الجودة للتقييم والتدريب - شركة محزم
  * Mahzam Quality Evaluation & Training System
  *
- * Module: EmailJS Service Layer (Single-Template Edition)
- * طبقة بريد مركزية تستخدم قالبًا واحدًا في EmailJS لجميع أنواع الإشعارات.
+ * Module: EmailJS Service Layer (Universal Single-Template Edition)
+ * طبقة بريد مركزية تستخدم قالبًا واحدًا (template_universal) لجميع أنواع الإشعارات.
  *
- *  ✅ قالب واحد فقط في EmailJS — يتكيّف عبر متغيّرات عامّة.
+ *  ✅ قالب واحد فقط في EmailJS — يتكيّف عبر مجموعة متغيّرات موحّدة.
  *  ✅ Safe no-op — إذا كانت الإعدادات فارغة، النظام يستمر بالعمل دون كسر.
  *  ✅ Non-blocking — كل دوال الإرسال async وتُستدعى بعد نجاح الحفظ.
  *  ✅ Error-tolerant — أي فشل في الإرسال يُسجَّل في console + audit_logs.
+ *
+ * متغيّرات القالب الموحّد المتاحة:
+ *   to_email, to_name, subject, intro_message,
+ *   action_label, action_value, expires_info,
+ *   additional_info, security_note,
+ *   company_name, system_url
  *
  * @module email-service
  * @copyright (c) 2026 Mahzam Co.
  */
 'use strict';
+
+// ============================================
+// ثوابت القالب الموحّد
+// ============================================
+const UNIVERSAL_TEMPLATE_ID = 'template_universal';
+const COMPANY_NAME = 'شركة محزم';
+const SYSTEM_URL   = 'https://kayedkk.vercel.app';
 
 // ============================================
 // إعدادات EmailJS — ✏️ عدّل هذه القيم من dashboard.emailjs.com
@@ -22,14 +35,13 @@ const EMAILJS_CONFIG = {
   // المفاتيح الأساسية (مطلوبة) — قالب واحد لكل النظام
   publicKey:  'ecgxEwtvUHeDhEehm',           // من Account → API Keys → Public Key
   serviceId:  'service_iso6dyw',             // من Email Services → Service ID
-  templateId: 'template_xoivmpq',            // قالب موحّد واحد لكل الأحداث الخمسة
 
   // تفضيلات عامة
   enabled:    true,                                       // مفتاح رئيسي لإيقاف الإرسال كله
   fromName:   'نظام الجودة - شركة محزم',
   replyTo:    '',                                         // اتركه فارغًا لاستخدام الإعداد الافتراضي
   systemName: 'نظام الجودة للتقييم والتدريب',
-  companyName:'شركة محزم',
+  companyName: COMPANY_NAME,
   logLevel:   'warn'                                      // 'silent' | 'warn' | 'info'
 };
 
@@ -49,8 +61,8 @@ window.EmailService = (function() {
       && !EMAILJS_CONFIG.publicKey.startsWith('YOUR_')
       && EMAILJS_CONFIG.serviceId
       && !EMAILJS_CONFIG.serviceId.startsWith('YOUR_')
-      && EMAILJS_CONFIG.templateId
-      && !EMAILJS_CONFIG.templateId.startsWith('YOUR_');
+      && UNIVERSAL_TEMPLATE_ID
+      && !UNIVERSAL_TEMPLATE_ID.startsWith('YOUR_');
   }
 
   function _log(level, ...args) {
@@ -110,10 +122,22 @@ window.EmailService = (function() {
     } catch (_) { /* silent */ }
   }
 
-  // --- Core sender (low-level) ---
-  // ترسل عبر القالب الموحّد. غير معدية بأي استثناء.
-  async function _send(eventKey, params, opts) {
-    opts = opts || {};
+  // --- Params builder ---
+  // يُرجع كائن params بالقيم الافتراضية العامّة (company_name, system_url)
+  // ثم يدمج عليها overrides الخاصة بكل حدث.
+  function _buildParams(overrides) {
+    return Object.assign({
+      company_name: COMPANY_NAME,
+      system_url:   SYSTEM_URL
+    }, overrides || {});
+  }
+
+  // --- Universal sender (low-level) ---
+  // ترسل عبر القالب الموحّد فقط. غير معدية بأي استثناء.
+  // options: { eventKey?: string, silent?: boolean }
+  async function _sendUniversal(params, options) {
+    options = options || {};
+    const eventKey  = options.eventKey || 'email';
     const recipient = (params && params.to_email) ? params.to_email : '(unknown)';
 
     if (!init()) {
@@ -121,31 +145,29 @@ window.EmailService = (function() {
       return { ok: false, skipped: true, reason: 'not_configured' };
     }
 
-    // متغيّرات عامّة افتراضية + متغيّرات الحدث
-    const fullParams = Object.assign({
-      system_name:  EMAILJS_CONFIG.systemName,
-      company_name: EMAILJS_CONFIG.companyName,
-      from_name:    EMAILJS_CONFIG.fromName,
-      reply_to:     EMAILJS_CONFIG.replyTo || (params && params.to_email) || '',
-      event_type:   eventKey,
-      sent_at:      new Date().toLocaleString('ar-SA')
-    }, params || {});
+    // === EmailJS DEBUG (مؤقّت — يُحذف بعد التشخيص) ===
+    console.log('[EmailJS DEBUG] template:', UNIVERSAL_TEMPLATE_ID);
+    console.log('[EmailJS DEBUG] params:', JSON.stringify(params, null, 2));
+    const _missing = ['to_email','to_name','subject','intro_message','action_label','action_value','expires_info','additional_info','security_note','company_name','system_url']
+      .filter(k => params[k] === undefined || params[k] === null || String(params[k]).trim() === '');
+    if (_missing.length) console.error('[EmailJS DEBUG] MISSING/EMPTY:', _missing);
+    // === END DEBUG ===
 
     try {
       const result = await window.emailjs.send(
         EMAILJS_CONFIG.serviceId,
-        EMAILJS_CONFIG.templateId,
-        fullParams
+        UNIVERSAL_TEMPLATE_ID,
+        params
       );
       _log('info', `✓ تم إرسال بريد (${eventKey}) إلى ${recipient}`, result && result.status);
       _audit('email_sent', `(${eventKey}) → ${recipient}`);
-      if (!opts.silent) _toast('✓ تم إرسال إشعار بريدي', 'success');
+      if (!options.silent) _toast('✓ تم إرسال إشعار بريدي', 'success');
       return { ok: true, status: result && result.status, recipient: recipient };
     } catch (err) {
       const msg = (err && (err.text || err.message)) || String(err);
       _log('error', `❌ فشل إرسال البريد (${eventKey}) إلى ${recipient}:`, msg);
       _audit('email_failed', `(${eventKey}) → ${recipient}: ${msg}`);
-      if (!opts.silent) _toast('⚠️ تعذّر إرسال الإشعار البريدي (تم حفظ العملية)', 'warning');
+      if (!options.silent) _toast('⚠️ تعذّر إرسال الإشعار البريدي (تم حفظ العملية)', 'warning');
       return { ok: false, error: msg, recipient: recipient };
     }
   }
@@ -162,9 +184,19 @@ window.EmailService = (function() {
 
   function _grade(grade, status) { return grade || status || ''; }
 
+  // اسم العرض: name (إن وُجد) ثم full_name ثم البريد.
+  function _name(target, fallback) {
+    if (!target) return fallback || '';
+    return target.name || target.full_name || target.email || fallback || '';
+  }
+
+  function _dt(value) {
+    return new Date(value || Date.now()).toLocaleString('ar-SA');
+  }
+
   // ============================================
-  // الواجهة العامة - 5 دوال جاهزة للاستخدام
-  // كلها تستخدم نفس القالب لكن بمتغيّرات مختلفة
+  // الواجهة العامة - دوال الإرسال
+  // كلها تمرّ عبر _sendUniversal بقالب template_universal
   // ============================================
 
   /**
@@ -178,27 +210,23 @@ window.EmailService = (function() {
       _log('warn', '(evaluation) لا يوجد بريد للموظف. تم التخطي.');
       return { ok:false, skipped:true, reason:'no_email' };
     }
-    return _send('evaluation', {
-      to_email:      employee.email,
-      to_name:       employee.full_name,
-      subject:       `تقييم جديد بتاريخ ${evaluation.evaluation_date} - النتيجة ${evaluation.percentage}%`,
-      event_label:   'إشعار تقييم جديد',
-      title:         'تم إنشاء تقييم جديد لك',
-      intro:         `تم تسجيل تقييم جديد لك بنسبة ${evaluation.percentage}% (${_grade(evaluation.grade, evaluation.status)}). فيما يلي تفاصيل التقييم.`,
-      field1_label:  'اسم الموظف',
-      field1_value:  employee.full_name,
-      field2_label:  'الرقم الوظيفي',
-      field2_value:  employee.employee_number || '-',
-      field3_label:  'النتيجة',
-      field3_value:  `${evaluation.percentage}% (${_grade(evaluation.grade, evaluation.status)})`,
-      field4_label:  'المُقيِّم',
-      field4_value:  evaluator ? evaluator.full_name : '-',
-      field5_label:  'تاريخ التقييم',
-      field5_value:  evaluation.evaluation_date,
-      notes:         evaluation.notes || '',
-      action_label:  '',
-      action_url:    ''
-    });
+    const grade = _grade(evaluation.grade, evaluation.status);
+    const extra = [
+      `المُقيِّم: ${evaluator ? evaluator.full_name : '-'}`,
+      `الرقم الوظيفي: ${employee.employee_number || '-'}`
+    ];
+    if (evaluation.notes) extra.push(`ملاحظات: ${evaluation.notes}`);
+    return _sendUniversal(_buildParams({
+      to_email:        employee.email,
+      to_name:         _name(employee),
+      subject:         `تقييم جديد بتاريخ ${evaluation.evaluation_date} - النتيجة ${evaluation.percentage}%`,
+      intro_message:   `تم تسجيل تقييم جديد لك بنسبة ${evaluation.percentage}% (${grade}). فيما يلي تفاصيل التقييم.`,
+      action_label:    'النتيجة',
+      action_value:    `${evaluation.percentage}% (${grade})`,
+      expires_info:    `تاريخ التقييم: ${evaluation.evaluation_date}`,
+      additional_info: extra.join(' • '),
+      security_note:   'هذا إشعار رسمي من نظام الجودة.'
+    }), { eventKey: 'evaluation' });
   }
 
   /**
@@ -212,27 +240,18 @@ window.EmailService = (function() {
       _log('warn', '(approval) لا يوجد بريد للموظف. تم التخطي.');
       return { ok:false, skipped:true, reason:'no_email' };
     }
-    return _send('approval', {
-      to_email:     employee.email,
-      to_name:      employee.full_name,
-      subject:      `تم اعتماد تقييمك بتاريخ ${evaluation.evaluation_date}`,
-      event_label:  'إشعار اعتماد تقييم',
-      title:        'تم اعتماد تقييمك',
-      intro:        `تم اعتماد تقييمك بشكل نهائي بنسبة ${evaluation.percentage}% (${_grade(evaluation.grade, evaluation.status)}).`,
-      field1_label: 'اسم الموظف',
-      field1_value: employee.full_name,
-      field2_label: 'النتيجة المعتمدة',
-      field2_value: `${evaluation.percentage}% (${_grade(evaluation.grade, evaluation.status)})`,
-      field3_label: 'تاريخ التقييم',
-      field3_value: evaluation.evaluation_date,
-      field4_label: 'المعتمِد',
-      field4_value: approver ? approver.full_name : '-',
-      field5_label: 'تاريخ الاعتماد',
-      field5_value: new Date(evaluation.approved_at || Date.now()).toLocaleString('ar-SA'),
-      notes:        evaluation.notes || '',
-      action_label: '',
-      action_url:   ''
-    });
+    const grade = _grade(evaluation.grade, evaluation.status);
+    return _sendUniversal(_buildParams({
+      to_email:        employee.email,
+      to_name:         _name(employee),
+      subject:         `تم اعتماد تقييمك بتاريخ ${evaluation.evaluation_date}`,
+      intro_message:   `تم اعتماد تقييمك بشكل نهائي بنسبة ${evaluation.percentage}% (${grade}).`,
+      action_label:    'النتيجة المعتمدة',
+      action_value:    `${evaluation.percentage}% (${grade})`,
+      expires_info:    `تاريخ الاعتماد: ${_dt(evaluation.approved_at)}`,
+      additional_info: `المعتمِد: ${approver ? approver.full_name : '-'} • تاريخ التقييم: ${evaluation.evaluation_date}`,
+      security_note:   'هذا إشعار رسمي من نظام الجودة.'
+    }), { eventKey: 'approval' });
   }
 
   /**
@@ -248,27 +267,20 @@ window.EmailService = (function() {
     }
     const action = (actionData && actionData.action) || evaluation.supervisor_action || '-';
     const notes  = (actionData && actionData.notes)  || evaluation.supervisor_notes  || '';
-    return _send('action', {
-      to_email:     employee.email,
-      to_name:      employee.full_name,
-      subject:      `إجراء جديد على تقييمك بتاريخ ${evaluation.evaluation_date}`,
-      event_label:  'إجراء مشرف على تقييم',
-      title:        'تم اتخاذ إجراء على تقييمك',
-      intro:        `قام المشرف باتخاذ الإجراء التالي على تقييمك: ${action}.`,
-      field1_label: 'اسم الموظف',
-      field1_value: employee.full_name,
-      field2_label: 'نوع الإجراء',
-      field2_value: action,
-      field3_label: 'المشرف',
-      field3_value: supervisor ? supervisor.full_name : (evaluation.supervisor_action_by_name || '-'),
-      field4_label: 'تاريخ التقييم',
-      field4_value: evaluation.evaluation_date,
-      field5_label: 'تاريخ الإجراء',
-      field5_value: new Date(evaluation.supervisor_action_at || Date.now()).toLocaleString('ar-SA'),
-      notes:        notes,
-      action_label: '',
-      action_url:   ''
-    });
+    const supName = supervisor ? supervisor.full_name : (evaluation.supervisor_action_by_name || '-');
+    const extra = [`المشرف: ${supName}`, `تاريخ التقييم: ${evaluation.evaluation_date}`];
+    if (notes) extra.push(`ملاحظات: ${notes}`);
+    return _sendUniversal(_buildParams({
+      to_email:        employee.email,
+      to_name:         _name(employee),
+      subject:         `إجراء جديد على تقييمك بتاريخ ${evaluation.evaluation_date}`,
+      intro_message:   `قام المشرف باتخاذ الإجراء التالي على تقييمك: ${action}.`,
+      action_label:    'نوع الإجراء',
+      action_value:    action,
+      expires_info:    `تاريخ الإجراء: ${_dt(evaluation.supervisor_action_at)}`,
+      additional_info: extra.join(' • '),
+      security_note:   'هذا إشعار رسمي من نظام الجودة.'
+    }), { eventKey: 'action' });
   }
 
   /**
@@ -287,62 +299,71 @@ window.EmailService = (function() {
       return { ok:false, skipped:true, reason:'no_recipient' };
     }
     const employee = _user(objection.employee_id);
-    return _send('objection', {
-      to_email:     recipient.email,
-      to_name:      recipient.full_name,
-      subject:      `اعتراض جديد ${objection.ref_number} من ${employee ? employee.full_name : '-'}`,
-      event_label:  'اعتراض جديد على تقييم',
-      title:        `اعتراض جديد رقم ${objection.ref_number}`,
-      intro:        `تم تقديم اعتراض جديد من قِبَل الموظف ${employee ? employee.full_name : '-'} ويحتاج إلى مراجعتك.`,
-      field1_label: 'رقم الاعتراض',
-      field1_value: objection.ref_number,
-      field2_label: 'اسم الموظف',
-      field2_value: employee ? employee.full_name : '-',
-      field3_label: 'الرقم الوظيفي',
-      field3_value: employee ? (employee.employee_number || '-') : '-',
-      field4_label: 'رقم التقييم',
-      field4_value: String(objection.evaluation_id),
-      field5_label: 'تاريخ التقديم',
-      field5_value: new Date(objection.created_at || Date.now()).toLocaleString('ar-SA'),
-      notes:        objection.reason || '',
-      action_label: '',
-      action_url:   ''
-    });
+    const empName  = employee ? employee.full_name : '-';
+    const extra = [
+      `اسم الموظف: ${empName}`,
+      `الرقم الوظيفي: ${employee ? (employee.employee_number || '-') : '-'}`,
+      `رقم التقييم: ${objection.evaluation_id}`
+    ];
+    if (objection.reason) extra.push(`السبب: ${objection.reason}`);
+    return _sendUniversal(_buildParams({
+      to_email:        recipient.email,
+      to_name:         _name(recipient),
+      subject:         `اعتراض جديد ${objection.ref_number} من ${empName}`,
+      intro_message:   `تم تقديم اعتراض جديد من قِبَل الموظف ${empName} ويحتاج إلى مراجعتك.`,
+      action_label:    'رقم الاعتراض',
+      action_value:    objection.ref_number,
+      expires_info:    `تاريخ التقديم: ${_dt(objection.created_at)}`,
+      additional_info: extra.join(' • '),
+      security_note:   'هذا إشعار رسمي من نظام الجودة.'
+    }), { eventKey: 'objection' });
   }
 
   /**
    * sendNewUserEmail — يُستدعى بعد createUser
    * يرسل بيانات الدخول للمستخدم الجديد.
    */
-  async function sendNewUserEmail(user, tempPassword) {
-    if (!user) return { ok:false, skipped:true, reason:'no_user' };
-    if (!user.email) {
+  async function sendNewUserEmail(target, tempPassword) {
+    if (!target) return { ok:false, skipped:true, reason:'no_user' };
+    if (!target.email) {
       _log('warn', '(newUser) لا يوجد بريد للمستخدم. تم التخطي.');
       return { ok:false, skipped:true, reason:'no_email' };
     }
-    const loginUrl = (typeof window !== 'undefined' && window.location)
-                        ? (window.location.origin + window.location.pathname) : '';
-    return _send('newUser', {
-      to_email:     user.email,
-      to_name:      user.full_name,
-      subject:      `مرحبًا ${user.full_name} - تم إنشاء حسابك في نظام الجودة`,
-      event_label:  'تفعيل حساب جديد',
-      title:        `مرحبًا بك ${user.full_name}`,
-      intro:        `تم إنشاء حسابك بنجاح في نظام الجودة. فيما يلي بيانات الدخول الخاصة بك.`,
-      field1_label: 'الاسم الكامل',
-      field1_value: user.full_name,
-      field2_label: 'اسم المستخدم',
-      field2_value: user.username,
-      field3_label: 'الصلاحية',
-      field3_value: user.role || '-',
-      field4_label: 'القسم',
-      field4_value: user.department || '-',
-      field5_label: 'كلمة المرور المؤقتة',
-      field5_value: tempPassword || '(يرجى التواصل مع الإدارة)',
-      notes:        'يُرجى تغيير كلمة المرور فور أول دخول للنظام للحفاظ على أمان حسابك.',
-      action_label: loginUrl ? 'الدخول إلى النظام' : '',
-      action_url:   loginUrl
-    });
+    return _sendUniversal(_buildParams({
+      to_email:        target.email,
+      to_name:         _name(target),
+      subject:         'بيانات حسابك الجديد',
+      intro_message:   `تم إنشاء حساب جديد لك في ${COMPANY_NAME}. استخدم البيانات أدناه لتسجيل دخولك الأول.`,
+      action_label:    'كلمة المرور المؤقتة',
+      action_value:    tempPassword || '(يرجى التواصل مع الإدارة)',
+      expires_info:    `بريدك: ${target.email}`,
+      additional_info: 'يُرجى تسجيل الدخول وتغيير كلمة المرور فوراً للحفاظ على أمان حسابك.',
+      security_note:   'هذه كلمة مرور مؤقتة لمرّة واحدة. لا تشاركها مع أحد.'
+    }), { eventKey: 'newUser' });
+  }
+
+  /**
+   * sendPasswordResetEmail — يُستدعى بعد إعادة تعيين كلمة المرور
+   * @param {Object} target { email, full_name }
+   * @param {string} tempPassword كلمة المرور المؤقتة
+   */
+  async function sendPasswordResetEmail(target, tempPassword) {
+    if (!target) return { ok:false, skipped:true, reason:'no_user' };
+    if (!target.email) {
+      _log('warn', '(passwordReset) لا يوجد بريد للمستخدم. تم التخطي.');
+      return { ok:false, skipped:true, reason:'no_email' };
+    }
+    return _sendUniversal(_buildParams({
+      to_email:        target.email,
+      to_name:         _name(target),
+      subject:         'إعادة تعيين كلمة المرور',
+      intro_message:   'تلقّينا طلباً لإعادة تعيين كلمة المرور الخاصة بحسابك. تم توليد كلمة مرور مؤقتة لك.',
+      action_label:    'كلمة المرور المؤقتة',
+      action_value:    tempPassword || '(يرجى التواصل مع الإدارة)',
+      expires_info:    'يجب تغييرها فور تسجيل الدخول',
+      additional_info: 'سجّل دخولك بهذه الكلمة، وسيُطلب منك تغييرها فوراً بعد الدخول.',
+      security_note:   'إذا لم تطلب إعادة التعيين، تجاهل هذه الرسالة وتواصل مع إدارة النظام.'
+    }), { eventKey: 'passwordReset' });
   }
 
   /**
@@ -361,27 +382,63 @@ window.EmailService = (function() {
       return { ok:false, skipped:true, reason:'no_code' };
     }
     const ttl = (typeof ttlMin === 'number' && ttlMin > 0) ? ttlMin : 5;
-    return _send('loginCode', {
-      to_email:     target.email,
-      to_name:      target.full_name || target.email,
-      subject:      `كود الدخول إلى نظام الجودة - ${code}`,
-      event_label:  'كود تأكيد الدخول',
-      title:        '🔐 كود التحقق الثنائي',
-      intro:        `هذا هو كود التحقق الخاص بك لتسجيل الدخول إلى ${EMAILJS_CONFIG.systemName}. الكود صالح لمدة ${ttl} دقائق فقط.`,
-      field1_label: 'كود التحقق',
-      field1_value: code,
-      field2_label: 'مدة الصلاحية',
-      field2_value: `${ttl} دقائق`,
-      field3_label: 'البريد المستهدف',
-      field3_value: target.email,
-      field4_label: 'وقت الإصدار',
-      field4_value: new Date().toLocaleString('ar-SA'),
-      field5_label: 'تنبيه أمني',
-      field5_value: 'إذا لم تكن أنت من حاول الدخول، تجاهل هذه الرسالة وغيّر كلمة المرور فوراً.',
-      notes:        'لأمانك، لا تشارك هذا الكود مع أي شخص أبداً. فريق الدعم لن يطلب منك الكود.',
-      action_label: '',
-      action_url:   ''
-    }, { silent:true });
+    return _sendUniversal(_buildParams({
+      to_email:        target.email,
+      to_name:         _name(target),
+      subject:         'رمز تسجيل الدخول',
+      intro_message:   'تلقّينا طلب تسجيل دخول جديد لحسابك. استخدم الرمز التالي لإتمام عملية تسجيل الدخول.',
+      action_label:    'رمز التحقّق',
+      action_value:    code,
+      expires_info:    `صالح لمدة ${ttl} دقائق فقط`,
+      additional_info: 'أدخل هذا الرمز في الشاشة الظاهرة أمامك لإكمال تسجيل الدخول.',
+      security_note:   'إذا لم تطلب تسجيل الدخول، تجاهل هذه الرسالة وغيّر كلمة المرور فوراً.'
+    }), { eventKey: 'loginCode', silent: true });
+  }
+
+  /**
+   * sendNotificationEmail — إشعار عام من النظام
+   * @param {Object} target       { email, full_name }
+   * @param {Object} notification  { title, body, type }
+   */
+  async function sendNotificationEmail(target, notification) {
+    if (!target || !target.email) {
+      _log('warn', '(notification) لا يوجد بريد للمستلم. تم التخطي.');
+      return { ok:false, skipped:true, reason:'no_email' };
+    }
+    notification = notification || {};
+    return _sendUniversal(_buildParams({
+      to_email:        target.email,
+      to_name:         _name(target),
+      subject:         notification.title || 'إشعار جديد من النظام',
+      intro_message:   notification.body,
+      action_label:    'نوع الإشعار',
+      action_value:    notification.type || 'إشعار عام',
+      expires_info:    '',
+      additional_info: 'افتح النظام لعرض التفاصيل الكاملة واتخاذ الإجراء المطلوب.',
+      security_note:   'هذا إشعار رسمي من إدارة النظام.'
+    }), { eventKey: 'notification' });
+  }
+
+  /**
+   * sendTestEmail — رسالة فحص للتأكد من سلامة إعدادات EmailJS
+   * @param {Object} target { email, name }
+   */
+  async function sendTestEmail(target) {
+    if (!target || !target.email) {
+      _log('warn', '(test) لا يوجد بريد للمستلم. تم التخطي.');
+      return { ok:false, skipped:true, reason:'no_email' };
+    }
+    return _sendUniversal(_buildParams({
+      to_email:        target.email,
+      to_name:         _name(target, 'مستخدم اختبار'),
+      subject:         'اختبار قالب EmailJS',
+      intro_message:   'هذه رسالة اختبارية للتأكد من أن نظام البريد يعمل بشكل صحيح.',
+      action_label:    'حالة النظام',
+      action_value:    'OK',
+      expires_info:    new Date().toLocaleString('ar-SA'),
+      additional_info: 'إذا استلمت هذه الرسالة، فإن إعدادات EmailJS سليمة.',
+      security_note:   'لا حاجة لأي إجراء — هذه رسالة فحص فقط.'
+    }), { eventKey: 'test' });
   }
 
   // ============================================
@@ -392,13 +449,16 @@ window.EmailService = (function() {
     isReady: function() { _initialized || init(); return _ready; },
     isConfigured: _isConfigured,
     config: EMAILJS_CONFIG,    // للقراءة فقط (للديباغ)
-    // 6 دوال الإرسال:
-    sendEvaluationEmail: sendEvaluationEmail,
-    sendApprovalEmail:   sendApprovalEmail,
-    sendActionEmail:     sendActionEmail,
-    sendObjectionEmail:  sendObjectionEmail,
-    sendNewUserEmail:    sendNewUserEmail,
-    sendLoginCodeEmail:  sendLoginCodeEmail
+    // دوال الإرسال (كلها عبر القالب الموحّد):
+    sendEvaluationEmail:    sendEvaluationEmail,
+    sendApprovalEmail:      sendApprovalEmail,
+    sendActionEmail:        sendActionEmail,
+    sendObjectionEmail:     sendObjectionEmail,
+    sendNewUserEmail:       sendNewUserEmail,
+    sendPasswordResetEmail: sendPasswordResetEmail,
+    sendLoginCodeEmail:     sendLoginCodeEmail,
+    sendNotificationEmail:  sendNotificationEmail,
+    sendTestEmail:          sendTestEmail
   };
 })();
 
