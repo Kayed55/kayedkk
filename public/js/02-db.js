@@ -288,6 +288,21 @@ markAllRead(userId) {
 this.data.notifications.filter(n => n.user_id === userId).forEach(n => n.is_read = true);
 this.save();
 },
+markNotificationRead(id) {
+const n = this.data.notifications.find(x => x.id === id);
+if (n && !n.is_read) { n.is_read = true; this.save(); }
+return n;
+},
+deleteNotification(id) {
+const idx = this.data.notifications.findIndex(x => x.id === id);
+if (idx > -1) {
+const n = this.data.notifications[idx];
+this.data.notifications.splice(idx, 1);
+this.save();
+return n;
+}
+return null;
+},
 
 // Dashboard
 getDashboardStats(userId=null) {
