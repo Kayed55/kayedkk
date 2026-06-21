@@ -106,7 +106,10 @@ window.SupabaseSync = {
         const results = {};
 
         for (const table of this.TABLES) {
-          const { data, error } = await window.sb.from(table).select('*').order('id', { ascending: true });
+          // أمان: نقرأ من users_public (view بدون كلمات السر) بدلاً من users
+          // كلمات السر يجب ألا تصل للمتصفح أبداً عبر anon key.
+          const readFrom = (table === 'users') ? 'users_public' : table;
+          const { data, error } = await window.sb.from(readFrom).select('*').order('id', { ascending: true });
           if (error) {
             console.warn(`⚠️ Failed to pull ${table}:`, error.message);
             continue;
