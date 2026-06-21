@@ -399,11 +399,14 @@ const id = this.data.nextObjectionId++;
 const year = new Date().getFullYear();
 const seq = String(id).padStart(4,'0');
 const ref = `OBJ-${year}-${seq}`;
+// جلب اسم المشرف من التقييم المرتبط لكي يظهر الاعتراض في لوحة المشرف
+const _ev = (this.data.evaluations || []).find(e => e.id === data.evaluation_id);
 const obj = {
 id,
 ref_number: ref,
 evaluation_id: data.evaluation_id,
 employee_id: data.employee_id,
+supervisor_name: _ev ? (_ev.supervisor_name || null) : null,
 reason: data.reason,
 attachments: data.attachments || [],
 status: 'pending',
