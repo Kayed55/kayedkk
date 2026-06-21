@@ -66,6 +66,45 @@ localStorage.removeItem('qe_current_user');
 navigate('login');
 }
 
+// مربّع تأكيد خطر (زر تأكيد أحمر + إلغاء) — يُرجع Promise<boolean>
+function confirmDanger(message, confirmLabel) {
+return new Promise(resolve => {
+const body = `<div style="font-size:15px;line-height:1.9;color:var(--text)">${message}</div>`;
+const footer = `<button class="btn btn-secondary" id="cd-cancel">إلغاء</button><button class="btn btn-danger" id="cd-ok">${confirmLabel||'🗑️ حذف نهائي'}</button>`;
+Modal.show('⚠️ تأكيد الحذف', body, footer);
+let done = false;
+const finish = v => { if (done) return; done = true; Modal.close(); resolve(v); };
+const ok = document.getElementById('cd-ok');
+const cancel = document.getElementById('cd-cancel');
+if (ok) ok.addEventListener('click', () => finish(true));
+if (cancel) cancel.addEventListener('click', () => finish(false));
+// إغلاق المودال بأي طريقة أخرى (× / الخلفية / Escape) = إلغاء
+const ov = document.querySelector('#modal-container .modal-overlay');
+if (ov) ov.addEventListener('click', e => { if (e.target === ov) finish(false); });
+});
+}
+
+// معالج حذف تقييم موحّد: صلاحية → تأكيد أحمر → حذف ذرّي → تنقّل لتحديث كل الأقسام
+async function handleDeleteEval(btn, navTarget, navParams) {
+if (!Perms.can('delete_evaluation')) { Toast.error('🚫 ليس لديك صلاحية لحذف التقييمات'); return; }
+const id = parseInt(btn.dataset.delEval);
+const ok = await confirmDanger('هل أنت متأكد من حذف هذا التقييم؟<br>سيُحذف <b>نهائياً</b> من جميع التقارير والإحصائيات ولوحة التحكم وملف الموظف والاعتراضات المرتبطة، <b>ولا يمكن التراجع</b>.');
+if (!ok) return;
+if (btn.dataset.busy === '1') return;
+btn.dataset.busy = '1'; btn.disabled = true; const orig = btn.textContent; btn.textContent = 'جاري الحذف...';
+const restore = () => { btn.disabled = false; btn.textContent = orig; btn.dataset.busy = '0'; };
+try {
+const res = await DB.deleteEvaluation(id);
+if (!res || !res.ok) { Toast.error((res && res.message) || 'تعذّر الحذف'); restore(); return; }
+Toast.success('✓ تم حذف التقييم نهائياً' + (res.deleted_objections ? ` (ومعه ${res.deleted_objections} اعتراض مرتبط)` : ''));
+if (typeof navigate === 'function') navigate(navTarget || 'evaluations', navParams || {});
+} catch (err) {
+console.error('delete eval failed:', err);
+Toast.error('تعذّر الحذف — حاول مجدداً');
+restore();
+}
+}
+
 // ============================================
 // Login
 // ============================================
@@ -1433,7 +1472,7 @@ const evals = DB.getEvaluations(isEmp ? { employee_id: currentUser.id } : {});
 const rows = evals.map(e => {
 const emp = DB.getUser(e.employee_id);
 const evr = DB.getUser(e.evaluator_id);
-const canDelete = currentUser.role === 'admin' || (currentUser.role === 'supervisor' && e.evaluator_id === currentUser.id);
+const canDelete = Perms.can('delete_evaluation');
 return `<tr>
 <td>#${e.id}</td>
 <td>${Utils.escape(emp?emp.full_name:'-')}</td>
@@ -4218,14 +4257,7 @@ navigate('edit-evaluation', { id: parseInt(b.dataset.editEval) });
 }));
 document.querySelectorAll('[data-del-eval]').forEach(b => b.addEventListener('click', async e => {
 e.stopPropagation();
-if (!confirm('هل أنت متأكد من حذف هذا التقييم؟')) return;
-const btn = b;
-await submitWithFeedback(btn, 'جاري الحذف...', null, async () => {
-DB.deleteEvaluation(parseInt(b.dataset.delEval));
-Toast.success('تم الحذف');
-if (typeof navigate === 'function') navigate('settings', { tab:'evals' });
-return true;
-});
+await handleDeleteEval(b, 'settings', { tab:'evals' });
 }));
 }
 }
@@ -4480,15 +4512,7 @@ tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none';
 });
 document.querySelectorAll('[data-del-eval]').forEach(b => b.addEventListener('click', async e => {
 e.stopPropagation();
-const btn = b;
-const id = parseInt(b.dataset.delEval);
-if (!confirm('هل أنت متأكد من حذف هذا التقييم؟')) return;
-await submitWithFeedback(btn, 'جاري الحذف...', null, async () => {
-DB.deleteEvaluation(id);
-Toast.success('تم حذف التقييم');
-if (typeof navigate === 'function') navigate('evaluations');
-return true;
-});
+await handleDeleteEval(b, 'evaluations');
 }));
 const xls = document.getElementById('exp-xlsx');
 if (xls) xls.addEventListener('click', exportListXLSX);

@@ -247,11 +247,40 @@ try { if (window.EmailService) window.EmailService.sendApprovalEmail(ev).catch(f
 return ev;
 },
 
-deleteEvaluation(id) {
+// حذف ذرّي متزامن: السحابة أولاً (RPC) ثم مزامنة محلية لضمان اتساق كل الأقسام.
+// يُرجع: { ok, employee_name?, deleted_objections?, message? }
+async deleteEvaluation(id) {
 const ev = this.getEvaluation(id);
+if (!ev) return { ok:false, message:'التقييم غير موجود' };
+
+if (window.sb && window.sb.rpc) {
+const actor = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : {};
+const { data, error } = await window.sb.rpc('delete_evaluation_cascade', {
+p_eval_id:    id,
+p_actor_id:   actor.id || null,
+p_actor_name: actor.full_name || 'النظام',
+p_actor_role: actor.role || '-'
+});
+if (error) { console.error('delete_evaluation_cascade:', error.message); return { ok:false, message:error.message }; }
+const row = Array.isArray(data) ? data[0] : data;
+if (!row || !row.ok) return { ok:false, message:(row && row.message) || 'تعذّر الحذف' };
+// إعادة سحب البيانات من السحابة → كل الأقسام (لوحة/تقارير/ملف الموظف/اعتراضات/تدقيق) تتسق فوراً
+if (window.SupabaseSync && typeof window.SupabaseSync.pullAll === 'function') {
+try { await window.SupabaseSync.pullAll(); } catch(_){}
+} else {
 this.data.evaluations = this.data.evaluations.filter(e => e.id !== id);
+this.data.objections  = (this.data.objections||[]).filter(o => o.evaluation_id !== id);
+localStorage.setItem(this.KEY, JSON.stringify(this.data));
+}
+return { ok:true, employee_name:row.employee_name, deleted_objections:row.deleted_objections || 0 };
+}
+
+// مسار محلي احتياطي (بدون Supabase)
+this.data.evaluations = this.data.evaluations.filter(e => e.id !== id);
+this.data.objections  = (this.data.objections||[]).filter(o => o.evaluation_id !== id);
 this.save();
-if (ev) this.addAudit({ action:'delete_evaluation', entity_type:'evaluation', entity_id:id, details:`حذف تقييم #${id}` });
+this.addAudit({ action:'delete_evaluation', entity_type:'evaluation', entity_id:id, details:`حذف تقييم #${id} للموظف ${this.getUser(ev.employee_id)?.full_name||'-'} (محلي)` });
+return { ok:true, deleted_objections:0 };
 },
 
 getAvgScore(employeeId) {
