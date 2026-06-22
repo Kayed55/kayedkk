@@ -3218,18 +3218,25 @@ const btn = e.currentTarget;
 await submitWithFeedback(btn, 'جاري الإرسال...', null, async () => {
 const reason = document.getElementById('obj-reason').value.trim();
 if (!reason || reason.length < 10) { Toast.error('يجب كتابة سبب الاعتراض بشكل واضح (10 أحرف على الأقل)'); return false; }
-const obj = DB.createObjection({
-evaluation_id: parseInt(evaluationId),
-employee_id: currentUser.id,
-reason,
-attachments
+let objId = null, objRef = null;
+if (window.sb && window.sb.rpc) {
+const { data, error } = await window.sb.rpc('create_objection', {
+p_session_token: (window.getSessionToken ? window.getSessionToken() : null),
+p_evaluation_id: parseInt(evaluationId), p_reason: reason, p_attachments: attachments
 });
-if (obj && obj._duplicate) {
-Toast.warning('تم رصد طلب مكرر - استخدمنا الاعتراض السابق');
+const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
+if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر تقديم الاعتراض'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
+objId = row.objection_id; objRef = row.ref_number;
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+try { const ob=DB.getObjection(objId); if (ob && window.EmailService) window.EmailService.sendObjectionEmail(ob).catch(()=>{}); } catch(_){}
+Toast.success(`تم تقديم الاعتراض بنجاح (${objRef})`);
 } else {
-Toast.success(`تم تقديم الاعتراض بنجاح (${obj.ref_number})`);
+const obj = DB.createObjection({ evaluation_id: parseInt(evaluationId), employee_id: currentUser.id, reason, attachments });
+if (obj && obj._duplicate) Toast.warning('تم رصد طلب مكرر - استخدمنا الاعتراض السابق');
+else Toast.success(`تم تقديم الاعتراض بنجاح (${obj.ref_number})`);
+objId = obj.id;
 }
-if (typeof navigate === 'function') navigate('view-objection', { id: obj.id });
+if (typeof navigate === 'function') navigate('view-objection', { id: objId });
 return true;
 });
 });
@@ -3375,7 +3382,16 @@ const btn = e.currentTarget;
 await submitWithFeedback(btn, 'جاري الإضافة...', null, async () => {
 const text = document.getElementById('obj-comment').value.trim();
 if (!text) { Toast.error('اكتب التعليق'); return false; }
+if (window.sb && window.sb.rpc) {
+const { data, error } = await window.sb.rpc('add_objection_comment', {
+p_session_token: (window.getSessionToken ? window.getSessionToken() : null), p_objection_id: oid, p_text: text
+});
+const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
+if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر إضافة التعليق'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+} else {
 DB.addObjectionComment(oid, text);
+}
 Toast.success('تم إضافة التعليق');
 if (typeof navigate === 'function') navigate('view-objection', { id: oid });
 return true;
