@@ -254,12 +254,9 @@ const ev = this.getEvaluation(id);
 if (!ev) return { ok:false, message:'التقييم غير موجود' };
 
 if (window.sb && window.sb.rpc) {
-const actor = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : {};
+// الهوية تُشتقّ من رمز الجلسة على السيرفر — لا نمرّر actor من العميل
 const { data, error } = await window.sb.rpc('delete_evaluation_cascade', {
-p_eval_id:    id,
-p_actor_id:   actor.id || null,
-p_actor_name: actor.full_name || 'النظام',
-p_actor_role: actor.role || '-',
+p_eval_id: id,
 p_session_token: (window.getSessionToken ? window.getSessionToken() : null)
 });
 if (error) { console.error('delete_evaluation_cascade:', error.message); return { ok:false, message:error.message }; }
