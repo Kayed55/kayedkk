@@ -4000,7 +4000,7 @@ htmlToPDF(html, fname)
 function renderEditEvaluation(id) {
 const ev = DB.getEvaluation(id);
 if (!ev) return '<div class="alert alert-danger">التقييم غير موجود</div>';
-const canEdit = currentUser.role === 'admin' || (currentUser.role === 'supervisor' && ev.evaluator_id === currentUser.id);
+const canEdit = Perms.can('edit_evaluation') || (currentUser.role === 'supervisor' && ev.evaluator_id === currentUser.id);
 if (!canEdit) return '<div class="alert alert-danger">ليس لديك صلاحية لتعديل هذا التقييم</div>';
 
 const employees = DB.getUsers({ role:'employee', active:true });
