@@ -169,6 +169,23 @@ if (ov) ov.addEventListener('click', e => { if (e.target === ov) finish(false); 
 }
 
 // معالج حذف تقييم موحّد: صلاحية → تأكيد أحمر → حذف ذرّي → تنقّل لتحديث كل الأقسام
+// معالجة موحّدة لنتائج RPC المرفوضة بسبب الجلسة/الصلاحية
+// تُرجع 'expired' (سجّلت الخروج) أو 'forbidden' أو null (ليس خطأ مصادقة)
+function handleSessionError(message) {
+const m = message || '';
+if (m.indexOf('انتهت الجلسة') !== -1 || m.indexOf('الرمز غير صالح') !== -1) {
+clearSession();
+Toast.error('انتهت جلستك، يرجى تسجيل الدخول مجدداً');
+if (typeof navigate === 'function') navigate('login');
+return 'expired';
+}
+if (m.indexOf('ليس لديك صلاحية') !== -1 || m.indexOf('للمدير فقط') !== -1) {
+Toast.error('ليس لديك صلاحية لهذه العملية');
+return 'forbidden';
+}
+return null;
+}
+
 async function handleDeleteEval(btn, navTarget, navParams) {
 if (!Perms.can('delete_evaluation')) { Toast.error('🚫 ليس لديك صلاحية لحذف التقييمات'); return; }
 const id = parseInt(btn.dataset.delEval);
@@ -179,7 +196,12 @@ btn.dataset.busy = '1'; btn.disabled = true; const orig = btn.textContent; btn.t
 const restore = () => { btn.disabled = false; btn.textContent = orig; btn.dataset.busy = '0'; };
 try {
 const res = await DB.deleteEvaluation(id);
-if (!res || !res.ok) { Toast.error((res && res.message) || 'تعذّر الحذف'); restore(); return; }
+if (!res || !res.ok) {
+const handled = handleSessionError(res && res.message);
+if (!handled) Toast.error((res && res.message) || 'تعذّر الحذف');
+restore();
+return;
+}
 Toast.success('✓ تم حذف التقييم نهائياً' + (res.deleted_objections ? ` (ومعه ${res.deleted_objections} اعتراض مرتبط)` : ''));
 if (typeof navigate === 'function') navigate(navTarget || 'evaluations', navParams || {});
 } catch (err) {
@@ -1394,7 +1416,7 @@ let tempPw = null;
 let resetUser = null;
 let resetMsg = null;
 if (window.sb && window.sb.rpc) {
-const { data, error } = await window.sb.rpc('admin_reset_password', { p_user_id: userId });
+const { data, error } = await window.sb.rpc('admin_reset_password', { p_user_id: userId, p_session_token: (window.getSessionToken ? window.getSessionToken() : null) });
 if (error) { console.warn('admin_reset_password error:', error.message); resetMsg = error.message; }
 if (Array.isArray(data) && data.length) {
 const row = data[0];
@@ -1407,7 +1429,8 @@ tempPw = DB.resetUserPassword(userId);
 resetUser = DB.getUser(userId);
 }
 if (!tempPw) {
-Toast.error(resetMsg || 'تعذّر إعادة التعيين');
+const handled = handleSessionError(resetMsg);
+if (!handled) Toast.error(resetMsg || 'تعذّر إعادة التعيين');
 btn.textContent = orig; btn.disabled = false; btn.dataset.busy='0';
 return;
 }

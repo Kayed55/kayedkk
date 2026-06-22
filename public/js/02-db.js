@@ -259,7 +259,8 @@ const { data, error } = await window.sb.rpc('delete_evaluation_cascade', {
 p_eval_id:    id,
 p_actor_id:   actor.id || null,
 p_actor_name: actor.full_name || 'النظام',
-p_actor_role: actor.role || '-'
+p_actor_role: actor.role || '-',
+p_session_token: (window.getSessionToken ? window.getSessionToken() : null)
 });
 if (error) { console.error('delete_evaluation_cascade:', error.message); return { ok:false, message:error.message }; }
 const row = Array.isArray(data) ? data[0] : data;
