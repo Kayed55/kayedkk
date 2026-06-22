@@ -135,13 +135,8 @@ window.SupabaseSync = {
           if (row) criteria = row.config_value;
         }
 
-        // استبعاد التقييمات المحذوفة محلياً (tombstones) تحسّباً لأي pull قديم in-flight
-        if (this.deletedEvalIds.length && Array.isArray(results.evaluations)) {
-          results.evaluations = results.evaluations.filter(e => this.deletedEvalIds.indexOf(e.id) === -1);
-          if (Array.isArray(results.objections)) {
-            results.objections = results.objections.filter(o => this.deletedEvalIds.indexOf(o.evaluation_id) === -1);
-          }
-        }
+        // أُلغيت آلية tombstone: حارس التسلسل (_appliedSeq) يمنع أي سحب قديم من إحياء
+        // تقييم محذوف، دون حجب تقييم أُعيد إنشاؤه بمعرّف معاد (create يستخدم max(id)+1).
 
         // بناء data في الصيغة المتوقعة من 02-db.js
         const dbData = {

@@ -262,11 +262,9 @@ p_session_token: (window.getSessionToken ? window.getSessionToken() : null)
 if (error) { console.error('delete_evaluation_cascade:', error.message); return { ok:false, message:error.message }; }
 const row = Array.isArray(data) ? data[0] : data;
 if (!row || !row.ok) return { ok:false, message:(row && row.message) || 'تعذّر الحذف' };
-// السحابة حُذِفت ذرّياً. الآن إزالة محلية حاسمة + tombstone يمنع أي pull/push
-// لاحق (حتى لو كان in-flight قديماً) من إرجاع التقييم المحذوف.
-if (window.SupabaseSync && Array.isArray(window.SupabaseSync.deletedEvalIds)) {
-if (window.SupabaseSync.deletedEvalIds.indexOf(id) === -1) window.SupabaseSync.deletedEvalIds.push(id);
-}
+// السحابة حُذِفت ذرّياً. إزالة محلية حاسمة + حجز رقم تسلسل أعلى لإبطال أي سحب قديم
+// in-flight قد يُحيي التقييم (يحلّ محلّ آلية tombstone القديمة، ويتفادى حجب معرّف معاد).
+if (window.SupabaseSync) { window.SupabaseSync._appliedSeq = ++window.SupabaseSync._pullSeq; }
 this.data.evaluations = this.data.evaluations.filter(e => e.id !== id);
 this.data.objections  = (this.data.objections||[]).filter(o => o.evaluation_id !== id);
 localStorage.setItem(this.KEY, JSON.stringify(this.data));
