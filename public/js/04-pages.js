@@ -1209,7 +1209,7 @@ const body = `<form id="emp-form">
 <div class="form-group"><label class="form-label">المسمى الوظيفي *</label><input class="form-control" id="ef-pos" required value="${ed?Utils.escape(ed.position||''):'موظف خدمة'}"></div>
 <div class="form-group"><label class="form-label">👨‍💼 اسم المشرف *</label>${supDropdown}</div>
 <div class="form-group"><label class="form-label">القسم/الإدارة</label><input class="form-control" id="ef-dept" value="${ed?Utils.escape(ed.department||''):'قسم الجودة'}"></div>
-${!ed ? `<div class="form-group"><label class="form-label">🔒 كلمة المرور *</label><input type="password" class="form-control" id="ef-pass" required placeholder="8 أحرف على الأقل + حرف + رقم + رمز"></div>` : ''}
+${!ed ? `<div style="background:#eff6ff;padding:10px;border-radius:8px;font-size:12px;color:var(--primary-dark)">🔐 ستُولَّد كلمة مرور مؤقتة تلقائياً وتُرسَل لبريد الموظف وتُعرَض لك بعد الإضافة.</div>` : ''}
 </div>
 ${!ed ? `<div style="background:#f1f5f9;padding:10px;border-radius:8px;font-size:12px;color:var(--muted);margin-top:8px">
 <strong>متطلبات كلمة المرور:</strong> 8 أحرف على الأقل، حرف واحد، رقم واحد، رمز خاص (@!#$%)
@@ -1239,40 +1239,47 @@ return false;
 }
 if (!Utils.validateEmail(email)) { Toast.error('بريد إلكتروني غير صالح'); return false; }
 
+const _tok = (window.getSessionToken ? window.getSessionToken() : null);
 if (ed) {
+if (window.sb && window.sb.rpc) {
+const { data, error } = await window.sb.rpc('update_employee_profile', {
+p_session_token: _tok, p_user_id: editId,
+p_full_name: full_name, p_email: email, p_employee_number: employee_number,
+p_position: position, p_department: department, p_phone: phone,
+p_supervisor_id: supervisor_id, p_supervisor_name: supervisor_name
+});
+const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
+if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر الحفظ'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+} else {
 const conflict = DB.getUserByEmail(email);
 if (conflict && conflict.id !== editId) { Toast.error('البريد الإلكتروني مستخدم مسبقاً'); return false; }
-const oldSup = ed.supervisor_name;
 DB.updateUser(editId, { full_name, employee_number, position, supervisor_name, supervisor_id, email, phone, department });
-if (oldSup !== supervisor_name) {
-DB.addAudit({ action:'change_supervisor', entity_type:'user', entity_id:editId, details:`تغيير المشرف للموظف ${full_name}: من "${oldSup||'-'}" إلى "${supervisor_name}"` });
 }
 Toast.success('تم حفظ التعديلات');
+} else {
+if (window.sb && window.sb.rpc) {
+const { data, error } = await window.sb.rpc('create_employee', {
+p_session_token: _tok, p_full_name: full_name, p_email: email, p_employee_number: employee_number,
+p_position: position, p_department: department, p_phone: phone,
+p_supervisor_id: supervisor_id, p_supervisor_name: supervisor_name
+});
+const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
+if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر إضافة الموظف'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+try { if (window.EmailService) window.EmailService.sendNewUserEmail({ email, full_name, username: employee_number, role:'employee' }, row.temp_password).catch(()=>{}); } catch(_){}
+Modal.close();
+Modal.show('✅ تم إضافة الموظف', `<div style="font-size:14px;line-height:1.9"><div class="alert alert-success">أُرسلت كلمة المرور المؤقتة لبريد الموظف. يمكنك نسخها:</div><div class="form-group"><input class="form-control" readonly value="${row.temp_password||''}" style="font-family:monospace;font-weight:700;text-align:center;color:var(--primary)"></div></div>`, `<button class="btn btn-primary" onclick="Modal.close(); navigate('employees')">تم</button>`);
+return false;
 } else {
 const exists = DB.data.users.find(u => u.employee_number === employee_number);
 if (exists) { Toast.error('الرقم الوظيفي مستخدم مسبقاً'); return false; }
 if (DB.getUserByEmail(email)) { Toast.error('البريد الإلكتروني مستخدم مسبقاً'); return false; }
-const password = document.getElementById('ef-pass').value;
-const vp = Utils.validatePassword(password);
-if (!vp.valid) { Toast.error(vp.errors[0]); return false; }
-DB.createUser({
-full_name,
-username: employee_number,
-password,
-employee_number,
-position,
-supervisor_name,
-supervisor_id,
-role: 'employee',
-department: department || 'قسم الجودة',
-email,
-phone,
-must_change_password: false
-});
+const password = document.getElementById('ef-pass') ? document.getElementById('ef-pass').value : Utils.generateTempPassword();
+DB.createUser({ full_name, username: employee_number, password, employee_number, position, supervisor_name, supervisor_id, role:'employee', department: department || 'قسم الجودة', email, phone, must_change_password:true });
 Toast.success('تم إضافة الموظف بنجاح');
 }
-// إغلاق المودال والانتقال (تتم تلقائياً عبر submitWithFeedback لإعادة رسم الصفحة الحالية)
-// نُعيد التنقل صراحة لصفحة الموظفين لأن نقطة الانطلاق قد تكون مختلفة
+}
 Modal.close();
 if (typeof navigate === 'function') navigate('employees');
 return true;
@@ -3555,13 +3562,20 @@ const btn = pf.querySelector('button[type=submit]');
 await submitWithFeedback(btn, 'جاري الحفظ...', null, async () => {
 const email = document.getElementById('pf-email').value.trim();
 if (!Utils.validateEmail(email)) { Toast.error('بريد إلكتروني غير صالح'); return false; }
-DB.updateUser(currentUser.id, {
-full_name: document.getElementById('pf-name').value.trim(),
-email,
-phone: document.getElementById('pf-phone').value.trim()
+const pfName = document.getElementById('pf-name').value.trim();
+const pfPhone = document.getElementById('pf-phone').value.trim();
+if (window.sb && window.sb.rpc) {
+const { data, error } = await window.sb.rpc('update_own_profile', {
+p_session_token: (window.getSessionToken ? window.getSessionToken() : null),
+p_full_name: pfName, p_email: email, p_phone: pfPhone
 });
-const u = DB.getUser(currentUser.id);
-currentUser.full_name = u.full_name; currentUser.email = u.email;
+const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
+if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر الحفظ'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+} else {
+DB.updateUser(currentUser.id, { full_name: pfName, email, phone: pfPhone });
+}
+currentUser.full_name = pfName; currentUser.email = email;
 localStorage.setItem('qe_current_user', JSON.stringify(currentUser));
 Toast.success('تم حفظ التعديلات');
 if (typeof navigate === 'function') navigate('profile');
