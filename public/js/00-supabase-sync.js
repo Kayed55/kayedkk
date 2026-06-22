@@ -279,6 +279,10 @@ window.SupabaseSync = {
    * عند أي تغيير: pullAll() ثم scheduleUIRefresh()
    */
   setupRealtime() {
+    // مُعطّل: حلّ محلّه js/realtime-service.js (لتفادي اشتراك مزدوج). يبقى للتوافق فقط.
+    console.log('ℹ️ setupRealtime المضمّن مُعطّل — تُدار الاشتراكات عبر RealtimeService');
+    return;
+    /* eslint-disable no-unreachable */
     if (!window.sb) return;
     if (!SUPABASE_CONFIG.enableRealtime) {
       console.log('ℹ️ Realtime معطّل في الإعدادات');
@@ -359,8 +363,8 @@ window.addEventListener('DOMContentLoaded', async () => {
   // 2. اربط hook لدفع كل تعديل لاحق إلى Supabase
   window.SupabaseSync.hookDBSave();
 
-  // 3. فعّل Realtime subscriptions
-  window.SupabaseSync.setupRealtime();
+  // 3. فعّل Realtime عبر RealtimeService الجديد (يحلّ محلّ setupRealtime المضمّن لتفادي اشتراك مزدوج)
+  if (window.RealtimeService && window.RealtimeService.start) window.RealtimeService.start();
 
   // 4. شغّل المزامنة الدورية الاحتياطية
   window.SupabaseSync.startAutoSync();
