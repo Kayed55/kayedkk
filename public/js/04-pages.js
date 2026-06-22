@@ -4321,11 +4321,13 @@ const title = document.getElementById('sf-title').value.trim();
 const type = document.getElementById('sf-type').value;
 const weight = parseFloat(document.getElementById('sf-weight').value);
 if (!key || !title) { Toast.error('يرجى تعبئة كل الحقول'); return false; }
-if (!ed && CRITERIA.sections.find(s => s.key === key)) { Toast.error('المفتاح موجود مسبقاً'); return false; }
-
-if (ed) {
-ed.title = title; ed.type = type; ed.weight = weight;
+// إعادة الإيجاد من CRITERIA الحالي وقت الحفظ (المرجع الملتقَط قد يتقادم بعد أي مزامنة)
+if (editKey) {
+const target = CRITERIA.sections.find(s => s.key === editKey);
+if (!target) { Toast.error('تعذّر إيجاد القسم'); return false; }
+target.title = title; target.type = type; target.weight = weight;
 } else {
+if (CRITERIA.sections.find(s => s.key === key)) { Toast.error('المفتاح موجود مسبقاً'); return false; }
 CRITERIA.sections.push({
 key, title, type, weight,
 subsections:[{ key:key+'_default', title:'القسم الفرعي الافتراضي', weight: type === 'non-critical' ? weight : undefined, items:[{ key:key+'_default_1', label:'بند جديد - يمكنك تعديله' }] }]
@@ -4360,13 +4362,17 @@ const key = document.getElementById('sbf-key').value.trim();
 const title = document.getElementById('sbf-title').value.trim();
 const weight = isNonCritical ? parseFloat(document.getElementById('sbf-weight').value) : undefined;
 if (!key || !title) { Toast.error('يرجى تعبئة كل الحقول'); return false; }
-if (!ed && sec.subsections.find(sub => sub.key === key)) { Toast.error('المفتاح موجود مسبقاً'); return false; }
-
-if (ed) {
-ed.title = title;
-if (isNonCritical) ed.weight = weight;
+// إعادة إيجاد القسم من CRITERIA الحالي وقت الحفظ (تفادي المرجع المتقادم بعد المزامنة)
+const curSec = CRITERIA.sections.find(s => s.key === sectionKey);
+if (!curSec) { Toast.error('تعذّر إيجاد القسم'); return false; }
+if (editKey) {
+const target = curSec.subsections.find(sub => sub.key === editKey);
+if (!target) { Toast.error('تعذّر إيجاد القسم الفرعي'); return false; }
+target.title = title;
+if (isNonCritical) target.weight = weight;
 } else {
-sec.subsections.push({ key, title, weight, items:[{ key:key+'_1', label:'بند جديد - يمكنك تعديله' }] });
+if (curSec.subsections.find(sub => sub.key === key)) { Toast.error('المفتاح موجود مسبقاً'); return false; }
+curSec.subsections.push({ key, title, weight, items:[{ key:key+'_1', label:'بند جديد - يمكنك تعديله' }] });
 }
 if (!(await saveCriteriaViaRPC())) return false;
 Modal.close();
@@ -4395,12 +4401,17 @@ await submitWithFeedback(btn, 'جاري الحفظ...', null, async () => {
 const key = document.getElementById('itf-key').value.trim();
 const label = document.getElementById('itf-label').value.trim();
 if (!key || !label) { Toast.error('يرجى تعبئة كل الحقول'); return false; }
-if (!ed && sub.items.find(i => i.key === key)) { Toast.error('المفتاح موجود مسبقاً'); return false; }
-
-if (ed) {
-ed.label = label;
+// إعادة إيجاد القسم/الفرعي من CRITERIA الحالي وقت الحفظ (تفادي المرجع المتقادم بعد المزامنة)
+const curSec = CRITERIA.sections.find(s => s.key === sectionKey);
+const curSub = curSec && curSec.subsections.find(x => x.key === subKey);
+if (!curSub) { Toast.error('تعذّر إيجاد القسم الفرعي'); return false; }
+if (editKey) {
+const target = curSub.items.find(i => i.key === editKey);
+if (!target) { Toast.error('تعذّر إيجاد البند'); return false; }
+target.label = label;
 } else {
-sub.items.push({ key, label });
+if (curSub.items.find(i => i.key === key)) { Toast.error('المفتاح موجود مسبقاً'); return false; }
+curSub.items.push({ key, label });
 }
 if (!(await saveCriteriaViaRPC())) return false;
 Modal.close();
