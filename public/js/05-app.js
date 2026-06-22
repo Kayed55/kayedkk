@@ -17,6 +17,35 @@
  */
 'use strict';
 
+// ============================================
+// تتبّع الأخطاء (بديل خفيف عن Sentry): console.error + تجميع في audit_logs
+// ============================================
+let _lastErrReport = 0;
+function reportClientError(msg, where) {
+  try {
+    const now = Date.now();
+    if (now - _lastErrReport < 4000) return;   // throttle لتفادي الإغراق
+    _lastErrReport = now;
+    console.error('[client_error]', msg, where || '');
+    if (window.sb) {
+      const u = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : null;
+      window.sb.from('audit_logs').insert({
+        id: now,
+        user_id: u ? u.id : null,
+        user_name: u ? u.full_name : 'زائر',
+        role: u ? u.role : '-',
+        action: 'client_error',
+        entity_type: 'client',
+        entity_id: null,
+        details: String(msg).slice(0, 500) + (where ? ' @ ' + String(where).slice(0, 200) : ''),
+        timestamp: new Date().toISOString()
+      }).then(function(){}, function(){});   // best-effort، لا يكسر التطبيق
+    }
+  } catch (_) { /* ignore */ }
+}
+window.addEventListener('error', function(e){ reportClientError(e.message || 'error', (e.filename||'') + ':' + (e.lineno||'')); });
+window.addEventListener('unhandledrejection', function(e){ reportClientError((e.reason && e.reason.message) || e.reason || 'unhandledrejection', 'promise'); });
+
 async function bootApp() {
   // 1) انتظر اكتمال جلب البيانات من Supabase (إن كان مُهيّأ) قبل تهيئة DB.
   //    pullAll() آمنة للنداء المتزامن لأنها تستخدم pendingPull للتمييز.

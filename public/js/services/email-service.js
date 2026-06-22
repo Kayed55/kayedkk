@@ -47,11 +47,6 @@ const EMAILJS_CONFIG = {
   logLevel:   'warn'                                      // 'silent' | 'warn' | 'info'
 };
 
-// === EmailJS DEBUG (مؤقّت) — يؤكّد أن الملف نُفِّذ فعلاً وقيمة enabled في الإنتاج ===
-console.log('[EmailJS DEBUG] email-service.js loaded — enabled:', EMAILJS_CONFIG.enabled,
-            '| template:', UNIVERSAL_TEMPLATE_ID, '| company:', (typeof COMPANY_NAME !== 'undefined' ? COMPANY_NAME : '(COMPANY_NAME undefined!)'));
-// === END DEBUG ===
-
 
 // ============================================
 // EmailService — الواجهة العامة للنظام
@@ -151,14 +146,6 @@ window.EmailService = (function() {
       _log('warn', `(${eventKey}) لم يُرسَل البريد إلى ${recipient} — EmailJS غير مُهيّأ.`);
       return { ok: false, skipped: true, reason: 'not_configured' };
     }
-
-    // === EmailJS DEBUG (مؤقّت — يُحذف بعد التشخيص) ===
-    console.log('[EmailJS DEBUG] template:', UNIVERSAL_TEMPLATE_ID);
-    console.log('[EmailJS DEBUG] params:', JSON.stringify(params, null, 2));
-    const _missing = ['to_email','to_name','subject','intro_message','action_label','action_value','expires_info','additional_info','security_note','company_name','system_url']
-      .filter(k => params[k] === undefined || params[k] === null || String(params[k]).trim() === '');
-    if (_missing.length) console.error('[EmailJS DEBUG] MISSING/EMPTY:', _missing);
-    // === END DEBUG ===
 
     try {
       const result = await window.emailjs.send(

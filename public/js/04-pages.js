@@ -23,6 +23,8 @@ let _formDirty = false;
 let _navToken = 0;
 let _navDebounce = null;
 const _FORM_PAGES = ['new-evaluation', 'edit-evaluation'];
+// عناوين الأقسام — تُستخدم في الشريط العلوي وفي عنوان تبويب المتصفّح
+const PAGE_TITLES = {dashboard:'لوحة التحكم', employees:'إدارة الموظفين', 'view-employee':'بيانات الموظف', evaluations:'التقييمات', 'new-evaluation':'تقييم جديد', 'view-evaluation':'تفاصيل التقييم', 'edit-evaluation':'تعديل التقييم', reports:'التقارير', 'monthly-report':'التقرير الشهري', 'actions-report':'تقرير الإجراءات المتخذة', 'errors-report':'الأخطاء المتكررة الشهرية', objections:'الاعتراضات', 'view-objection':'تفاصيل الاعتراض', 'new-objection':'تقديم اعتراض', 'audit-log':'سجل العمليات', users:'إدارة المستخدمين', profile:'الملف الشخصي', notifications:'الإشعارات', settings:'الإعدادات', login:'تسجيل الدخول'};
 
 function destroyCharts() {
 charts.forEach(c => { try { c.destroy(); } catch(e){} });
@@ -34,6 +36,8 @@ destroyCharts();
 _formDirty = false;   // صفحة جديدة = لا تعديلات معلّقة
 currentPage = page;
 currentParams = params;
+// عنوان تبويب المتصفّح يتغيّر حسب القسم
+document.title = (PAGE_TITLES[page] ? PAGE_TITLES[page] + ' | ' : '') + 'نظام الجودة - شركة محزم';
 const app = document.getElementById('app');
 
 if (page === 'login') { app.innerHTML = renderLogin(); attachLogin(); return; }
@@ -590,7 +594,7 @@ const menuHTML = menu.filter(m => m.roles.includes(currentUser.role)).map(m => `
 
 const unread = DB.getNotifications(currentUser.id).filter(n => !n.is_read).length;
 
-const titles = {dashboard:'لوحة التحكم', employees:'إدارة الموظفين', 'view-employee':'بيانات الموظف', evaluations:'التقييمات', 'new-evaluation':'تقييم جديد', 'view-evaluation':'تفاصيل التقييم', 'edit-evaluation':'تعديل التقييم', reports:'التقارير', 'monthly-report':'التقرير الشهري', 'actions-report':'تقرير الإجراءات المتخذة', 'errors-report':'الأخطاء المتكررة الشهرية', objections:'الاعتراضات', 'view-objection':'تفاصيل الاعتراض', 'new-objection':'تقديم اعتراض', 'audit-log':'سجل العمليات', users:'إدارة المستخدمين', profile:'الملف الشخصي', notifications:'الإشعارات', settings:'الإعدادات'};
+const titles = PAGE_TITLES;
 
 return `
 <div class="layout">
