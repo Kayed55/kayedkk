@@ -1952,6 +1952,17 @@ const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر حفظ التقييم'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
 newEvalId = row.evaluation_id; newPct = row.percentage; newGrade = row.grade;
 if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(true); }catch(_){} }
+// ضمان حتمي: إن لم يظهر التقييم الجديد بعد السحب (أي سباق توقيت)، اجلبه مباشرةً
+// وادمجه في الذاكرة قبل فتح صفحته — حتى لا تظهر "التقييم غير موجود" إطلاقاً.
+try {
+  if (newEvalId && !DB.getEvaluation(newEvalId) && window.sb) {
+    const { data: ne } = await window.sb.from('evaluations').select('*').eq('id', newEvalId).maybeSingle();
+    if (ne) {
+      DB.data.evaluations = (DB.data.evaluations || []).filter(e => e.id !== ne.id).concat(ne);
+      localStorage.setItem(DB.KEY, JSON.stringify(DB.data));
+    }
+  }
+} catch(_){}
 // بريد (fire-and-forget) من العميل بعد نجاح الإنشاء
 try { const ne = DB.getEvaluation(newEvalId); if (ne && window.EmailService) window.EmailService.sendEvaluationEmail(ne).catch(()=>{}); } catch(_){}
 } else {
@@ -1980,7 +1991,22 @@ return true;
 // ============================================
 function renderViewEvaluation(id) {
 const ev = DB.getEvaluation(id);
-if (!ev) return '<div class="alert alert-danger">التقييم غير موجود</div>';
+if (!ev) {
+// شبكة أمان: قد يكون سباق توقيت (التقييم مُنشأ للتوّ) — اسحب مرّة وأعد الرسم قبل اليأس
+if (window.__viewEvalRetry !== id && window.SupabaseSync && SupabaseSync.pullAll) {
+window.__viewEvalRetry = id;
+SupabaseSync.pullAll(true).then(function(){
+if (typeof currentPage !== 'undefined' && currentPage === 'view-evaluation'
+&& currentParams && currentParams.id === id && DB.getEvaluation(id)) {
+navigate('view-evaluation', { id: id });
+}
+});
+return '<div class="alert alert-info">⏳ جارٍ تحميل تفاصيل التقييم…</div>';
+}
+window.__viewEvalRetry = null;
+return '<div class="alert alert-danger">التقييم غير موجود</div>';
+}
+window.__viewEvalRetry = null;
 if (currentUser.role === 'employee' && ev.employee_id !== currentUser.id) {
 return '<div class="alert alert-danger">ليس لديك صلاحية لعرض هذا التقييم</div>';
 }
