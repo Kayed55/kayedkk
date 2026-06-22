@@ -677,7 +677,7 @@ const menu = [
 { key:'errors-report', icon:'❌', label:'الأخطاء المتكررة', roles:['admin','quality_officer','supervisor'] },
 { key:'audit-log', icon:'📜', label:'سجل العمليات', roles:['admin','quality_officer'] },
 { key:'users', icon:'🛡️', label:'إدارة المستخدمين', roles:['admin'] },
-{ key:'settings', icon:'⚙️', label:'الإعدادات', roles:['admin'] },
+{ key:'settings', icon:'⚙️', label:'الإعدادات', roles:['admin','quality_officer'] },
 { key:'profile', icon:'👤', label:'الملف الشخصي', roles:['admin','quality_officer','supervisor','employee'] }
 ];
 
@@ -1662,6 +1662,7 @@ const evals = DB.getEvaluations(isEmp ? { employee_id: currentUser.id } : {});
 const rows = evals.map(e => {
 const emp = DB.getUser(e.employee_id);
 const evr = DB.getUser(e.evaluator_id);
+const canEdit = Perms.can('edit_evaluation');
 const canDelete = Perms.can('delete_evaluation');
 return `<tr>
 <td>#${e.id}</td>
@@ -1672,7 +1673,7 @@ return `<tr>
 <td>${Utils.gradeBadge(e.percentage)}</td>
 <td>
 <button class="btn btn-sm btn-primary" data-nav-eval="${e.id}">عرض</button>
-${canDelete ? `<button class="btn btn-sm btn-warning" data-edit-eval="${e.id}">تعديل</button>` : ''}
+${canEdit ? `<button class="btn btn-sm btn-warning" data-edit-eval="${e.id}">تعديل</button>` : ''}
 ${canDelete ? `<button class="btn btn-sm btn-danger" data-del-eval="${e.id}">حذف</button>` : ''}
 </td>
 </tr>`;
@@ -4149,11 +4150,19 @@ return true;
 // Settings Page
 // ============================================
 function renderSettings(activeTab) {
+// حارس: الإعدادات لـ admin و quality_officer فقط
+if (!currentUser || (currentUser.role !== 'admin' && currentUser.role !== 'quality_officer')) {
+return '<div class="alert alert-danger">🚫 غير مصرح لك بالوصول لهذه الصفحة</div>';
+}
+const isAdmin = currentUser.role === 'admin';
+// تبويب "تعديل التقييمات" (يحوي الحذف) للأدمن فقط
 const tabs = [
 { key:'form', label:'📝 نموذج التقييم', icon:'📝' },
-{ key:'weights', label:'🎯 النقاط والأوزان', icon:'🎯' },
-{ key:'evals', label:'✏️ تعديل التقييمات', icon:'✏️' }
+{ key:'weights', label:'🎯 النقاط والأوزان', icon:'🎯' }
 ];
+if (isAdmin) tabs.push({ key:'evals', label:'✏️ تعديل التقييمات', icon:'✏️' });
+// موظف الجودة لا يصل لتبويب evals — حوّله لـ form
+if (activeTab === 'evals' && !isAdmin) activeTab = 'form';
 const tabsHTML = tabs.map(t => `
 <button class="btn ${activeTab === t.key ? 'btn-primary' : 'btn-secondary'}" data-nav-settings="${t.key}">${t.label}</button>
 `).join('');
@@ -4161,7 +4170,7 @@ const tabsHTML = tabs.map(t => `
 let body = '';
 if (activeTab === 'form') body = renderSettingsForm();
 else if (activeTab === 'weights') body = renderSettingsWeights();
-else if (activeTab === 'evals') body = renderSettingsEvals();
+else if (activeTab === 'evals' && isAdmin) body = renderSettingsEvals();
 
 return `
 <div class="page-header">
