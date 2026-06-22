@@ -628,7 +628,7 @@ const menu = [
 { key:'actions-report', icon:'⚖️', label:'تقرير الإجراءات', roles:['admin','quality_officer','supervisor'] },
 { key:'errors-report', icon:'❌', label:'الأخطاء المتكررة', roles:['admin','quality_officer','supervisor'] },
 { key:'audit-log', icon:'📜', label:'سجل العمليات', roles:['admin','quality_officer'] },
-{ key:'users', icon:'🛡️', label:'إدارة المستخدمين', roles:['admin','quality_officer'] },
+{ key:'users', icon:'🛡️', label:'إدارة المستخدمين', roles:['admin'] },
 { key:'settings', icon:'⚙️', label:'الإعدادات', roles:['admin'] },
 { key:'profile', icon:'👤', label:'الملف الشخصي', roles:['admin','quality_officer','supervisor','employee'] }
 ];
@@ -1317,10 +1317,9 @@ const body = `<form id="usr-form">
 ${supOpts}
 </select>
 </div>
-${!ed ? `<div class="form-group"><label class="form-label">🔒 كلمة المرور *</label><input type="password" class="form-control" id="usr-pass" required placeholder="8 أحرف + حرف + رقم + رمز"></div>` : ''}
 </div>
-${!ed ? `<div style="background:#f1f5f9;padding:10px;border-radius:8px;font-size:12px;color:var(--muted);margin-top:6px">
-<strong>متطلبات كلمة المرور:</strong> 8 أحرف على الأقل + حرف + رقم + رمز خاص
+${!ed ? `<div style="background:#eff6ff;padding:10px;border-radius:8px;font-size:12px;color:var(--primary-dark);margin-top:6px">
+🔐 ستُولَّد كلمة مرور مؤقتة تلقائياً على الخادم، تُرسَل لبريد المستخدم وتُعرَض لك بعد الإنشاء.
 </div>` : ''}
 </form>`;
 const footer = `<button class="btn btn-secondary" onclick="Modal.close()">إلغاء</button><button class="btn btn-primary" id="usr-save">${ed?'حفظ':'إضافة'}</button>`;
@@ -1343,32 +1342,56 @@ if (!full_name || !email) { Toast.error('يرجى تعبئة الحقول الم
 if (!Utils.validateEmail(email)) { Toast.error('بريد إلكتروني غير صالح'); return false; }
 if (role === 'employee' && !supervisor_name) { Toast.error('يجب اختيار المشرف للموظف'); return false; }
 
+const token = (window.getSessionToken ? window.getSessionToken() : null);
 if (ed) {
-const conflict = DB.getUserByEmail(email);
-if (conflict && conflict.id !== editId) { Toast.error('البريد مستخدم'); return false; }
+// تعديل عبر RPC مُصادَق
+if (window.sb && window.sb.rpc) {
+const { data, error } = await window.sb.rpc('admin_update_user', {
+p_session_token: token, p_user_id: editId,
+p_full_name: full_name, p_email: email, p_phone: phone, p_department: department, p_position: position,
+p_employee_number: ed.role === 'employee' ? employee_number : null,
+p_supervisor_id: ed.role === 'employee' ? supervisor_id : null
+});
+const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
+if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر الحفظ'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+} else {
 const upd = { full_name, email, phone, department, position };
 if (ed.role === 'employee') { upd.employee_number = employee_number; upd.supervisor_name = supervisor_name; upd.supervisor_id = supervisor_id; }
 DB.updateUser(editId, upd);
-Toast.success('تم حفظ التعديلات');
-} else {
-if (DB.getUserByEmail(email)) { Toast.error('البريد الإلكتروني مستخدم مسبقاً'); return false; }
-const password = document.getElementById('usr-pass').value;
-const vp = Utils.validatePassword(password);
-if (!vp.valid) { Toast.error(vp.errors[0]); return false; }
-const username = role === 'employee' && employee_number ? employee_number : email.split('@')[0];
-DB.createUser({
-full_name, email, phone, department, position, role,
-username, password,
-employee_number: role === 'employee' ? employee_number : '',
-supervisor_name: role === 'employee' ? supervisor_name : '-',
-supervisor_id: role === 'employee' ? supervisor_id : null,
-must_change_password: false
-});
-Toast.success('تم إضافة المستخدم بنجاح');
 }
+Toast.success('تم حفظ التعديلات');
 Modal.close();
-if (typeof navigate === 'function') navigate(ed && ed.role === 'employee' ? 'employees' : 'users');
+if (typeof navigate === 'function') navigate(ed.role === 'employee' ? 'employees' : 'users');
 return true;
+} else {
+// إنشاء عبر RPC مُصادَق — الكلمة المؤقتة تُولَّد على الخادم
+const username = role === 'employee' && employee_number ? employee_number : email.split('@')[0];
+let tempPw = null;
+if (window.sb && window.sb.rpc) {
+const { data, error } = await window.sb.rpc('admin_create_user', {
+p_session_token: token, p_full_name: full_name, p_email: email, p_username: username, p_role: role,
+p_department: department, p_position: position, p_phone: phone,
+p_employee_number: role === 'employee' ? employee_number : null,
+p_supervisor_id: role === 'employee' ? supervisor_id : null
+});
+const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
+if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر إنشاء المستخدم'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
+tempPw = row.temp_password;
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+} else {
+tempPw = Utils.generateTempPassword();
+DB.createUser({ full_name, email, phone, department, position, role, username, password: tempPw,
+employee_number: role==='employee'?employee_number:'', supervisor_name: role==='employee'?supervisor_name:'-',
+supervisor_id: role==='employee'?supervisor_id:null, must_change_password: true });
+}
+// إرسال الكلمة المؤقتة لبريد المستخدم (fire-and-forget)
+try { if (window.EmailService) window.EmailService.sendNewUserEmail({ email, full_name, username, role }, tempPw).catch(()=>{}); } catch(_){}
+// عرض الكلمة المؤقتة للمدير ليشاركها (تُغلق بزر تم ثم تحديث القائمة)
+Toast.success('تم إنشاء المستخدم');
+Modal.show('✅ تم إنشاء المستخدم', `<div style="font-size:14px;line-height:1.9"><div class="alert alert-success">أُرسلت كلمة المرور المؤقتة إلى بريد المستخدم. يمكنك أيضاً نسخها من هنا:</div><div class="form-group"><label class="form-label">كلمة المرور المؤقتة</label><input class="form-control" readonly value="${tempPw||''}" style="font-family:monospace;font-weight:700;text-align:center;color:var(--primary)"></div><div style="color:var(--muted);font-size:12px">سيُطلب منه تغييرها فور أول دخول.</div></div>`, `<button class="btn btn-primary" onclick="Modal.close(); navigate('users')">تم</button>`);
+return false; // ندير المودال يدوياً
+}
 });
 });
 }
@@ -4480,7 +4503,12 @@ if (!u) return;
 if (id === currentUser.id) { Toast.error('لا يمكنك تعطيل حسابك'); return; }
 if (!confirm(`هل تريد تعطيل حساب: ${u.full_name}؟`)) return;
 await submitWithFeedback(btn, 'جاري التعطيل...', null, async () => {
-DB.deactivateUser(id);
+if (window.sb && window.sb.rpc) {
+const { data, error } = await window.sb.rpc('admin_set_user_active', { p_session_token: (window.getSessionToken?window.getSessionToken():null), p_user_id: id, p_active: false });
+const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
+if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر التعطيل'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+} else { DB.deactivateUser(id); }
 Toast.success('تم تعطيل المستخدم');
 if (typeof navigate === 'function') navigate('users');
 return true;
