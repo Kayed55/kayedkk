@@ -63,6 +63,8 @@ window.SupabaseSync = {
   _hooked: false,                // علم لمنع hook مزدوج
   deletedEvalIds: [],            // tombstones: تقييمات حُذفت في هذه الجلسة لا يجب أن تعود عبر أي pull متأخّر
   writeViaRpcOnly: true,         // 2-ب-2: تعطيل رفع pushAll المباشر — الكتابة عبر RPCs فقط
+  _pullSeq: 0,                   // ترقيم عمليات السحب لمنع سحب قديم من الكتابة فوق بيانات أحدث
+  _appliedSeq: 0,
 
   // قائمة الجداول التي ستتم مزامنتها (الترتيب مهم بسبب foreign keys)
   TABLES: ['users', 'criteria_config', 'evaluations', 'notifications', 'objections', 'audit_logs'],
@@ -106,6 +108,7 @@ window.SupabaseSync = {
     if (this.pendingPull && !force) return this.pendingPull;
 
     const self = this;
+    const seq = ++this._pullSeq;   // ترتيب بدء هذه العملية
     const p = (async () => {
       try {
         console.log('⬇️ Pulling data from Supabase...');
@@ -154,6 +157,13 @@ window.SupabaseSync = {
           nextObjectionId: Math.max(0, ...(results.objections || []).map(o => o.id)) + 1,
           nextAuditId: Math.max(0, ...(results.audit_logs || []).map(a => a.id)) + 1
         };
+
+        // حارس التسلسل: لا تكتب فوق بيانات طبّقها سحبٌ أحدث (سحب قديم اكتمل متأخّراً)
+        if (seq < self._appliedSeq) {
+          console.log('  ⏭️ تجاهل سحب قديم اكتمل متأخّراً (seq ' + seq + ' < ' + self._appliedSeq + ')');
+          return true;
+        }
+        self._appliedSeq = seq;
 
         // حفظ في localStorage بنفس مفتاح DB
         localStorage.setItem('qe_system_v6', JSON.stringify(dbData));
