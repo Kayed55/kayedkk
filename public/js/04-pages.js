@@ -186,6 +186,22 @@ return 'forbidden';
 return null;
 }
 
+// حسم اعتراض عبر RPC مُصادَق (قبول/رفض) — يُرجع true عند النجاح
+async function resolveObjectionViaRPC(oid, decision, resp) {
+if (window.sb && window.sb.rpc) {
+const { data, error } = await window.sb.rpc('admin_resolve_objection', {
+p_session_token: (window.getSessionToken ? window.getSessionToken() : null),
+p_objection_id: oid, p_decision: decision, p_response: resp
+});
+const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
+if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر حسم الاعتراض'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+return true;
+}
+DB.resolveObjection(oid, decision, resp); // مسار محلي احتياطي
+return true;
+}
+
 async function handleDeleteEval(btn, navTarget, navParams) {
 if (!Perms.can('delete_evaluation')) { Toast.error('🚫 ليس لديك صلاحية لحذف التقييمات'); return; }
 const id = parseInt(btn.dataset.delEval);
@@ -3294,7 +3310,7 @@ const btn = e.currentTarget;
 await submitWithFeedback(btn, 'جاري القبول...', null, async () => {
 const resp = document.getElementById('obj-response').value.trim();
 if (!resp) { Toast.error('يجب كتابة رد على الاعتراض'); return false; }
-DB.resolveObjection(oid, 'accepted', resp);
+if (!(await resolveObjectionViaRPC(oid, 'accepted', resp))) return false;
 Toast.success('تم قبول الاعتراض');
 if (typeof navigate === 'function') navigate('view-objection', { id: oid });
 return true;
@@ -3306,7 +3322,7 @@ const btn = e.currentTarget;
 await submitWithFeedback(btn, 'جاري الرفض...', null, async () => {
 const resp = document.getElementById('obj-response').value.trim();
 if (!resp) { Toast.error('يجب كتابة رد على الاعتراض'); return false; }
-DB.resolveObjection(oid, 'rejected', resp);
+if (!(await resolveObjectionViaRPC(oid, 'rejected', resp))) return false;
 Toast.success('تم رفض الاعتراض');
 if (typeof navigate === 'function') navigate('view-objection', { id: oid });
 return true;
