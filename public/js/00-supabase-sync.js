@@ -62,6 +62,7 @@ window.SupabaseSync = {
   realtimeChannels: [],          // قنوات Realtime المفتوحة
   _hooked: false,                // علم لمنع hook مزدوج
   deletedEvalIds: [],            // tombstones: تقييمات حُذفت في هذه الجلسة لا يجب أن تعود عبر أي pull متأخّر
+  writeViaRpcOnly: true,         // 2-ب-2: تعطيل رفع pushAll المباشر — الكتابة عبر RPCs فقط
 
   // قائمة الجداول التي ستتم مزامنتها (الترتيب مهم بسبب foreign keys)
   TABLES: ['users', 'criteria_config', 'evaluations', 'notifications', 'objections', 'audit_logs'],
@@ -179,6 +180,9 @@ window.SupabaseSync = {
    * دفع كل البيانات الحالية في localStorage إلى Supabase
    */
   async pushAll() {
+    // المرحلة 2-ب-2: الرفع المباشر معطّل — كل الكتابات تمرّ عبر RPCs مُصادَقة.
+    // pullAll (القراءة) يبقى فعّالاً. (للتراجع: أعد writeViaRpcOnly=false)
+    if (this.writeViaRpcOnly) return true;
     if (!window.sb) return false;
     if (this.syncInProgress) return false;
     this.syncInProgress = true;
