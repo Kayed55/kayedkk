@@ -100,11 +100,13 @@ window.SupabaseSync = {
    * جلب جميع البيانات من Supabase وحفظها في localStorage
    * - يستخدم pendingPull لمنع pulls متزامنة (deduplication)
    */
-  async pullAll() {
+  async pullAll(force) {
     if (!window.sb) return false;
-    if (this.pendingPull) return this.pendingPull;
+    // مع force: لا نُعيد عملية سحب قديمة قد تكون بدأت قبل آخر كتابة (تفادي بيانات غير محدّثة)
+    if (this.pendingPull && !force) return this.pendingPull;
 
-    this.pendingPull = (async () => {
+    const self = this;
+    const p = (async () => {
       try {
         console.log('⬇️ Pulling data from Supabase...');
         const results = {};
@@ -168,12 +170,13 @@ window.SupabaseSync = {
       } catch (e) {
         console.error('❌ Pull failed:', e);
         return false;
-      } finally {
-        this.pendingPull = null;
       }
     })();
 
-    return this.pendingPull;
+    this.pendingPull = p;
+    // ننظّف pendingPull فقط إن كان لا يزال يشير لهذه العملية (يحمي عمليات force المتزامنة)
+    p.then(function(){}, function(){}).then(function(){ if (self.pendingPull === p) self.pendingPull = null; });
+    return p;
   },
 
   /**

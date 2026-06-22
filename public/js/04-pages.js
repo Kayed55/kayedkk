@@ -141,7 +141,7 @@ if (c) c.innerHTML = `<div class="section-loading"><div class="spinner"></div><d
 try {
 // جلب طازج من القاعدة قبل العرض (يُحدّث DB.data بالكامل = كل الأقسام)
 if (window.sb && window.SupabaseSync && typeof SupabaseSync.pullAll === 'function') {
-const ok = await SupabaseSync.pullAll();
+const ok = await SupabaseSync.pullAll(true);
 if (token !== _navToken) return;            // ألغاه تنقّل أحدث
 if (ok === false) { _sectionError(page, params); return; }
 }
@@ -227,7 +227,7 @@ p_objection_id: oid, p_decision: decision, p_response: resp
 });
 const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر حسم الاعتراض'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
-if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(true); }catch(_){} }
 return true;
 }
 DB.resolveObjection(oid, decision, resp); // مسار محلي احتياطي
@@ -1250,7 +1250,7 @@ p_supervisor_id: supervisor_id, p_supervisor_name: supervisor_name
 });
 const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر الحفظ'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
-if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(true); }catch(_){} }
 } else {
 const conflict = DB.getUserByEmail(email);
 if (conflict && conflict.id !== editId) { Toast.error('البريد الإلكتروني مستخدم مسبقاً'); return false; }
@@ -1266,7 +1266,7 @@ p_supervisor_id: supervisor_id, p_supervisor_name: supervisor_name
 });
 const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر إضافة الموظف'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
-if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(true); }catch(_){} }
 try { if (window.EmailService) window.EmailService.sendNewUserEmail({ email, full_name, username: employee_number, role:'employee' }, row.temp_password).catch(()=>{}); } catch(_){}
 Modal.close();
 Modal.show('✅ تم إضافة الموظف', `<div style="font-size:14px;line-height:1.9"><div class="alert alert-success">أُرسلت كلمة المرور المؤقتة لبريد الموظف. يمكنك نسخها:</div><div class="form-group"><input class="form-control" readonly value="${row.temp_password||''}" style="font-family:monospace;font-weight:700;text-align:center;color:var(--primary)"></div></div>`, `<button class="btn btn-primary" onclick="Modal.close(); navigate('employees')">تم</button>`);
@@ -1409,7 +1409,7 @@ p_supervisor_id: ed.role === 'employee' ? supervisor_id : null
 });
 const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر الحفظ'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
-if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(true); }catch(_){} }
 } else {
 const upd = { full_name, email, phone, department, position };
 if (ed.role === 'employee') { upd.employee_number = employee_number; upd.supervisor_name = supervisor_name; upd.supervisor_id = supervisor_id; }
@@ -1433,7 +1433,7 @@ p_supervisor_id: role === 'employee' ? supervisor_id : null
 const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر إنشاء المستخدم'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
 tempPw = row.temp_password;
-if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(true); }catch(_){} }
 } else {
 tempPw = Utils.generateTempPassword();
 DB.createUser({ full_name, email, phone, department, position, role, username, password: tempPw,
@@ -1806,7 +1806,7 @@ p_eval_id: evalId, p_action: action, p_action_other: action_other.trim(), p_note
 });
 const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر تسجيل الإجراء'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
-if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(true); }catch(_){} }
 try { const ev=DB.getEvaluation(evalId); if (ev && window.EmailService) window.EmailService.sendActionEmail(ev, {action, notes}).catch(()=>{}); } catch(_){}
 } else {
 DB.recordSupervisorAction(evalId, { action, action_other: action_other.trim(), notes });
@@ -1950,7 +1950,7 @@ p_items: items
 const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر حفظ التقييم'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
 newEvalId = row.evaluation_id; newPct = row.percentage; newGrade = row.grade;
-if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(true); }catch(_){} }
 // بريد (fire-and-forget) من العميل بعد نجاح الإنشاء
 try { const ne = DB.getEvaluation(newEvalId); if (ne && window.EmailService) window.EmailService.sendEvaluationEmail(ne).catch(()=>{}); } catch(_){}
 } else {
@@ -3249,7 +3249,7 @@ p_evaluation_id: parseInt(evaluationId), p_reason: reason, p_attachments: attach
 const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر تقديم الاعتراض'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
 objId = row.objection_id; objRef = row.ref_number;
-if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(true); }catch(_){} }
 try { const ob=DB.getObjection(objId); if (ob && window.EmailService) window.EmailService.sendObjectionEmail(ob).catch(()=>{}); } catch(_){}
 Toast.success(`تم تقديم الاعتراض بنجاح (${objRef})`);
 } else {
@@ -3373,7 +3373,7 @@ p_session_token: (window.getSessionToken ? window.getSessionToken() : null), p_o
 });
 const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر التحويل'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
-if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(true); }catch(_){} }
 } else {
 DB.updateObjection(oid, { status: 'under_review' });
 }
@@ -3418,7 +3418,7 @@ p_session_token: (window.getSessionToken ? window.getSessionToken() : null), p_o
 });
 const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر إضافة التعليق'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
-if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(true); }catch(_){} }
 } else {
 DB.addObjectionComment(oid, text);
 }
@@ -3571,7 +3571,7 @@ p_full_name: pfName, p_email: email, p_phone: pfPhone
 });
 const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر الحفظ'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
-if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(true); }catch(_){} }
 } else {
 DB.updateUser(currentUser.id, { full_name: pfName, email, phone: pfPhone });
 }
@@ -4122,7 +4122,7 @@ p_items: items
 });
 const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر حفظ التعديلات'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
-if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(true); }catch(_){} }
 Toast.success(`تم حفظ التعديلات — النتيجة المعاد احتسابها ${row.percentage}% (${row.grade})`);
 } else {
 // مسار محلي احتياطي
@@ -4569,7 +4569,7 @@ p_session_token: (window.getSessionToken ? window.getSessionToken() : null), p_e
 });
 const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر الاعتماد'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
-if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(true); }catch(_){} }
 try { const ev=DB.getEvaluation(id); if (ev && window.EmailService) window.EmailService.sendApprovalEmail(ev).catch(()=>{}); } catch(_){}
 } else {
 DB.approveEvaluation(id);
@@ -4638,7 +4638,7 @@ if (window.sb && window.sb.rpc) {
 const { data, error } = await window.sb.rpc('admin_set_user_active', { p_session_token: (window.getSessionToken?window.getSessionToken():null), p_user_id: id, p_active: false });
 const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر التعطيل'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
-if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(true); }catch(_){} }
 } else { DB.deactivateUser(id); }
 Toast.success('تم تعطيل المستخدم');
 if (typeof navigate === 'function') navigate('users');
