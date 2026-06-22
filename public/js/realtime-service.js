@@ -17,9 +17,10 @@
 
 (function () {
   const RealtimeService = {
-    // الجداول المبثوثة — تُوسّع حسب المراحل (A: evaluations)
-    TABLES: ['evaluations'],
-    debounceMs: 150,
+    // الجداول المبثوثة — تُوسّع حسب المراحل (A: evaluations، B: criteria_config)
+    TABLES: ['evaluations', 'criteria_config'],
+    debounceMs: 150,                                  // الافتراضي
+    debounceByTable: { criteria_config: 250 },        // القالب يأتي على دفعات → نافذة أوسع
     selfWriteMs: 600,           // نافذة تجاهل وميض إعادة الرسم بعد كتابة محلية
 
     channels: [],
@@ -65,11 +66,12 @@
       if (this.stats._windowCount > this.stats.peakPerSec) this.stats.peakPerSec = this.stats._windowCount;
 
       console.log('🔔 RT', table, payload.eventType, '(events=' + this.stats.events + ')');
-      this._scheduleRefresh();
+      this._scheduleRefresh(table);
     },
 
-    // إعادة سحب مُدمجة ثم إعادة رسم الصفحة الحالية فقط
-    _scheduleRefresh() {
+    // إعادة سحب مُدمجة ثم إعادة رسم الصفحة الحالية فقط (نافذة الدمج حسب الجدول)
+    _scheduleRefresh(table) {
+      const delay = (table && this.debounceByTable[table]) || this.debounceMs;
       clearTimeout(this._timer);
       this._timer = setTimeout(async () => {
         try { await window.SupabaseSync.pullAll(true); } catch (_) {}
@@ -79,7 +81,7 @@
             navigate(currentPage, (typeof currentParams !== 'undefined' ? currentParams : {}));
           }
         } catch (_) {}
-      }, this.debounceMs);
+      }, delay);
     },
 
     _onStatus(table, status) {
