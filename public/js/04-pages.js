@@ -4181,7 +4181,19 @@ return `
 ${body}`;
 }
 
+// شبكة أمان: تأكيد وجود مفتاح لكل قسم فرعي/بند (قوالب قديمة قد تنقصها) ليبقى التعديل/الحذف ممكناً
+function ensureCriteriaKeys() {
+if (!CRITERIA || !Array.isArray(CRITERIA.sections)) return;
+CRITERIA.sections.forEach(s => {
+(s.subsections || []).forEach((sub, i) => {
+if (!sub.key) sub.key = `${s.key || 'section'}_s${i + 1}`;
+(sub.items || []).forEach((it, j) => { if (!it.key) it.key = `${sub.key}_i${j + 1}`; });
+});
+});
+}
+
 function renderSettingsForm() {
+ensureCriteriaKeys();
 const sectionsHTML = CRITERIA.sections.map(s => `
 <div class="card">
 <div class="card-header">
