@@ -70,9 +70,28 @@ attachLayoutHandlers();
 attachPageHandlers(page);
 }
 
+// ============================================
+// جلسة المصادقة (المرحلة 1): رمز الخادم في localStorage
+// ============================================
+// يُرجع رمز الجلسة الصالح، أو null إن لم يوجد/انتهى.
+function getSessionToken() {
+const token = localStorage.getItem('mahzam_session_token');
+if (!token) return null;
+const exp = localStorage.getItem('mahzam_session_expires_at');
+if (exp && new Date(exp).getTime() <= Date.now()) { clearSession(); return null; }
+return token;
+}
+// مسح بيانات الجلسة (عند الخروج اليدوي أو انتهاء الرمز / 401 مستقبلي).
+function clearSession() {
+localStorage.removeItem('mahzam_session_token');
+localStorage.removeItem('mahzam_session_expires_at');
+}
+if (typeof window !== 'undefined') { window.getSessionToken = getSessionToken; window.clearSession = clearSession; }
+
 function logout() {
 currentUser = null;
 localStorage.removeItem('qe_current_user');
+clearSession();
 navigate('login');
 }
 
@@ -432,6 +451,11 @@ return;
 const u = result.user_data || {};
 currentUser = { id:u.id, username:u.username, full_name:u.full_name, role:u.role, email:u.email };
 localStorage.setItem('qe_current_user', JSON.stringify(currentUser));
+// المرحلة 1 (أمان): حفظ رمز الجلسة من الخادم — يُستخدم للتفويض في المرحلة 2.
+if (result.session_token) {
+localStorage.setItem('mahzam_session_token', result.session_token);
+if (result.session_expires_at) localStorage.setItem('mahzam_session_expires_at', result.session_expires_at);
+}
 DB.addAudit({ action:'login', entity_type:'login', entity_id:u.id, details:`دخول مع OTP: ${u.full_name} (${u.email})` });
 Toast.success('مرحباً بك ' + u.full_name);
 if (_otpTimer) { clearInterval(_otpTimer); _otpTimer = null; }
