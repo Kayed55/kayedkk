@@ -1777,7 +1777,18 @@ const action_other = (document.getElementById('sa-action-other')||{}).value || '
 const notes = document.getElementById('sa-notes').value.trim();
 if (!action) { Toast.error('يرجى اختيار الإجراء'); return false; }
 if (action === 'أخرى' && !action_other.trim()) { Toast.error('يرجى كتابة وصف الإجراء'); return false; }
+if (window.sb && window.sb.rpc) {
+const { data, error } = await window.sb.rpc('record_supervisor_action', {
+p_session_token: (window.getSessionToken ? window.getSessionToken() : null),
+p_eval_id: evalId, p_action: action, p_action_other: action_other.trim(), p_notes: notes
+});
+const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
+if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر تسجيل الإجراء'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+try { const ev=DB.getEvaluation(evalId); if (ev && window.EmailService) window.EmailService.sendActionEmail(ev, {action, notes}).catch(()=>{}); } catch(_){}
+} else {
 DB.recordSupervisorAction(evalId, { action, action_other: action_other.trim(), notes });
+}
 Toast.success('تم تسجيل إجراء المشرف');
 Modal.close();
 if (typeof navigate === 'function') navigate('view-evaluation', { id: evalId });
@@ -1901,28 +1912,41 @@ if (observed === 'أخرى' && !observedOther.trim()) { Toast.error('يرجى ك
 if (!action) { Toast.error('يرجى اختيار الإجراء المتخذ'); return false; }
 if (action === 'أخرى' && !actionOther.trim()) { Toast.error('يرجى كتابة وصف الإجراء'); return false; }
 
+let newEvalId = null, newPct = r.percentage, newGrade = r.grade;
+if (window.sb && window.sb.rpc) {
+const { data, error } = await window.sb.rpc('create_evaluation', {
+p_session_token: (window.getSessionToken ? window.getSessionToken() : null),
+p_employee_id: empId,
+p_evaluation_date: document.getElementById('ef-date').value,
+p_observed_issue: observed,
+p_observed_issue_other: observedOther.trim(),
+p_action_taken: action,
+p_action_taken_other: actionOther.trim(),
+p_notes: document.getElementById('ef-notes').value.trim(),
+p_items: items
+});
+const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
+if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر حفظ التقييم'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
+newEvalId = row.evaluation_id; newPct = row.percentage; newGrade = row.grade;
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+// بريد (fire-and-forget) من العميل بعد نجاح الإنشاء
+try { const ne = DB.getEvaluation(newEvalId); if (ne && window.EmailService) window.EmailService.sendEvaluationEmail(ne).catch(()=>{}); } catch(_){}
+} else {
 const newEval = DB.createEvaluation({
-employee_id: empId,
-evaluator_id: currentUser.id,
+employee_id: empId, evaluator_id: currentUser.id,
 evaluation_date: document.getElementById('ef-date').value,
 call_type: observed === 'أخرى' ? observedOther.trim() : observed,
-observed_issue: observed,
-observed_issue_other: observedOther.trim(),
-action_taken: action,
-action_taken_other: actionOther.trim(),
+observed_issue: observed, observed_issue_other: observedOther.trim(),
+action_taken: action, action_taken_other: actionOther.trim(),
 notes: document.getElementById('ef-notes').value.trim(),
-items: items,
-section_scores: r.sectionScores,
-total_score: r.totalScore,
-percentage: r.percentage,
-grade: r.grade,
-status: r.status
+items: items, section_scores: r.sectionScores, total_score: r.totalScore,
+percentage: r.percentage, grade: r.grade, status: r.status
 });
-if (newEval && newEval._duplicate) {
-Toast.warning('تم رصد تكرار - استخدمنا التقييم السابق');
+if (newEval && newEval._duplicate) Toast.warning('تم رصد تكرار - استخدمنا التقييم السابق');
+newEvalId = newEval.id;
 }
-Toast.success(`تم حفظ التقييم بنجاح - ${r.percentage}% (${r.grade})`);
-if (typeof navigate === 'function') navigate('view-evaluation', { id: newEval.id });
+Toast.success(`تم حفظ التقييم بنجاح - ${newPct}% (${newGrade})`);
+if (typeof navigate === 'function') navigate('view-evaluation', { id: newEvalId });
 return true;
 });
 });
@@ -4482,10 +4506,20 @@ const apprBtn = document.getElementById('approve-eval-btn');
 if (apprBtn) apprBtn.addEventListener('click', async (e) => {
 const btn = e.currentTarget;
 await submitWithFeedback(btn, 'جاري الاعتماد...', null, async () => {
-const id = currentParams.id;
-DB.approveEvaluation(parseInt(id));
+const id = parseInt(currentParams.id);
+if (window.sb && window.sb.rpc) {
+const { data, error } = await window.sb.rpc('approve_evaluation', {
+p_session_token: (window.getSessionToken ? window.getSessionToken() : null), p_eval_id: id
+});
+const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
+if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر الاعتماد'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+try { const ev=DB.getEvaluation(id); if (ev && window.EmailService) window.EmailService.sendApprovalEmail(ev).catch(()=>{}); } catch(_){}
+} else {
+DB.approveEvaluation(id);
+}
 Toast.success('تم اعتماد التقييم');
-if (typeof navigate === 'function') navigate('view-evaluation', { id: parseInt(id) });
+if (typeof navigate === 'function') navigate('view-evaluation', { id: id });
 return true;
 });
 });
