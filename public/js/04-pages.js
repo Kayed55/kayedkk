@@ -186,6 +186,23 @@ return 'forbidden';
 return null;
 }
 
+// حفظ معايير التقييم عبر RPC مُصادَق (admin) — يُرجع true عند النجاح
+async function saveCriteriaViaRPC() {
+if (window.sb && window.sb.rpc) {
+const { data, error } = await window.sb.rpc('admin_update_criteria', {
+p_session_token: (window.getSessionToken ? window.getSessionToken() : null),
+p_criteria: CRITERIA
+});
+const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
+if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر حفظ المعايير'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
+// مزامنة الحالة المحلية دون دفع upsert مباشر
+try { DB.data.criteria = CRITERIA; localStorage.setItem(DB.KEY || 'qe_system_v6', JSON.stringify(DB.data)); } catch(_){}
+return true;
+}
+DB.saveCriteria(CRITERIA); // مسار محلي احتياطي (بدون Supabase)
+return true;
+}
+
 // حسم اعتراض عبر RPC مُصادَق (قبول/رفض) — يُرجع true عند النجاح
 async function resolveObjectionViaRPC(oid, decision, resp) {
 if (window.sb && window.sb.rpc) {
@@ -4225,7 +4242,7 @@ key, title, type, weight,
 subsections:[{ key:key+'_default', title:'القسم الفرعي الافتراضي', weight: type === 'non-critical' ? weight : undefined, items:[{ key:key+'_default_1', label:'بند جديد - يمكنك تعديله' }] }]
 });
 }
-DB.saveCriteria(CRITERIA);
+if (!(await saveCriteriaViaRPC())) return false;
 Modal.close();
 Toast.success('تم الحفظ');
 if (typeof navigate === 'function') navigate('settings', { tab:'form' });
@@ -4262,7 +4279,7 @@ if (isNonCritical) ed.weight = weight;
 } else {
 sec.subsections.push({ key, title, weight, items:[{ key:key+'_1', label:'بند جديد - يمكنك تعديله' }] });
 }
-DB.saveCriteria(CRITERIA);
+if (!(await saveCriteriaViaRPC())) return false;
 Modal.close();
 Toast.success('تم الحفظ');
 if (typeof navigate === 'function') navigate('settings', { tab:'form' });
@@ -4296,7 +4313,7 @@ ed.label = label;
 } else {
 sub.items.push({ key, label });
 }
-DB.saveCriteria(CRITERIA);
+if (!(await saveCriteriaViaRPC())) return false;
 Modal.close();
 Toast.success('تم الحفظ');
 if (typeof navigate === 'function') navigate('settings', { tab:'form' });
@@ -4315,7 +4332,7 @@ if (reset) reset.addEventListener('click', async (e) => {
 if (!confirm('سيتم إعادة جميع الإعدادات إلى القيم الافتراضية. هل أنت متأكد؟')) return;
 const btn = e.currentTarget;
 await submitWithFeedback(btn, 'جاري الاستعادة...', null, async () => {
-DB.resetCriteria();
+DB.resetCriteria(); if (!(await saveCriteriaViaRPC())) return false;
 Toast.success('تمت استعادة الإعدادات الافتراضية');
 if (typeof navigate === 'function') navigate('settings', { tab: 'form' });
 return true;
@@ -4332,7 +4349,7 @@ if (!confirm('سيتم حذف القسم وجميع بنوده. هل أنت مت
 const btn = e.currentTarget;
 await submitWithFeedback(btn, 'جاري الحذف...', null, async () => {
 CRITERIA.sections = CRITERIA.sections.filter(s => s.key !== b.dataset.delSection);
-DB.saveCriteria(CRITERIA);
+if (!(await saveCriteriaViaRPC())) return false;
 Toast.success('تم الحذف');
 if (typeof navigate === 'function') navigate('settings', { tab:'form' });
 return true;
@@ -4350,7 +4367,7 @@ const btn = e.currentTarget;
 await submitWithFeedback(btn, 'جاري الحذف...', null, async () => {
 const s = CRITERIA.sections.find(x => x.key === sk);
 s.subsections = s.subsections.filter(x => x.key !== subk);
-DB.saveCriteria(CRITERIA);
+if (!(await saveCriteriaViaRPC())) return false;
 Toast.success('تم الحذف');
 if (typeof navigate === 'function') navigate('settings', { tab:'form' });
 return true;
@@ -4372,7 +4389,7 @@ await submitWithFeedback(btn, 'جاري الحذف...', null, async () => {
 const s = CRITERIA.sections.find(x => x.key === sk);
 const sub = s.subsections.find(x => x.key === subk);
 sub.items = sub.items.filter(i => i.key !== itk);
-DB.saveCriteria(CRITERIA);
+if (!(await saveCriteriaViaRPC())) return false;
 Toast.success('تم الحذف');
 if (typeof navigate === 'function') navigate('settings', { tab:'form' });
 return true;
@@ -4397,7 +4414,7 @@ if (!isNaN(sw)) sub.weight = sw;
 });
 }
 });
-DB.saveCriteria(CRITERIA);
+if (!(await saveCriteriaViaRPC())) return false;
 Toast.success('تم حفظ الأوزان');
 if (typeof navigate === 'function') navigate('settings', { tab:'weights' });
 return true;
