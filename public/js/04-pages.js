@@ -3993,31 +3993,39 @@ if (observed === 'أخرى' && !observedOther.trim()) { Toast.error('يرجى ك
 if (!action) { Toast.error('يرجى اختيار الإجراء المتخذ'); return false; }
 if (action === 'أخرى' && !actionOther.trim()) { Toast.error('يرجى كتابة وصف الإجراء'); return false; }
 
+// تعديل عبر RPC مُصادَق — الدرجة تُعاد احتسابها على الخادم (لا نمرّر درجات)
+if (window.sb && window.sb.rpc) {
+const { data, error } = await window.sb.rpc('admin_update_evaluation', {
+p_session_token: (window.getSessionToken ? window.getSessionToken() : null),
+p_eval_id: evalId,
+p_employee_id: empId,
+p_evaluation_date: document.getElementById('ef-date').value,
+p_observed_issue: observed,
+p_observed_issue_other: observedOther.trim(),
+p_action_taken: action,
+p_action_taken_other: actionOther.trim(),
+p_notes: document.getElementById('ef-notes').value.trim(),
+p_items: items
+});
+const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
+if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر حفظ التعديلات'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+Toast.success(`تم حفظ التعديلات — النتيجة المعاد احتسابها ${row.percentage}% (${row.grade})`);
+} else {
+// مسار محلي احتياطي
 DB.updateEvaluation(evalId, {
 employee_id: empId,
 evaluation_date: document.getElementById('ef-date').value,
 call_type: observed === 'أخرى' ? observedOther.trim() : observed,
-observed_issue: observed,
-observed_issue_other: observedOther.trim(),
-action_taken: action,
-action_taken_other: actionOther.trim(),
+observed_issue: observed, observed_issue_other: observedOther.trim(),
+action_taken: action, action_taken_other: actionOther.trim(),
 notes: document.getElementById('ef-notes').value.trim(),
-items: items,
-section_scores: r.sectionScores,
-total_score: r.totalScore,
-percentage: r.percentage,
-grade: r.grade,
-status: r.status
+items: items, section_scores: r.sectionScores, total_score: r.totalScore,
+percentage: r.percentage, grade: r.grade, status: r.status
 });
-
-DB.createNotification({
-user_id: empId,
-title: 'تم تعديل تقييمك',
-message: `تم تحديث تقييمك إلى ${r.percentage}% - ${r.grade}`,
-type: 'info'
-});
-
+DB.createNotification({ user_id: empId, title: 'تم تعديل تقييمك', message: `تم تحديث تقييمك إلى ${r.percentage}% - ${r.grade}`, type: 'info' });
 Toast.success(`تم حفظ التعديلات بنجاح - ${r.percentage}% (${r.grade})`);
+}
 if (typeof navigate === 'function') navigate('view-evaluation', { id: evalId });
 return true;
 });
