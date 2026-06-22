@@ -76,3 +76,32 @@ if (document.readyState === 'loading') {
 } else {
   bootApp();
 }
+
+// ============================================
+// تحديث تلقائي عند نشر نسخة جديدة (يحلّ كاش التبويبات المفتوحة بلا Cmd+Shift+R)
+// ============================================
+(function setupAutoUpdate() {
+  function parseV(text) { var m = text.match(/04-pages\.js\?v=(\d+)/); return m ? parseInt(m[1], 10) : null; }
+  // النسخة المُحمّلة حالياً من وسم السكربت نفسه
+  var loaded = (function () {
+    try { var s = document.querySelector('script[src*="04-pages.js"]'); return s ? parseV(s.src) : null; } catch (_) { return null; }
+  })();
+  if (!loaded) return;
+  var busy = false, triggered = false;
+  async function check() {
+    if (busy || triggered) return; busy = true;
+    try {
+      var res = await fetch('/?_cv=' + Date.now(), { cache: 'no-store' });
+      var deployed = parseV(await res.text());
+      if (deployed && deployed > loaded) {
+        triggered = true;
+        try { if (window.Toast && Toast.info) Toast.info('🔄 تتوفّر نسخة محدّثة — يُعاد التحميل…'); } catch (_) {}
+        setTimeout(function () { location.reload(); }, 1500);
+      }
+    } catch (_) {} finally { busy = false; }
+  }
+  setInterval(check, 180000); // كل 3 دقائق
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') check(); });
+  window.addEventListener('focus', check);
+  setTimeout(check, 5000); // فحص مبكّر بعد الإقلاع
+})();
