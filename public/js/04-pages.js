@@ -95,6 +95,21 @@ clearSession();
 navigate('login');
 }
 
+// تسجيل حدث عميل في التدقيق عبر RPC (fire-and-forget) — بديل addAudit بعد سحب anon
+function logEvent(action, details, entityType, entityId) {
+try {
+if (window.sb && window.sb.rpc) {
+window.sb.rpc('log_event', {
+p_session_token: (window.getSessionToken ? window.getSessionToken() : null),
+p_action: action, p_entity_type: entityType || 'login',
+p_entity_id: (entityId == null ? null : entityId), p_details: details || ''
+}).then(function(){}, function(){});
+} else if (typeof DB !== 'undefined' && DB.addAudit) {
+DB.addAudit({ action: action, entity_type: entityType || 'login', entity_id: entityId || null, details: details });
+}
+} catch (_) {}
+}
+
 // ============================================
 // تنقّل الأقسام (القائمة الجانبية): جلب طازج + مؤشّر تحميل + حُرّاس
 // ============================================
@@ -329,7 +344,7 @@ _local: true
 if (!codeData || !codeData.ok) {
 const msg = (codeData && codeData.message) || 'البريد الإلكتروني أو كلمة المرور غير صحيحة';
 Toast.error(msg);
-DB.addAudit({ action:'failed_login', entity_type:'login', details:`محاولة دخول فاشلة - ${email}` });
+logEvent('failed_login', `محاولة دخول فاشلة - ${email}`);
 if (btn) { btn.dataset.busy='0'; btn.disabled = false; btn.textContent = 'دخول'; }
 return;
 }
@@ -496,7 +511,7 @@ result = { ok:false, message:'كود غير صحيح أو منتهي' };
 if (!result || !result.ok) {
 const msg = (result && result.message) || 'كود غير صحيح';
 Toast.error(msg);
-DB.addAudit({ action:'failed_otp', entity_type:'login', entity_id:_pendingOTP.user_id, details:`فشل OTP - ${_pendingOTP.user_email}` });
+logEvent('failed_otp', `فشل OTP - ${_pendingOTP.user_email}`, 'login', _pendingOTP.user_id);
 codeInput.value=''; codeInput.focus();
 btn.dataset.busy='0'; btn.disabled = false; btn.textContent = 'تأكيد ودخول';
 return;
@@ -511,7 +526,7 @@ if (result.session_token) {
 localStorage.setItem('mahzam_session_token', result.session_token);
 if (result.session_expires_at) localStorage.setItem('mahzam_session_expires_at', result.session_expires_at);
 }
-DB.addAudit({ action:'login', entity_type:'login', entity_id:u.id, details:`دخول مع OTP: ${u.full_name} (${u.email})` });
+logEvent('login', `دخول مع OTP: ${u.full_name} (${u.email})`, 'login', u.id);
 Toast.success('مرحباً بك ' + u.full_name);
 if (_otpTimer) { clearInterval(_otpTimer); _otpTimer = null; }
 _pendingOTP = null;
@@ -635,7 +650,7 @@ document.getElementById('forgot-step2').style.display = 'block';
 document.getElementById('fp-temp').value = tempPw;
 btn.textContent = 'تم';
 Toast.success('تم إنشاء كلمة المرور المؤقتة');
-DB.addAudit({ action:'password_reset_request', entity_type:'user', details:`طلب إعادة تعيين كلمة المرور - ${email}` });
+logEvent('password_reset_request', `طلب إعادة تعيين كلمة المرور - ${email}`, 'user');
 } catch(err) {
 console.error(err);
 Toast.error('فشلت العملية');
@@ -1499,7 +1514,7 @@ document.getElementById('rp-step2').style.display = 'block';
 document.getElementById('rp-temp').value = tempPw;
 btn.textContent = 'تم';
 Toast.success('تم إعادة تعيين كلمة المرور');
-DB.addAudit({ action:'admin_password_reset', entity_type:'user', entity_id:userId, details:`الإدمن أعاد تعيين كلمة مرور: ${resetUser ? resetUser.full_name : userId}` });
+// التدقيق يُكتب على الخادم داخل admin_reset_password (لا حاجة لتدقيق عميل)
 } else {
 btn.textContent = orig;
 btn.disabled = false;
@@ -3345,8 +3360,16 @@ const review = document.getElementById('obj-mark-review');
 if (review) review.addEventListener('click', async (e) => {
 const btn = e.currentTarget;
 await submitWithFeedback(btn, 'جاري المعالجة...', null, async () => {
+if (window.sb && window.sb.rpc) {
+const { data, error } = await window.sb.rpc('mark_objection_under_review', {
+p_session_token: (window.getSessionToken ? window.getSessionToken() : null), p_objection_id: oid
+});
+const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
+if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر التحويل'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(); }catch(_){} }
+} else {
 DB.updateObjection(oid, { status: 'under_review' });
-DB.addAudit({ action:'review_objection', entity_type:'objection', entity_id:oid, details:`تحويل الاعتراض إلى قيد المراجعة` });
+}
 Toast.success('تم تحويل الاعتراض إلى قيد المراجعة');
 if (typeof navigate === 'function') navigate('view-objection', { id: oid });
 return true;
@@ -3584,7 +3607,10 @@ return true;
 // ============================================
 function renderNotificationsPage() {
 const notifs = DB.getNotifications(currentUser.id);
-DB.markAllRead(currentUser.id);
+// تعليم مقروءة: محلياً فوراً + على الخادم عبر RPC (fire-and-forget)
+try { (DB.data.notifications||[]).forEach(n => { if (n.user_id === currentUser.id) n.is_read = true; }); } catch(_){}
+if (window.sb && window.sb.rpc) { try { window.sb.rpc('mark_notifications_read', { p_session_token: (window.getSessionToken ? window.getSessionToken() : null) }).then(function(){},function(){}); } catch(_){} }
+else { DB.markAllRead(currentUser.id); }
 
 return `
 <div class="page-header">

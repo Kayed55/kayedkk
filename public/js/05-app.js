@@ -27,19 +27,15 @@ function reportClientError(msg, where) {
     if (now - _lastErrReport < 4000) return;   // throttle لتفادي الإغراق
     _lastErrReport = now;
     console.error('[client_error]', msg, where || '');
-    if (window.sb) {
-      const u = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : null;
-      window.sb.from('audit_logs').insert({
-        id: now,
-        user_id: u ? u.id : null,
-        user_name: u ? u.full_name : 'زائر',
-        role: u ? u.role : '-',
-        action: 'client_error',
-        entity_type: 'client',
-        entity_id: null,
-        details: String(msg).slice(0, 500) + (where ? ' @ ' + String(where).slice(0, 200) : ''),
-        timestamp: new Date().toISOString()
-      }).then(function(){}, function(){});   // best-effort، لا يكسر التطبيق
+    if (window.sb && window.sb.rpc) {
+      // عبر RPC log_event (anon لم يعد يكتب مباشرة في الجداول)
+      window.sb.rpc('log_event', {
+        p_session_token: (window.getSessionToken ? window.getSessionToken() : null),
+        p_action: 'client_error',
+        p_entity_type: 'client',
+        p_entity_id: null,
+        p_details: String(msg).slice(0, 500) + (where ? ' @ ' + String(where).slice(0, 200) : '')
+      }).then(function(){}, function(){});   // best-effort
     }
   } catch (_) { /* ignore */ }
 }
