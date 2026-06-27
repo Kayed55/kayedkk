@@ -1,0 +1,17 @@
+User-agent: *
+Disallow: /
+
+# منع صريح للزواحف الكبرى
+User-agent: Googlebot
+Disallow: /
+
+User-agent: Bingbot
+Disallow: /
+
+User-agent: YandexBot
+Disallow: /
+
+User-agent: Baiduspider
+Disallow: /
+
+# لا sitemap
