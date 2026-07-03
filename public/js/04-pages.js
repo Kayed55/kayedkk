@@ -1182,8 +1182,24 @@ ${noteIfNoSup}
 </div>`;
 }
 
-function showEmployeeModal(editId=null) {
+// قائمة الأدوار الوظيفية (job_role)
+const JOB_ROLES = [['real_estate_marketer','مسوّق عقاري'],['designer','مصمّم'],['social_media','سوشيال ميديا'],['seo','SEO'],['content_manager','مدير محتوى'],['quality_agent','موظف جودة']];
+// تحميل الأقسام (مع تخزين) عبر RPC
+async function loadDepartments(force) {
+  if (window._departments && !force) return window._departments;
+  try {
+    const tok = window.getSessionToken ? window.getSessionToken() : null;
+    const { data } = await window.sb.rpc('list_departments', { p_session_token: tok });
+    window._departments = (data && data.departments) ? data.departments : [];
+  } catch (_) { window._departments = []; }
+  return window._departments;
+}
+
+async function showEmployeeModal(editId=null) {
 const ed = editId ? DB.getUser(editId) : null;
+const depts = (await loadDepartments()).filter(d => d.is_active);
+const deptOpts = depts.map(d => `<option value="${d.id}" ${ed && ed.department_id === d.id ? 'selected' : ''}>${Utils.escape(d.name)}</option>`).join('');
+const jobOpts = JOB_ROLES.map(([v,l]) => `<option value="${v}" ${ed && ed.job_role === v ? 'selected' : ''}>${l}</option>`).join('');
 const supervisors = DB.getSupervisors();
 const currentSup = ed ? (ed.supervisor_name||'') : '';
 const supOpts = supervisors.map(s => `<option value="${Utils.escape(s.full_name)}" ${s.full_name===currentSup?'selected':''}>${Utils.escape(s.full_name)} (${Utils.escape(s.email||'-')})</option>`).join('');
@@ -1208,7 +1224,8 @@ const body = `<form id="emp-form">
 <div class="form-group"><label class="form-label">📱 رقم الجوال</label><input class="form-control" id="ef-phone" value="${ed?Utils.escape(ed.phone||''):''}" placeholder="05xxxxxxxx"></div>
 <div class="form-group"><label class="form-label">المسمى الوظيفي *</label><input class="form-control" id="ef-pos" required value="${ed?Utils.escape(ed.position||''):'موظف خدمة'}"></div>
 <div class="form-group"><label class="form-label">👨‍💼 اسم المشرف *</label>${supDropdown}</div>
-<div class="form-group"><label class="form-label">القسم/الإدارة</label><input class="form-control" id="ef-dept" value="${ed?Utils.escape(ed.department||''):'قسم الجودة'}"></div>
+<div class="form-group"><label class="form-label">القسم * <span style="font-size:11px;color:var(--muted)">(يحدّد نموذج التقييم)</span></label><select class="form-control" id="ef-deptid" required><option value="">-- اختر القسم --</option>${deptOpts}</select></div>
+<div class="form-group"><label class="form-label">الدور الوظيفي</label><select class="form-control" id="ef-jobrole"><option value="">-- غير محدّد --</option>${jobOpts}</select></div>
 ${!ed ? `<div style="background:#eff6ff;padding:10px;border-radius:8px;font-size:12px;color:var(--primary-dark)">🔐 ستُولَّد كلمة مرور مؤقتة تلقائياً وتُرسَل لبريد الموظف وتُعرَض لك بعد الإضافة.</div>` : ''}
 </div>
 ${!ed ? `<div style="background:#f1f5f9;padding:10px;border-radius:8px;font-size:12px;color:var(--muted);margin-top:8px">
@@ -1231,12 +1248,16 @@ const supObj = DB.getSupervisors().find(s => s.full_name === supervisor_name);
 const supervisor_id = supObj ? supObj.id : null;
 const email = document.getElementById('ef-email').value.trim();
 const phone = document.getElementById('ef-phone').value.trim();
-const department = document.getElementById('ef-dept').value.trim();
+const department_id = document.getElementById('ef-deptid').value ? parseInt(document.getElementById('ef-deptid').value) : null;
+const job_role = document.getElementById('ef-jobrole').value || null;
+const deptObj = (window._departments || []).find(d => d.id === department_id);
+const department = deptObj ? deptObj.name : '';
 
 if (!full_name || !employee_number || !position || !supervisor_name || !email) {
 Toast.error('يرجى تعبئة جميع الحقول المطلوبة');
 return false;
 }
+if (!department_id) { Toast.error('يرجى اختيار القسم'); return false; }
 if (!Utils.validateEmail(email)) { Toast.error('بريد إلكتروني غير صالح'); return false; }
 
 const _tok = (window.getSessionToken ? window.getSessionToken() : null);
@@ -1246,7 +1267,8 @@ const { data, error } = await window.sb.rpc('update_employee_profile', {
 p_session_token: _tok, p_user_id: editId,
 p_full_name: full_name, p_email: email, p_employee_number: employee_number,
 p_position: position, p_department: department, p_phone: phone,
-p_supervisor_id: supervisor_id, p_supervisor_name: supervisor_name
+p_supervisor_id: supervisor_id, p_supervisor_name: supervisor_name,
+p_department_id: department_id, p_job_role: job_role
 });
 const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر الحفظ'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
@@ -1262,7 +1284,8 @@ if (window.sb && window.sb.rpc) {
 const { data, error } = await window.sb.rpc('create_employee', {
 p_session_token: _tok, p_full_name: full_name, p_email: email, p_employee_number: employee_number,
 p_position: position, p_department: department, p_phone: phone,
-p_supervisor_id: supervisor_id, p_supervisor_name: supervisor_name
+p_supervisor_id: supervisor_id, p_supervisor_name: supervisor_name,
+p_department_id: department_id, p_job_role: job_role
 });
 const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر إضافة الموظف'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
