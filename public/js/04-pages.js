@@ -1886,7 +1886,27 @@ return `
 function renderNewEvaluation() {
 const employees = DB.getUsers({ role:'employee', active:true });
 const empOpts = employees.map(e => `<option value="${e.id}">${Utils.escape(e.full_name)}</option>`).join('');
+// تأكد من تحميل الأقسام (لتحديد نوع النموذج حسب قسم الموظف)
+if (!window._departments) loadDepartments(true).then(() => { if (currentPage === 'new-evaluation') { const s=document.getElementById('ef-employee'); if (s && s.value) renderEvalBodyForEmployee(parseInt(s.value)); } });
+return `
+<div class="page-header">
+<div><div class="page-title">تقييم جديد</div><div class="page-subtitle">اختر الموظف لعرض نموذج قسمه</div></div>
+<button class="btn btn-secondary" data-nav="evaluations">← رجوع</button>
+</div>
+<div class="card">
+<div class="card-header"><div class="card-title">📋 بيانات التقييم</div></div>
+<div class="card-body">
+<div class="grid grid-2">
+<div class="form-group"><label class="form-label">الموظف *</label><select class="form-control" id="ef-employee" required><option value="">-- اختر --</option>${empOpts}</select></div>
+<div class="form-group"><label class="form-label">تاريخ التقييم *</label><input type="date" class="form-control" id="ef-date" required value="${new Date().toISOString().substring(0,10)}"></div>
+</div>
+</div>
+</div>
+<div id="neval-body"><div class="alert alert-info">اختر الموظف لعرض نموذج التقييم المناسب لقسمه.</div></div>`;
+}
 
+// جسم النموذج القطاعي (محزم) — نفس تجربة التقييم الحالية بدون بطاقة الموظف/التاريخ (أصبحت مشتركة)
+function renderSectionEvalBody() {
 const A = CRITERIA.answers;
 const sectionsHTML = CRITERIA.sections.map(s => `
 <div class="card">
@@ -1909,21 +1929,11 @@ ${sub.items.map(it => `
 `).join('')}
 </div>
 </div>`).join('');
-
-return `
-<div class="page-header">
-<div><div class="page-title">تقييم جديد</div><div class="page-subtitle">قم بتعبئة بيانات التقييم</div></div>
-<button class="btn btn-secondary" data-nav="evaluations">← رجوع</button>
-</div>
-<form id="new-eval-form">
+return `<form id="new-eval-form">
 <div class="card">
-<div class="card-header"><div class="card-title">📋 بيانات التقييم</div></div>
+<div class="card-header"><div class="card-title">📋 تفاصيل الملاحظة</div></div>
 <div class="card-body">
-<div class="grid grid-3">
-<div class="form-group"><label class="form-label">الموظف *</label><select class="form-control" id="ef-employee" required><option value="">-- اختر --</option>${empOpts}</select></div>
-<div class="form-group"><label class="form-label">تاريخ التقييم *</label><input type="date" class="form-control" id="ef-date" required value="${new Date().toISOString().substring(0,10)}"></div>
 <div class="form-group"><label class="form-label">🔍 الملاحظة المرصودة *</label>${buildObservedIssueSelect()}</div>
-</div>
 ${buildCommTypeField(null)}
 <div class="form-group"><label class="form-label">ملاحظات إضافية</label><textarea class="form-control" id="ef-notes" rows="2"></textarea></div>
 </div>
@@ -1954,6 +1964,154 @@ ${sectionsHTML}
 </form>`;
 }
 
+// ===== الأدوات المشتركة للتفرّع حسب القسم =====
+function weekStartSaturdayJS(dateStr) {
+const d = dateStr ? new Date(dateStr + 'T00:00:00') : new Date();
+const off = (d.getDay() + 1) % 7; // 6=السبت → 0
+d.setDate(d.getDate() - off);
+return d.toISOString().substring(0, 10);
+}
+async function loadTemplateFor(deptId) {
+window._templates = window._templates || {};
+if (window._templates[deptId]) return window._templates[deptId];
+const tok = window.getSessionToken ? getSessionToken() : null;
+const { data } = await window.sb.rpc('get_template_for_department', { p_session_token: tok, p_department_id: parseInt(deptId) });
+window._templates[deptId] = (Array.isArray(data) ? data[0] : data) || { ok:false };
+return window._templates[deptId];
+}
+async function renderEvalBodyForEmployee(empId) {
+const body = document.getElementById('neval-body');
+if (!body) return;
+if (!empId) { body.innerHTML = '<div class="alert alert-info">اختر الموظف لعرض نموذج التقييم.</div>'; return; }
+const emp = DB.getUser(empId);
+await loadDepartments();
+const dept = (emp && emp.department_id) ? (window._departments || []).find(d => d.id === emp.department_id) : null;
+const type = dept ? dept.template_type : 'section_based';
+if (type === 'task_based_weekly') {
+body.innerHTML = '<div class="card"><div class="card-body">⏳ جارٍ تحميل النموذج…</div></div>';
+const tpl = await loadTemplateFor(dept.id);
+if (!tpl || !tpl.ok || !tpl.exists) { body.innerHTML = '<div class="alert alert-danger">لا يوجد نموذج لهذا القسم</div>'; return; }
+body.innerHTML = renderWeeklyEvalBody(dept, emp, tpl.template);
+attachWeeklyHandlers(dept, emp, tpl.template);
+} else {
+body.innerHTML = renderSectionEvalBody();
+attachSectionEvalHandlers();
+}
+}
+function weeklyTaskRowHTML(dims) {
+const cells = dims.map(dm => {
+if (dm.type === 'choice') {
+const opts = (dm.options || []).map(o => `<option value="${o}">${o}</option>`).join('');
+return `<td><select class="form-control wk-dim" data-dim="${dm.id}">${opts}</select></td>`;
+}
+return `<td><input type="number" min="${dm.min!=null?dm.min:0}" max="${dm.max!=null?dm.max:100}" class="form-control wk-dim" data-dim="${dm.id}" value="0" style="min-width:80px"></td>`;
+}).join('');
+return `<tr><td><input type="text" class="form-control wk-taskname" placeholder="اسم المهمة" style="min-width:140px"></td>${cells}<td><button type="button" class="btn btn-sm btn-danger wk-del-task">✕</button></td></tr>`;
+}
+function renderWeeklyEvalBody(dept, emp, template) {
+const job = emp.job_role;
+const jobLabel = ROLE_NAMES[job] || job || '—';
+const dims = (template.task_scoring && template.task_scoring.dimensions) || [];
+const kpis = (template.role_kpis && template.role_kpis[job]) || [];
+const ws = weekStartSaturdayJS();
+const we = weekStartSaturdayJS(ws); const weD = new Date(ws + 'T00:00:00'); weD.setDate(weD.getDate() + 6);
+const weStr = weD.toISOString().substring(0, 10);
+const dimHead = dims.map(dm => `<th>${Utils.escape(dm.name)}</th>`).join('');
+let kpiHTML;
+if (!job) kpiHTML = '<div class="alert alert-warning">هذا الموظف بلا دور وظيفي — عيّن الدور من صفحة الموظفين لعرض مؤشراته.</div>';
+else if (!kpis.length) kpiHTML = '<div class="alert alert-info">لا توجد مؤشرات معرّفة لهذا الدور في النموذج.</div>';
+else kpiHTML = kpis.map(k => {
+const hint = k.type === 'count' ? `الهدف: ${k.target!=null?k.target:'غير محدّد'}${k.lower_is_better?' — أقل أفضل':''}` : 'نسبة مئوية 0-100';
+return `<div class="form-group"><label class="form-label">${Utils.escape(k.name)} <span style="color:var(--muted);font-size:12px">(${hint})</span></label><input type="number" min="0" class="form-control" data-kpi="${k.id}" placeholder="0"></div>`;
+}).join('');
+return `<form id="weekly-eval-form">
+<div class="card"><div class="card-header"><div class="card-title">📅 التقييم الأسبوعي — ${jobLabel}</div></div>
+<div class="card-body"><div class="grid grid-2">
+<div class="form-group"><label class="form-label">بداية الأسبوع (السبت) *</label><input type="date" class="form-control" id="wk-start" value="${ws}"></div>
+<div class="form-group"><label class="form-label">نهاية الأسبوع *</label><input type="date" class="form-control" id="wk-end" value="${weStr}"></div>
+</div></div></div>
+<div class="card"><div class="card-header"><div class="card-title">✅ المهام</div><button type="button" class="btn btn-sm btn-secondary" id="wk-add-task">➕ إضافة مهمة</button></div>
+<div class="card-body" style="padding:0;overflow-x:auto">
+<table class="table" id="wk-tasks"><thead><tr><th>المهمة</th>${dimHead}<th></th></tr></thead><tbody></tbody></table>
+</div></div>
+<div class="card"><div class="card-header"><div class="card-title">📊 مؤشرات الأداء (${jobLabel})</div></div><div class="card-body">${kpiHTML}</div></div>
+<div class="card"><div class="card-body"><div class="form-group"><label class="form-label">ملاحظات</label><textarea class="form-control" id="wk-notes" rows="2"></textarea></div></div></div>
+<div class="card" style="position:sticky;bottom:0;z-index:10;border:2px solid var(--primary)"><div class="card-body">
+<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px">
+<div><div style="font-size:13px;color:var(--muted)">النتيجة التقديرية</div><div id="wk-score" style="font-size:32px;font-weight:800;color:var(--primary)">—</div><div id="wk-grade"></div></div>
+<div style="display:flex;gap:10px"><button type="button" class="btn btn-secondary" data-nav="evaluations">إلغاء</button><button type="submit" class="btn btn-success" style="padding:12px 26px;font-size:15px">💾 حفظ التقييم الأسبوعي</button></div>
+</div></div></div>
+</form>`;
+}
+function collectWeeklyTasks() {
+const tasks = [];
+document.querySelectorAll('#wk-tasks tbody tr').forEach(tr => {
+const name = ((tr.querySelector('.wk-taskname') || {}).value || '').trim();
+const o = { name: name };
+tr.querySelectorAll('.wk-dim').forEach(inp => { o[inp.dataset.dim] = parseFloat(inp.value) || 0; });
+tasks.push(o);
+});
+return tasks.filter(t => t.name || t.completion || t.timeliness || t.quality);
+}
+function collectWeeklyKpis() {
+const k = {};
+document.querySelectorAll('[data-kpi]').forEach(inp => { if (inp.value !== '') k[inp.dataset.kpi] = parseFloat(inp.value) || 0; });
+return k;
+}
+function computeTaskBasedPreview(tasks, kpis, kpiDefs) {
+let tsum = 0, tn = 0;
+tasks.forEach(t => { tsum += ((+t.completion||0) + (+t.timeliness||0) + (+t.quality||0)) / 3; tn++; });
+const tasksAvg = tn ? tsum / tn : 0;
+let ksum = 0, kn = 0;
+(kpiDefs || []).forEach(k => {
+const v = kpis[k.id] != null ? kpis[k.id] : 0;
+const lower = !!k.lower_is_better; let nrm;
+if (k.type === 'percentage') nrm = lower ? 100 - v : v;
+else { const tgt = k.target; if (tgt == null || tgt === 0) nrm = null; else if (lower) nrm = 100 - Math.max(0, v - tgt) / tgt * 100; else nrm = v / tgt * 100; }
+if (nrm != null) { nrm = Math.min(100, Math.max(0, nrm)); ksum += nrm; kn++; }
+});
+const kpisAvg = kn ? ksum / kn : 0;
+return Math.round(((tasksAvg + kpisAvg) / 2) * 100) / 100;
+}
+function attachWeeklyHandlers(dept, emp, template) {
+const form = document.getElementById('weekly-eval-form');
+if (!form) return;
+const dims = (template.task_scoring && template.task_scoring.dimensions) || [];
+const kpiDefs = (template.role_kpis && template.role_kpis[emp.job_role]) || [];
+const tbody = form.querySelector('#wk-tasks tbody');
+const updateLive = () => {
+const score = computeTaskBasedPreview(collectWeeklyTasks(), collectWeeklyKpis(), kpiDefs);
+document.getElementById('wk-score').textContent = score + ' / 100';
+document.getElementById('wk-grade').innerHTML = Utils.gradeBadge(score);
+};
+const bindLive = () => { form.querySelectorAll('.wk-dim,[data-kpi]').forEach(el => { el.oninput = updateLive; el.onchange = updateLive; }); };
+const addRow = () => { tbody.insertAdjacentHTML('beforeend', weeklyTaskRowHTML(dims)); bindLive(); };
+form.querySelector('#wk-add-task').addEventListener('click', addRow);
+tbody.addEventListener('click', e => { if (e.target.closest('.wk-del-task')) { e.target.closest('tr').remove(); updateLive(); } });
+addRow();
+updateLive();
+form.addEventListener('submit', async e => {
+e.preventDefault();
+const btn = form.querySelector('button[type=submit]');
+await submitWithFeedback(btn, 'جاري حفظ التقييم الأسبوعي...', null, async () => {
+const tasks = collectWeeklyTasks();
+if (!tasks.length) { Toast.error('أضف مهمة واحدة على الأقل'); return false; }
+const ws = document.getElementById('wk-start').value, we = document.getElementById('wk-end').value;
+if (!ws || !we) { Toast.error('حدّد بداية ونهاية الأسبوع'); return false; }
+const kpis = collectWeeklyKpis();
+const tok = window.getSessionToken ? getSessionToken() : null;
+const { data, error } = await window.sb.rpc('create_weekly_evaluation', { p_session_token: tok, p_employee_id: emp.id, p_week_start: ws, p_week_end: we, p_tasks: tasks, p_kpis: kpis });
+const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
+if (!row || !row.ok) { const m = (row && row.message) || (error && error.message) || 'تعذّر حفظ التقييم'; if (!handleSessionError(m)) Toast.error(m); return false; }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try { await SupabaseSync.pullAll(true); } catch(_){} }
+try { if (row.evaluation_id && !DB.getEvaluation(row.evaluation_id) && window.sb) { const { data: ne } = await window.sb.from('evaluations').select('*').eq('id', row.evaluation_id).maybeSingle(); if (ne) { DB.data.evaluations = (DB.data.evaluations || []).filter(x => x.id !== ne.id).concat(ne); localStorage.setItem(DB.KEY, JSON.stringify(DB.data)); } } } catch(_){}
+Toast.success(`تم حفظ التقييم الأسبوعي — ${row.percentage}% (${row.grade})`);
+navigate('view-evaluation', { id: row.evaluation_id });
+return true;
+});
+});
+}
+
 function collectItems() {
 const items = {};
 CRITERIA.sections.forEach(s => s.subsections.forEach(sub => sub.items.forEach(it => {
@@ -1964,6 +2122,13 @@ return items;
 }
 
 function attachNewEvalHandlers() {
+const empSel = document.getElementById('ef-employee');
+if (!empSel) return;
+empSel.addEventListener('change', () => renderEvalBodyForEmployee(parseInt(empSel.value)));
+if (empSel.value) renderEvalBodyForEmployee(parseInt(empSel.value));
+}
+
+function attachSectionEvalHandlers() {
 const form = document.getElementById('new-eval-form');
 if (!form) return;
 
@@ -2058,6 +2223,24 @@ return true;
 // ============================================
 // View Evaluation
 // ============================================
+function renderWeeklyView(ev) {
+const emp = DB.getUser(ev.employee_id); const evr = DB.getUser(ev.evaluator_id);
+const sc = ev.section_scores || {}; const detail = sc.kpi_detail || [];
+const pct = (sc.percentage != null ? sc.percentage : ev.percentage);
+const tasks = ev.tasks || [];
+const tasksRows = tasks.map(t => `<tr><td>${Utils.escape(t.name||'—')}</td><td>${t.completion||0}</td><td>${t.timeliness||0}</td><td>${t.quality||0}</td><td><strong>${Math.round(((+t.completion||0)+(+t.timeliness||0)+(+t.quality||0))/3)}</strong></td></tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--muted)">لا مهام</td></tr>';
+const kpiRows = detail.map(k => `<tr><td>${Utils.escape(k.name)}</td><td>${k.value}</td><td>${k.normalized}%</td></tr>`).join('') || '<tr><td colspan="3" style="text-align:center;color:var(--muted)">—</td></tr>';
+return `<div class="page-header"><div><div class="page-title">📅 تقييم أسبوعي</div><div class="page-subtitle">${emp?Utils.escape(emp.full_name):''} — ${ev.week_start||''} ← ${ev.week_end||''}</div></div><button class="btn btn-secondary" data-nav="evaluations">← رجوع</button></div>
+<div class="card"><div class="card-body" style="display:flex;gap:32px;flex-wrap:wrap;align-items:center">
+<div><div style="font-size:13px;color:var(--muted)">النتيجة الإجمالية</div><div style="font-size:34px;font-weight:800;color:var(--primary)">${pct}%</div>${Utils.gradeBadge(pct)}</div>
+<div><div style="font-size:13px;color:var(--muted)">متوسط المهام</div><div style="font-size:24px;font-weight:700">${sc.tasks_avg!=null?sc.tasks_avg:'—'}</div></div>
+<div><div style="font-size:13px;color:var(--muted)">متوسط المؤشرات</div><div style="font-size:24px;font-weight:700">${sc.kpis_avg!=null?sc.kpis_avg:'—'}</div></div>
+<div><div style="font-size:13px;color:var(--muted)">المُقيِّم</div><div style="font-size:16px;font-weight:600">${evr?Utils.escape(evr.full_name):'—'}</div></div>
+</div></div>
+<div class="card"><div class="card-header"><div class="card-title">✅ المهام</div></div><div class="card-body" style="padding:0;overflow-x:auto"><table class="table"><thead><tr><th>المهمة</th><th>الإنجاز</th><th>الالتزام بالوقت</th><th>الجودة</th><th>المتوسط</th></tr></thead><tbody>${tasksRows}</tbody></table></div></div>
+<div class="card"><div class="card-header"><div class="card-title">📊 مؤشرات الأداء</div></div><div class="card-body" style="padding:0;overflow-x:auto"><table class="table"><thead><tr><th>المؤشر</th><th>القيمة</th><th>النسبة المطبّعة</th></tr></thead><tbody>${kpiRows}</tbody></table></div></div>`;
+}
+
 function renderViewEvaluation(id) {
 const ev = DB.getEvaluation(id);
 if (!ev) {
@@ -2079,6 +2262,8 @@ window.__viewEvalRetry = null;
 if (currentUser.role === 'employee' && ev.employee_id !== currentUser.id) {
 return '<div class="alert alert-danger">ليس لديك صلاحية لعرض هذا التقييم</div>';
 }
+
+if (ev.template_type === 'task_based_weekly') return renderWeeklyView(ev);
 
 const emp = DB.getUser(ev.employee_id);
 const evr = DB.getUser(ev.evaluator_id);
