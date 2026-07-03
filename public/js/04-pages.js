@@ -202,17 +202,27 @@ return 'forbidden';
 return null;
 }
 
-// حفظ معايير التقييم عبر RPC مُصادَق (admin) — يُرجع true عند النجاح
+// معرّف قسم محزم (section_based) — من الأقسام المُحمّلة، مع احتياط 2
+function mahzamDeptId() {
+const list = window._departments || [];
+const d = list.find(x => x.template_type === 'section_based') || list.find(x => x.code === 'mahzam');
+return d ? d.id : 2;
+}
+// حفظ نموذج بنود محزم عبر upsert_evaluation_template (المصدر الوحيد للحقيقة) — يُرجع true عند النجاح
 async function saveCriteriaViaRPC() {
 if (window.sb && window.sb.rpc) {
-const { data, error } = await window.sb.rpc('admin_update_criteria', {
+try { await loadDepartments(); } catch(_){}
+const { data, error } = await window.sb.rpc('upsert_evaluation_template', {
 p_session_token: (window.getSessionToken ? window.getSessionToken() : null),
-p_criteria: CRITERIA
+p_department_id: mahzamDeptId(),
+p_template: CRITERIA,
+p_template_type: 'section_based'
 });
-const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
+const row = (!error && Array.isArray(data) && data[0]) ? data[0] : (data || null);
 if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر حفظ المعايير'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
-// مزامنة الحالة المحلية دون دفع upsert مباشر
+// مزامنة الحالة المحلية + إبطال كاش النموذج
 try { DB.data.criteria = CRITERIA; localStorage.setItem(DB.KEY || 'qe_system_v6', JSON.stringify(DB.data)); } catch(_){}
+try { if (window._templates) delete window._templates[mahzamDeptId()]; } catch(_){}
 return true;
 }
 DB.saveCriteria(CRITERIA); // مسار محلي احتياطي (بدون Supabase)

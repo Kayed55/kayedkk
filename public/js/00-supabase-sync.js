@@ -67,7 +67,7 @@ window.SupabaseSync = {
   _appliedSeq: 0,
 
   // قائمة الجداول التي ستتم مزامنتها (الترتيب مهم بسبب foreign keys)
-  TABLES: ['users', 'criteria_config', 'evaluations', 'notifications', 'objections', 'audit_logs'],
+  TABLES: ['users', 'evaluation_templates', 'evaluations', 'notifications', 'objections', 'audit_logs'],
 
   /**
    * إعادة رسم الصفحة الحالية مع debounce لتفادي الرسم المتكرر
@@ -128,11 +128,13 @@ window.SupabaseSync = {
           console.log(`  ✓ ${table}: ${data.length} rows`);
         }
 
-        // تحويل criteria_config إلى الصيغة المتوقعة في DB
+        // مصدر CRITERIA الآن = نموذج قسم محزم (section_based) من evaluation_templates
+        // (بدلاً من criteria_config القديم — مصدر واحد للحقيقة لكل قسم)
         let criteria = null;
-        if (results.criteria_config && results.criteria_config.length) {
-          const row = results.criteria_config.find(r => r.config_key === 'criteria');
-          if (row) criteria = row.config_value;
+        if (results.evaluation_templates && results.evaluation_templates.length) {
+          const row = results.evaluation_templates.find(r => r.template_type === 'section_based' && r.is_active)
+                   || results.evaluation_templates.find(r => r.template_type === 'section_based');
+          if (row) criteria = row.template_jsonb;
         }
 
         // أُلغيت آلية tombstone: حارس التسلسل (_appliedSeq) يمنع أي سحب قديم من إحياء
@@ -235,15 +237,8 @@ window.SupabaseSync = {
         if (error) console.warn('Audit sync:', error.message);
       }
 
-      // المعايير
-      if (data.criteria) {
-        const { error } = await window.sb.from('criteria_config').upsert({
-          config_key: 'criteria',
-          config_value: data.criteria,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'config_key' });
-        if (error) console.warn('Criteria sync:', error.message);
-      }
+      // المعايير: لم تعُد تُدفع من هنا — تُحرَّر عبر RPC upsert_evaluation_template
+      // (المصدر الوحيد للحقيقة = evaluation_templates لكل قسم).
 
       this.lastSync = Date.now();
       console.log('✅ Push complete.');

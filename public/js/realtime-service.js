@@ -17,10 +17,10 @@
 
 (function () {
   const RealtimeService = {
-    // الجداول المبثوثة — A: evaluations | B: criteria_config | C: users, objections, objection_comments, notifications
-    TABLES: ['evaluations', 'criteria_config', 'users', 'objections', 'objection_comments', 'notifications'],
+    // الجداول المبثوثة — A: evaluations | B: evaluation_templates | C: users, objections, objection_comments, notifications
+    TABLES: ['evaluations', 'evaluation_templates', 'users', 'objections', 'objection_comments', 'notifications'],
     debounceMs: 150,                                  // الافتراضي
-    debounceByTable: { criteria_config: 250 },        // القالب يأتي على دفعات → نافذة أوسع
+    debounceByTable: { evaluation_templates: 250 },   // القالب يأتي على دفعات → نافذة أوسع
     selfWriteMs: 600,           // نافذة تجاهل وميض إعادة الرسم بعد كتابة محلية
 
     channels: [],
