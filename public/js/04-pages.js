@@ -60,6 +60,7 @@ const pages = {
 'new-objection': () => renderNewObjection(params.evaluation_id),
 'audit-log': renderAuditLog,
 'users': renderUsersAdmin,
+'departments': () => renderDepartments(params.tab || 'depts', params.dept),
 'profile': renderProfile,
 'notifications': renderNotificationsPage,
 'settings': () => renderSettings(params.tab || 'form')
@@ -677,6 +678,7 @@ const menu = [
 { key:'errors-report', icon:'❌', label:'الأخطاء المتكررة', roles:['admin','quality_officer','supervisor'] },
 { key:'audit-log', icon:'📜', label:'سجل العمليات', roles:['admin','quality_officer'] },
 { key:'users', icon:'🛡️', label:'إدارة المستخدمين', roles:['admin'] },
+{ key:'departments', icon:'🗂️', label:'الأقسام والنماذج', roles:['admin','quality_officer'] },
 { key:'settings', icon:'⚙️', label:'الإعدادات', roles:['admin','quality_officer'] },
 { key:'profile', icon:'👤', label:'الملف الشخصي', roles:['admin','quality_officer','supervisor','employee'] }
 ];
@@ -4656,6 +4658,115 @@ await handleDeleteEval(b, 'settings', { tab:'evals' });
 // ============================================
 // Page Handlers
 // ============================================
+// ============================================
+// إدارة الأقسام والنماذج (م2-ب)
+// ============================================
+const ROLE_NAMES = { real_estate_marketer:'مسوّق عقاري', designer:'مصمّم', social_media:'سوشيال ميديا', seo:'SEO', content_manager:'مدير محتوى', quality_agent:'موظف جودة' };
+
+function renderDepartments(activeTab, deptId) {
+if (currentUser.role !== 'admin' && currentUser.role !== 'quality_officer') return '<div class="alert alert-danger">غير مصرح</div>';
+if (!window._departments) { loadDepartments(true).then(() => { if (currentPage === 'departments') navigate('departments', { tab: activeTab, dept: deptId }); }); return '<div class="card"><div class="card-body">⏳ جارٍ التحميل…</div></div>'; }
+const isAdmin = currentUser.role === 'admin';
+const tab = activeTab || 'depts';
+const tabsBar = `<div style="display:flex;gap:8px;margin-bottom:16px">
+<button class="btn btn-sm ${tab==='depts'?'btn-primary':'btn-secondary'}" onclick="navigate('departments',{tab:'depts'})">🗂️ الأقسام</button>
+<button class="btn btn-sm ${tab==='templates'?'btn-primary':'btn-secondary'}" onclick="navigate('departments',{tab:'templates',dept:${deptId||'null'}})">📋 نماذج التقييم</button></div>`;
+const header = `<div class="page-header"><div><div class="page-title">🗂️ الأقسام والنماذج</div><div class="page-subtitle">إدارة الأقسام ونماذج تقييمها</div></div>
+${isAdmin && tab==='depts' ? '<button class="btn btn-primary" onclick="departmentModal()">➕ إضافة قسم</button>' : ''}</div>`;
+return header + tabsBar + (tab === 'templates' ? renderTemplatesTab(deptId) : renderDeptsTab(isAdmin));
+}
+function renderDeptsTab(isAdmin) {
+const rows = window._departments.map(d => `<tr>
+<td>${Utils.escape(d.name)}</td><td>${Utils.escape(d.code||'-')}</td><td>${d.employee_count} موظف</td>
+<td>${d.template_type==='task_based_weekly'?'📅 أسبوعي':(d.template_type==='section_based'?'📋 أقسام':'—')}</td>
+<td>${d.is_active?'<span class="badge badge-success">نشط</span>':'<span class="badge badge-secondary">معطّل</span>'}</td>
+<td>${isAdmin?`<button class="btn btn-sm btn-warning" onclick="departmentModal(${d.id})">تعديل</button> <button class="btn btn-sm ${d.is_active?'btn-danger':'btn-success'}" onclick="setDeptActive(${d.id},${!d.is_active})">${d.is_active?'تعطيل':'تفعيل'}</button>`:'—'}</td>
+</tr>`).join('') || '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--muted)">لا توجد أقسام</td></tr>';
+return `<div class="card"><table class="table"><thead><tr><th>القسم</th><th>الكود</th><th>الموظفون</th><th>النموذج</th><th>الحالة</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function departmentModal(id) {
+const d = id ? window._departments.find(x => x.id === id) : null;
+Modal.show(d?'تعديل قسم':'إضافة قسم', `
+<div class="form-group"><label class="form-label">اسم القسم *</label><input class="form-control" id="dp-name" value="${d?Utils.escape(d.name):''}"></div>
+<div class="form-group"><label class="form-label">الكود</label><input class="form-control" id="dp-code" value="${d?Utils.escape(d.code||''):''}"></div>
+<div class="form-group"><label class="form-label">الوصف</label><input class="form-control" id="dp-desc" value="${d?Utils.escape(d.description||''):''}"></div>`,
+`<button class="btn btn-secondary" onclick="Modal.close()">إلغاء</button><button class="btn btn-primary" id="dp-save">حفظ</button>`);
+document.getElementById('dp-save').addEventListener('click', async () => {
+const name = document.getElementById('dp-name').value.trim();
+if (!name) { Toast.error('اسم القسم مطلوب'); return; }
+const tok = window.getSessionToken ? getSessionToken() : null;
+const args = { p_session_token: tok, p_name: name, p_code: document.getElementById('dp-code').value.trim()||null, p_description: document.getElementById('dp-desc').value.trim()||null };
+if (id) args.p_id = id;
+try {
+const { data, error } = await window.sb.rpc(id?'update_department':'create_department', args);
+const r = Array.isArray(data) ? data[0] : data;
+if (error || !r || !r.ok) { const m=(r&&r.message)||(error&&error.message)||'خطأ'; if(!handleSessionError(m)) Toast.error(m); return; }
+Modal.close(); Toast.success('تم الحفظ'); await loadDepartments(true); navigate('departments',{tab:'depts'});
+} catch (e) { Toast.error(e.message); }
+});
+}
+function setDeptActive(id, active) {
+if (!confirm(active?'تفعيل هذا القسم؟':'تعطيل هذا القسم؟')) return;
+const tok = window.getSessionToken ? getSessionToken() : null;
+window.sb.rpc('set_department_active', { p_session_token: tok, p_id: id, p_active: active }).then(async ({data,error}) => {
+const r = Array.isArray(data) ? data[0] : data;
+if (error || !r || !r.ok) { const m=(r&&r.message)||(error&&error.message)||'خطأ'; if(!handleSessionError(m)) Toast.error(m); return; }
+Toast.success('تم'); await loadDepartments(true); navigate('departments',{tab:'depts'});
+}).catch(e => Toast.error(e.message));
+}
+function renderTemplatesTab(deptId) {
+const opts = window._departments.map(d => `<option value="${d.id}" ${deptId==d.id?'selected':''}>${Utils.escape(d.name)} (${d.template_type==='task_based_weekly'?'أسبوعي':'أقسام'})</option>`).join('');
+const selector = `<div class="card"><div class="card-body"><div class="form-group"><label class="form-label">اختر القسم</label><select class="form-control" onchange="navigate('departments',{tab:'templates',dept:parseInt(this.value)||null})"><option value="">-- اختر --</option>${opts}</select></div></div>`;
+if (!deptId) return selector + '<div class="alert alert-info">اختر قسماً لعرض/تعديل نموذج تقييمه.</div>';
+const dept = window._departments.find(d => d.id == deptId);
+window._templates = window._templates || {};
+if (!window._templates[deptId]) {
+const tok = window.getSessionToken ? getSessionToken() : null;
+window.sb.rpc('get_template_for_department', { p_session_token: tok, p_department_id: parseInt(deptId) }).then(({data,error}) => {
+window._templates[deptId] = (Array.isArray(data)?data[0]:data) || { ok:false };
+if (currentPage==='departments' && currentParams && currentParams.dept==deptId) navigate('departments',{tab:'templates',dept:deptId});
+}).catch(()=>{});
+return selector + '<div class="card"><div class="card-body">⏳ جارٍ تحميل النموذج…</div></div>';
+}
+const t = window._templates[deptId];
+if (!t.ok) return selector + '<div class="alert alert-danger">تعذّر تحميل النموذج</div>';
+if (!t.exists) return selector + '<div class="alert alert-info">لا يوجد نموذج لهذا القسم بعد.</div>';
+if (t.template_type === 'section_based') {
+const secs = (t.template.sections||[]).length;
+return selector + `<div class="card"><div class="card-body"><h3 style="font-size:16px">📋 نموذج بنود — ${dept?Utils.escape(dept.name):''}</h3><p style="color:var(--muted)">${secs} أقسام. تُعدَّل تفاصيل الأقسام/البنود من <a href="#" onclick="navigate('settings',{tab:'form'});return false;">صفحة الإعدادات</a>.</p></div></div>`;
+}
+// task_based: محرّر الأهداف
+const tj = t.template, roles = tj.role_kpis || {};
+let inner = `<h3 style="font-size:16px">📅 نموذج أسبوعي — أهداف المؤشرات (${dept?Utils.escape(dept.name):''})</h3>
+<p style="color:var(--muted);font-size:13px">حدّد هدف كل مؤشر عددي: النسبة = القيمة÷الهدف×100 (المؤشرات "أقل أفضل" تُعكس). النِّسب المئوية بلا هدف.</p>`;
+Object.keys(roles).forEach(role => {
+inner += `<h4 style="margin:14px 0 6px;color:var(--primary)">${ROLE_NAMES[role]||role}</h4>`;
+(roles[role]||[]).forEach(k => {
+if (k.type === 'count') inner += `<div class="form-group"><label class="form-label">${Utils.escape(k.name)} ${k.lower_is_better?'<span style="color:var(--warning);font-size:11px">(أقل أفضل)</span>':''}</label><input type="number" min="0" class="form-control" data-tgt="${role}|${k.id}" value="${k.target!=null?k.target:''}" placeholder="الهدف"></div>`;
+else inner += `<div style="font-size:12px;color:var(--muted);margin-bottom:6px">• ${Utils.escape(k.name)}: نسبة مئوية (0-100)</div>`;
+});
+});
+inner += `<button class="btn btn-primary" onclick="saveTaskTargets(${deptId})">💾 حفظ الأهداف</button>`;
+return selector + `<div class="card"><div class="card-body">${inner}</div></div>`;
+}
+async function saveTaskTargets(deptId) {
+const t = window._templates[deptId];
+const tj = JSON.parse(JSON.stringify(t.template));
+document.querySelectorAll('[data-tgt]').forEach(inp => {
+const parts = inp.dataset.tgt.split('|'), role = parts[0], kid = parts[1];
+const val = inp.value !== '' ? parseFloat(inp.value) : null;
+const kpi = (tj.role_kpis[role]||[]).find(x => x.id === kid);
+if (kpi) kpi.target = val;
+});
+const tok = window.getSessionToken ? getSessionToken() : null;
+try {
+const { data, error } = await window.sb.rpc('upsert_evaluation_template', { p_session_token: tok, p_department_id: deptId, p_template: tj, p_template_type: 'task_based_weekly' });
+const r = Array.isArray(data) ? data[0] : data;
+if (error || !r || !r.ok) { const m=(r&&r.message)||(error&&error.message)||'خطأ'; if(!handleSessionError(m)) Toast.error(m); return; }
+Toast.success('تم حفظ الأهداف'); if (window._templates) delete window._templates[deptId]; navigate('departments',{tab:'templates',dept:deptId});
+} catch (e) { Toast.error(e.message); }
+}
+
 function attachPageHandlers(page) {
 document.querySelectorAll('[data-nav-eval]').forEach(el => {
 el.addEventListener('click', e => {
