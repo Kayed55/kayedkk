@@ -18,7 +18,7 @@
 (function () {
   const RealtimeService = {
     // الجداول المبثوثة — A: evaluations | B: evaluation_templates | C: users, objections, objection_comments, notifications
-    TABLES: ['evaluations', 'evaluation_templates', 'creative_gene_weekly_status', 'users', 'objections', 'objection_comments', 'notifications'],
+    TABLES: ['evaluations', 'evaluation_templates', 'creative_gene_weekly_status', 'creative_gene_objections', 'creative_gene_actions', 'users', 'objections', 'objection_comments', 'notifications'],
     debounceMs: 150,                                  // الافتراضي
     debounceByTable: { evaluation_templates: 250 },   // القالب يأتي على دفعات → نافذة أوسع
     selfWriteMs: 600,           // نافذة تجاهل وميض إعادة الرسم بعد كتابة محلية

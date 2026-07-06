@@ -24,7 +24,7 @@ let _navToken = 0;
 let _navDebounce = null;
 const _FORM_PAGES = ['new-evaluation', 'edit-evaluation'];
 // عناوين الأقسام — تُستخدم في الشريط العلوي وفي عنوان تبويب المتصفّح
-const PAGE_TITLES = {dashboard:'لوحة التحكم', employees:'إدارة الموظفين', 'view-employee':'بيانات الموظف', evaluations:'التقييمات', 'new-evaluation':'تقييم جديد', 'cg-week':'أسبوع Creative Gene', 'view-evaluation':'تفاصيل التقييم', 'edit-evaluation':'تعديل التقييم', reports:'التقارير', 'monthly-report':'التقرير الشهري', 'actions-report':'تقرير الإجراءات المتخذة', 'errors-report':'الأخطاء المتكررة الشهرية', objections:'الاعتراضات', 'view-objection':'تفاصيل الاعتراض', 'new-objection':'تقديم اعتراض', 'audit-log':'سجل العمليات', users:'إدارة المستخدمين', profile:'الملف الشخصي', notifications:'الإشعارات', settings:'الإعدادات', login:'تسجيل الدخول'};
+const PAGE_TITLES = {dashboard:'لوحة التحكم', employees:'إدارة الموظفين', 'view-employee':'بيانات الموظف', evaluations:'التقييمات', 'new-evaluation':'تقييم جديد', 'cg-week':'أسبوع Creative Gene', 'cg-objections':'اعتراضات Creative Gene', 'cg-my-team':'موظفوني — Creative Gene', 'view-evaluation':'تفاصيل التقييم', 'edit-evaluation':'تعديل التقييم', reports:'التقارير', 'monthly-report':'التقرير الشهري', 'actions-report':'تقرير الإجراءات المتخذة', 'errors-report':'الأخطاء المتكررة الشهرية', objections:'الاعتراضات', 'view-objection':'تفاصيل الاعتراض', 'new-objection':'تقديم اعتراض', 'audit-log':'سجل العمليات', users:'إدارة المستخدمين', profile:'الملف الشخصي', notifications:'الإشعارات', settings:'الإعدادات', login:'تسجيل الدخول'};
 
 function destroyCharts() {
 charts.forEach(c => { try { c.destroy(); } catch(e){} });
@@ -50,6 +50,8 @@ const pages = {
 'evaluations': renderEvaluations,
 'new-evaluation': renderNewEvaluation,
 'cg-week': () => renderCgWeek(params.week),
+'cg-objections': renderCgObjections,
+'cg-my-team': renderCgMyTeam,
 'view-evaluation': () => renderViewEvaluation(params.id),
 'edit-evaluation': () => renderEditEvaluation(params.id),
 'reports': renderReports,
@@ -682,6 +684,8 @@ const menu = [
 { key:'evaluations', icon:'📝', label:'التقييمات', roles:['admin','quality_officer','supervisor','employee'] },
 { key:'new-evaluation', icon:'➕', label:'تقييم جديد', roles:['admin','quality_officer'] },
 { key:'cg-week', icon:'📄', label:'أسبوع Creative Gene', roles:['admin','quality_officer'] },
+{ key:'cg-objections', icon:'⚖️', label:'اعتراضات Creative Gene', roles:['admin','quality_officer'] },
+{ key:'cg-my-team', icon:'👥', label:'موظفوني — Creative Gene', roles:['admin','supervisor'] },
 { key:'employees', icon:'👥', label:'الموظفون', roles:['admin','quality_officer','supervisor'] },
 { key:'objections', icon:'⚖️', label:'الاعتراضات', roles:['admin','quality_officer','supervisor','employee'] },
 { key:'reports', icon:'📈', label:'التقارير', roles:['admin','quality_officer','supervisor'] },
@@ -2294,24 +2298,48 @@ window.open(row.url, '_blank');
 }
 
 // ---- شاشة "تقييم جديد" لموظف Creative Gene ----
+function actionTypeLabel(t) { return ({warning:'⚠️ تنبيه', training:'📚 تدريب', praise:'👏 إشادة', other:'📌 أخرى'})[t] || t; }
+function objectionDeadline(ev) {
+const hours = (ev.template_snapshot && ev.template_snapshot.objection_window_hours) || 48;
+if (ev.objection_deadline) return new Date(ev.objection_deadline);
+const c = new Date(ev.created_at); c.setHours(c.getHours() + hours); return c;
+}
+function objectionWindowOpen(ev) { try { return new Date() < objectionDeadline(ev); } catch(_) { return false; } }
+async function fetchObjection(evalId) { try { const { data } = await window.sb.from('creative_gene_objections').select('*').eq('evaluation_id', evalId).maybeSingle(); return data || null; } catch(_) { return null; } }
+async function fetchAction(evalId) { try { const { data } = await window.sb.from('creative_gene_actions').select('*').eq('evaluation_id', evalId).order('id', { ascending:false }).limit(1); return (data && data[0]) || null; } catch(_) { return null; } }
+async function raiseObjectionFlow(evalId, onDone) {
+const text = prompt('اكتب نص اعتراضك على التقييم:');
+if (text === null) return;
+if (!text.trim()) { Toast.error('نص الاعتراض مطلوب'); return; }
+const { data, error } = await window.sb.rpc('raise_objection', { p_session_token: cgToken(), p_evaluation_id: evalId, p_objection_text: text.trim() });
+const r = Array.isArray(data)?data[0]:data;
+if (error || !r || !r.ok) { const m=(r&&r.message)||(error&&error.message)||'تعذّر تقديم الاعتراض'; if(!handleSessionError(m)) Toast.error(m); return; }
+Toast.success('تم تقديم الاعتراض'); if (onDone) onDone();
+}
+
 async function renderPdfEvalInto(body, emp) {
 const ws = weekStartSaturdayJS();
+await loadDepartments();
+const dept = (window._departments||[]).find(d => d.id === emp.department_id);
+let criteria = [];
+if (dept) { const tpl = await loadTemplateFor(dept.id); if (tpl && tpl.ok && tpl.exists && tpl.template.criteria) criteria = tpl.template.criteria; }
 const row = await fetchCgStatusRow(emp.id, ws);
-body.innerHTML = pdfEvalFormHTML(emp, ws, row);
-attachPdfEvalHandlers(emp, ws, row);
+body.innerHTML = pdfEvalFormHTML(emp, ws, row, criteria);
+attachPdfEvalHandlers(emp, ws, row, criteria);
 }
-function pdfEvalFormHTML(emp, ws, row) {
+function pdfEvalFormHTML(emp, ws, row, criteria) {
 const st = row ? row.status : 'not_uploaded';
 let fileBlock;
 if (!row || st === 'not_uploaded') {
 fileBlock = `<div class="alert alert-warning">🔴 لم يرفع الموظف ملف PDF لهذا الأسبوع.</div>
 <button type="button" class="btn btn-secondary" id="pdf-upload-behalf">📎 رفع ملف نيابةً عن الموظف</button>`;
 } else {
-fileBlock = `<div class="alert ${st==='evaluated'?'alert-success':'alert-info'}">${st==='evaluated'?'🟢 تم تقييم هذا الأسبوع':'🟡 تم رفع الملف — بانتظار التقييم'}</div>
+fileBlock = `<div class="alert ${st==='uploaded_pending'?'alert-info':'alert-success'}">${st==='uploaded_pending'?'🟡 تم رفع الملف — بانتظار التقييم':'🟢 تم تقييم هذا الأسبوع'}</div>
 <button type="button" class="btn btn-primary" id="pdf-open">📄 فتح ملف PDF</button>`;
 }
 const canEval = row && st === 'uploaded_pending';
-const evaluatedNote = st === 'evaluated' ? `<div class="alert alert-info" style="margin-top:12px">تم تقييم هذا الأسبوع مسبقاً. لإعادة التقييم احذف التقييم الحالي أولاً.</div>` : '';
+const evaluatedNote = st !== 'not_uploaded' && st !== 'uploaded_pending' ? `<div class="alert alert-info" style="margin-top:12px">تم تقييم هذا الأسبوع. لإعادة التقييم افتح البوابة أو احذف التقييم.</div>` : '';
+const critHTML = (criteria||[]).map(c => `<div class="form-group"><label class="form-label">${Utils.escape(c.name)} <span style="color:var(--muted);font-size:12px">(وزن ${c.weight}%)</span></label><input type="number" min="0" max="100" class="form-control pdf-crit" data-cid="${c.id}" data-weight="${c.weight}" placeholder="0-100"></div>`).join('');
 return `<form id="pdf-eval-form">
 <div class="card"><div class="card-header"><div class="card-title">📄 التقييم الأسبوعي (PDF) — ${Utils.escape(emp.full_name)}</div></div>
 <div class="card-body">
@@ -2321,9 +2349,13 @@ return `<form id="pdf-eval-form">
 </div>
 ${fileBlock}${evaluatedNote}
 </div></div>
-${canEval ? `<div class="card"><div class="card-header"><div class="card-title">📝 التقييم</div></div><div class="card-body">
-<div class="form-group"><label class="form-label">درجة التقييم (0-100) *</label><input type="number" min="0" max="100" class="form-control" id="pdf-score" placeholder="0-100"></div>
+${canEval ? `<div class="card"><div class="card-header"><div class="card-title">📝 التقييم — المعايير الخمسة</div></div><div class="card-body">
+${critHTML}
 <div class="form-group"><label class="form-label">الملاحظات (اختياري)</label><textarea class="form-control" id="pdf-notes" rows="3"></textarea></div>
+<div style="padding:14px;background:#f0f7ff;border-radius:10px;display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+<span style="font-weight:700">الدرجة الكلية (متوسط موزون)</span>
+<span id="pdf-live-total" style="font-size:28px;font-weight:800;color:var(--primary)">—</span>
+</div>
 </div></div>
 <div class="card" style="position:sticky;bottom:0;z-index:10;border:2px solid var(--primary)"><div class="card-body" style="display:flex;justify-content:flex-end;gap:10px">
 <button type="button" class="btn btn-secondary" data-nav="evaluations">إلغاء</button>
@@ -2331,7 +2363,7 @@ ${canEval ? `<div class="card"><div class="card-header"><div class="card-title">
 </div></div>` : ''}
 </form>`;
 }
-function attachPdfEvalHandlers(emp, ws, row) {
+function attachPdfEvalHandlers(emp, ws, row, criteria) {
 const form = document.getElementById('pdf-eval-form');
 if (!form) return;
 const wsInp = document.getElementById('pdf-ws');
@@ -2341,26 +2373,34 @@ if (!body) return;
 body.innerHTML = '<div class="card"><div class="card-body">⏳ جارٍ التحميل…</div></div>';
 const newWs = wsInp.value;
 const r = await fetchCgStatusRow(emp.id, newWs);
-body.innerHTML = pdfEvalFormHTML(emp, newWs, r);
-attachPdfEvalHandlers(emp, newWs, r);
+body.innerHTML = pdfEvalFormHTML(emp, newWs, r, criteria);
+attachPdfEvalHandlers(emp, newWs, r, criteria);
 });
 const openBtn = document.getElementById('pdf-open');
 if (openBtn) openBtn.addEventListener('click', () => openCgPdfByWeek(emp.id, ws));
 const behalf = document.getElementById('pdf-upload-behalf');
 if (behalf) behalf.addEventListener('click', () => pickPdfAndUpload(emp.id, ws, () => renderEvalBodyForEmployee(emp.id)));
-const score = document.getElementById('pdf-score'), save = document.getElementById('pdf-save');
-if (score && save) score.addEventListener('input', () => { const v = parseFloat(score.value); save.disabled = !(v>=0 && v<=100); });
+const crits = form.querySelectorAll('.pdf-crit'), save = document.getElementById('pdf-save');
+const updateTotal = () => {
+let wsum=0, sumw=0, allValid = crits.length > 0;
+crits.forEach(i => { const v=parseFloat(i.value), w=parseFloat(i.dataset.weight)||0; if(!(v>=0&&v<=100)){allValid=false;} else {wsum+=v*w; sumw+=w;} });
+const total = sumw>0 ? Math.round(wsum/sumw*100)/100 : 0;
+const tEl = document.getElementById('pdf-live-total'); if (tEl) tEl.textContent = allValid ? total + '%' : '—';
+if (save) save.disabled = !allValid;
+};
+crits.forEach(i => i.addEventListener('input', updateTotal));
 form.addEventListener('submit', async e => {
 e.preventDefault();
 const btn = document.getElementById('pdf-save');
 await submitWithFeedback(btn, 'جاري حفظ التقييم...', null, async () => {
-const v = parseFloat((document.getElementById('pdf-score')||{}).value);
-if (!(v>=0 && v<=100)) { Toast.error('أدخل درجة صحيحة بين 0 و100'); return false; }
+const scores = {}; let ok = crits.length > 0;
+crits.forEach(i => { const v=parseFloat(i.value); if(!(v>=0&&v<=100)) ok=false; scores[i.dataset.cid]=v; });
+if (!ok) { Toast.error('أدخل جميع درجات المعايير (0-100)'); return false; }
 if (!row || !row.pdf_file_path) { Toast.error('لا يوجد ملف PDF مرفوع'); return false; }
 const notes = ((document.getElementById('pdf-notes')||{}).value || '').trim();
 const { data, error } = await window.sb.rpc('create_evaluation', {
 p_session_token: cgToken(), p_employee_id: emp.id, p_evaluation_date: ws,
-p_score: v, p_pdf_file_path: row.pdf_file_path, p_pdf_file_name: (row.pdf_file_path||'').split('/').pop(),
+p_criteria_scores: scores, p_pdf_file_path: row.pdf_file_path, p_pdf_file_name: (row.pdf_file_path||'').split('/').pop(),
 p_evaluation_notes: notes, p_week_start: ws
 });
 const rr = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
@@ -2377,6 +2417,9 @@ return true;
 function renderPdfEvalView(ev) {
 const emp = DB.getUser(ev.employee_id), evr = DB.getUser(ev.evaluator_id);
 const pct = ev.percentage;
+const crit = (ev.template_snapshot && ev.template_snapshot.criteria) || [];
+const scores = ev.section_scores || ev.items || {};
+const critRows = crit.filter(c => scores[c.id] != null).map(c => `<tr><td>${Utils.escape(c.name)}</td><td>${c.weight}%</td><td><strong>${scores[c.id]}</strong></td></tr>`).join('');
 return `<div class="page-header"><div><div class="page-title">📄 تقييم أسبوعي (PDF)</div><div class="page-subtitle">${emp?Utils.escape(emp.full_name):''} — ${ev.week_start||''} ← ${ev.week_end||''}</div></div><button class="btn btn-secondary" data-nav="evaluations">← رجوع</button></div>
 <div class="card"><div class="card-body" style="display:flex;gap:32px;flex-wrap:wrap;align-items:center">
 <div><div style="font-size:13px;color:var(--muted)">الدرجة</div><div style="font-size:34px;font-weight:800;color:var(--primary)">${pct}%</div>${Utils.gradeBadge(pct)}</div>
@@ -2384,7 +2427,26 @@ return `<div class="page-header"><div><div class="page-title">📄 تقييم أ
 <div><div style="font-size:13px;color:var(--muted)">تاريخ التقييم</div><div style="font-size:16px;font-weight:600">${Utils.formatDate(ev.evaluation_date)}</div></div>
 <div><button class="btn btn-primary" onclick="openCgPdfByEval(${ev.id})">📄 فتح ملف PDF</button></div>
 </div></div>
-${ev.evaluation_notes ? `<div class="card"><div class="card-header"><div class="card-title">📝 ملاحظات المُقيّم</div></div><div class="card-body">${Utils.escape(ev.evaluation_notes)}</div></div>` : ''}`;
+${critRows ? `<div class="card"><div class="card-header"><div class="card-title">📊 المعايير التفصيلية</div></div><div class="card-body" style="padding:0"><table class="table"><thead><tr><th>المعيار</th><th>الوزن</th><th>الدرجة</th></tr></thead><tbody>${critRows}</tbody></table></div></div>` : ''}
+${ev.evaluation_notes ? `<div class="card"><div class="card-header"><div class="card-title">📝 ملاحظات المُقيّم</div></div><div class="card-body">${Utils.escape(ev.evaluation_notes)}</div></div>` : ''}
+<div id="pdf-view-extra"></div>`;
+}
+async function loadPdfViewExtra(id) {
+const host = document.getElementById('pdf-view-extra');
+if (!host) return;
+const ev = DB.getEvaluation(id);
+if (!ev || ev.template_type !== 'pdf_based_weekly') return;
+const obj = await fetchObjection(id), act = await fetchAction(id);
+let html = '';
+if (obj) {
+const stB = obj.status==='accepted'?'<span class="badge badge-success">مقبول</span>':(obj.status==='rejected'?'<span class="badge badge-danger">مرفوض</span>':'<span class="badge badge-warning">قيد المراجعة</span>');
+html += `<div class="card" style="border-right:4px solid var(--warning)"><div class="card-header"><div class="card-title">⚖️ الاعتراض</div>${stB}</div><div class="card-body"><div>${Utils.escape(obj.objection_text)}</div>${obj.reviewer_response?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)"><strong>رد الجودة:</strong> ${Utils.escape(obj.reviewer_response)}</div>`:''}</div></div>`;
+}
+if (act) {
+const sup = DB.getUser(act.supervisor_id);
+html += `<div class="card" style="border-right:4px solid var(--danger)"><div class="card-header"><div class="card-title">🎯 الإجراء المتخذ</div></div><div class="card-body"><div style="display:flex;gap:20px;flex-wrap:wrap"><div><div style="font-size:12px;color:var(--muted)">النوع</div>${actionTypeLabel(act.action_type)}</div><div><div style="font-size:12px;color:var(--muted)">المشرف</div>${sup?Utils.escape(sup.full_name):'—'}</div><div><div style="font-size:12px;color:var(--muted)">التاريخ</div>${Utils.formatDate(act.taken_at)}</div></div><div style="margin-top:8px">${Utils.escape(act.action_details)}</div></div></div>`;
+}
+host.innerHTML = html;
 }
 
 // ---- بطاقة أسبوع الموظف في لوحة التحكم ----
@@ -2396,33 +2458,153 @@ const me = DB.getUser(currentUser.id) || currentUser;
 if (!isCreativeGeneDept(me.department_id)) { host.innerHTML = ''; return; }
 const ws = weekStartSaturdayJS();
 const row = await fetchCgStatusRow(currentUser.id, ws);
-host.innerHTML = employeeWeekCardHTML(ws, row);
+const ev = (row && row.evaluation_id) ? DB.getEvaluation(row.evaluation_id) : null;
+let obj = null, act = null;
+if (ev) { obj = await fetchObjection(ev.id); act = await fetchAction(ev.id); }
+host.innerHTML = employeeWeekCardHTML(ws, row, ev, obj, act);
 const up = document.getElementById('emp-cg-upload');
 if (up) up.addEventListener('click', () => pickPdfAndUpload(currentUser.id, ws, () => loadEmployeeWeekCard()));
 const openb = document.getElementById('emp-cg-open');
-if (openb) openb.addEventListener('click', () => { if (row && row.evaluation_id) openCgPdfByEval(row.evaluation_id); else openCgPdfByWeek(currentUser.id, ws); });
+if (openb) openb.addEventListener('click', () => { if (ev) openCgPdfByEval(ev.id); else openCgPdfByWeek(currentUser.id, ws); });
+const objb = document.getElementById('emp-cg-object');
+if (objb && ev) objb.addEventListener('click', () => raiseObjectionFlow(ev.id, () => loadEmployeeWeekCard()));
 }
-function employeeWeekCardHTML(ws, row) {
+function employeeWeekCardHTML(ws, row, ev, obj, act) {
 const st = row ? row.status : 'not_uploaded';
-const badge = st==='evaluated' ? '<span class="badge badge-success">🟢 تم التقييم</span>' : (st==='uploaded_pending' ? '<span class="badge badge-warning">🟡 بانتظار التقييم</span>' : '<span class="badge badge-danger">🔴 لم يتم الرفع</span>');
-const ev = (row && row.evaluation_id) ? DB.getEvaluation(row.evaluation_id) : null;
-let extra = '';
-if (st === 'evaluated' && ev) {
-extra = `<div style="margin-top:12px;display:flex;gap:24px;flex-wrap:wrap;align-items:center">
+const badge = (st==='not_uploaded') ? '<span class="badge badge-danger">🔴 لم يتم الرفع</span>' : (st==='uploaded_pending' ? '<span class="badge badge-warning">🟡 بانتظار التقييم</span>' : '<span class="badge badge-success">🟢 تم التقييم</span>');
+let evalBlock = '';
+if (ev) {
+const crit = (ev.template_snapshot && ev.template_snapshot.criteria) || [];
+const scores = ev.section_scores || ev.items || {};
+const critRows = crit.filter(c => scores[c.id] != null).map(c => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed var(--border)"><span>${Utils.escape(c.name)} <span style="color:var(--muted);font-size:11px">(${c.weight}%)</span></span><strong>${scores[c.id]}</strong></div>`).join('');
+evalBlock = `<div style="margin-top:12px;display:flex;gap:24px;flex-wrap:wrap;align-items:center">
 <div><div style="font-size:12px;color:var(--muted)">درجتك</div><div style="font-size:26px;font-weight:800;color:var(--primary)">${ev.percentage}%</div>${Utils.gradeBadge(ev.percentage)}</div>
 ${ev.evaluation_notes ? `<div style="flex:1;min-width:200px"><div style="font-size:12px;color:var(--muted)">ملاحظات المُقيّم</div><div>${Utils.escape(ev.evaluation_notes)}</div></div>` : ''}
-</div>`;
+</div>
+${critRows ? `<div style="margin-top:12px"><div style="font-size:12px;color:var(--muted);margin-bottom:4px">المعايير التفصيلية</div>${critRows}</div>` : ''}`;
 }
-const canUpload = st !== 'evaluated';
-const canOpen = row && (st === 'uploaded_pending' || st === 'evaluated');
+let objBlock = '';
+if (ev) {
+if (obj) {
+const stB = obj.status==='accepted'?'<span class="badge badge-success">مقبول</span>':(obj.status==='rejected'?'<span class="badge badge-danger">مرفوض</span>':'<span class="badge badge-warning">قيد المراجعة</span>');
+objBlock = `<div class="card" style="margin-top:14px;border-right:4px solid var(--warning)"><div class="card-body">
+<div style="display:flex;justify-content:space-between;align-items:center"><strong>⚖️ اعتراضي</strong>${stB}</div>
+<div style="margin-top:8px">${Utils.escape(obj.objection_text)}</div>
+${obj.reviewer_response ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)"><div style="font-size:12px;color:var(--muted)">رد موظفة الجودة</div>${Utils.escape(obj.reviewer_response)}</div>` : ''}
+</div></div>`;
+} else if (objectionWindowOpen(ev)) {
+objBlock = `<div style="margin-top:14px"><button class="btn btn-warning" id="emp-cg-object">⚖️ تقديم اعتراض</button> <span style="font-size:12px;color:var(--muted)">المهلة حتى ${objectionDeadline(ev).toLocaleString('ar-SA')}</span></div>`;
+} else {
+objBlock = `<div style="margin-top:14px;font-size:13px;color:var(--muted)">⏳ انتهت مهلة الاعتراض</div>`;
+}
+}
+let actBlock = '';
+if (act) {
+const sup = DB.getUser(act.supervisor_id);
+actBlock = `<div class="card" style="margin-top:14px;border-right:4px solid var(--danger)"><div class="card-body">
+<strong>🎯 الإجراء المتخذ</strong>
+<div style="margin-top:8px;display:flex;gap:20px;flex-wrap:wrap">
+<div><div style="font-size:12px;color:var(--muted)">النوع</div>${actionTypeLabel(act.action_type)}</div>
+<div><div style="font-size:12px;color:var(--muted)">المشرف</div>${sup?Utils.escape(sup.full_name):'—'}</div>
+<div><div style="font-size:12px;color:var(--muted)">التاريخ</div>${Utils.formatDate(act.taken_at)}</div>
+</div>
+<div style="margin-top:8px">${Utils.escape(act.action_details)}</div>
+</div></div>`;
+}
+const canUpload = (st === 'not_uploaded' || st === 'uploaded_pending');
+const canOpen = row && st !== 'not_uploaded';
 return `<div class="card" style="border:2px solid var(--primary);margin-bottom:24px"><div class="card-header" style="background:linear-gradient(to left,#e0edff,transparent)"><div class="card-title">📄 تقييم هذا الأسبوع (${ws} ← ${weekEndStr(ws)})</div>${badge}</div>
 <div class="card-body">
 <div style="display:flex;gap:10px;flex-wrap:wrap">
 ${canUpload ? `<button class="btn btn-primary" id="emp-cg-upload">📎 ${st==='uploaded_pending'?'استبدال الملف':'رفع ملف PDF'}</button>` : ''}
 ${canOpen ? `<button class="btn btn-secondary" id="emp-cg-open">📄 فتح ملفي</button>` : ''}
 </div>
-${extra}
+${evalBlock}${objBlock}${actBlock}
 </div></div>`;
+}
+
+// ---- شاشة "اعتراضات Creative Gene" (admin/quality) ----
+function renderCgObjections() {
+if (!(currentUser.role === 'admin' || currentUser.role === 'quality_officer')) return '<div class="alert alert-danger">غير مصرح</div>';
+return `<div class="page-header"><div><div class="page-title">⚖️ اعتراضات Creative Gene</div><div class="page-subtitle">مراجعة اعتراضات الموظفين على تقييماتهم</div></div></div>
+<div id="cgobj-list"><div class="card"><div class="card-body">⏳ جارٍ التحميل…</div></div></div>`;
+}
+async function loadCgObjections() {
+const host = document.getElementById('cgobj-list');
+if (!host) return;
+const { data, error } = await window.sb.from('creative_gene_objections').select('*').order('raised_at', { ascending:false });
+if (error) { if(!handleSessionError(error.message)) host.innerHTML = `<div class="alert alert-danger">${Utils.escape(error.message)}</div>`; return; }
+const objs = data || [];
+if (!objs.length) { host.innerHTML = '<div class="alert alert-info">لا توجد اعتراضات.</div>'; return; }
+const rows = objs.map(o => { const emp = DB.getUser(o.employee_id), ev = DB.getEvaluation(o.evaluation_id);
+const stB = o.status==='accepted'?'<span class="badge badge-success">مقبول</span>':(o.status==='rejected'?'<span class="badge badge-danger">مرفوض</span>':'<span class="badge badge-warning">قيد المراجعة</span>');
+const act = (o.status==='pending' && currentUser.role==='quality_officer') ? `<button class="btn btn-sm btn-primary" onclick="reviewObjectionModal(${o.id})">مراجعة</button>` : `<button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${o.evaluation_id})">📄 الملف</button>`;
+return `<tr><td>${emp?Utils.escape(emp.full_name):'-'}</td><td>${ev?ev.percentage+'%':'-'}</td><td>${Utils.escape((o.objection_text||'').slice(0,70))}</td><td>${stB}</td><td>${act}</td></tr>`;
+}).join('');
+host.innerHTML = `<div class="card"><div class="card-body" style="padding:0;overflow-x:auto"><table class="table"><thead><tr><th>الموظف</th><th>الدرجة</th><th>الاعتراض</th><th>الحالة</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+async function reviewObjectionModal(objId) {
+const { data } = await window.sb.from('creative_gene_objections').select('*').eq('id', objId).maybeSingle();
+if (!data) { Toast.error('الاعتراض غير موجود'); return; }
+const emp = DB.getUser(data.employee_id), ev = DB.getEvaluation(data.evaluation_id);
+Modal.show('مراجعة اعتراض', `
+<div style="margin-bottom:10px"><strong>الموظف:</strong> ${emp?Utils.escape(emp.full_name):'-'} — <strong>الدرجة:</strong> ${ev?ev.percentage+'%':'-'}</div>
+<div class="alert alert-info">${Utils.escape(data.objection_text)}</div>
+<button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${data.evaluation_id})">📄 فتح ملف التقييم</button>
+<div class="form-group" style="margin-top:12px"><label class="form-label">ردّك (اختياري)</label><textarea class="form-control" id="ro-resp" rows="3"></textarea></div>`,
+`<button class="btn btn-danger" id="ro-reject">رفض</button><button class="btn btn-success" id="ro-accept">قبول</button>`);
+const submit = async (decision) => {
+const resp = (document.getElementById('ro-resp')||{}).value || '';
+const { data:d, error } = await window.sb.rpc('review_objection', { p_session_token: cgToken(), p_objection_id: objId, p_response: resp.trim(), p_decision: decision });
+const r = Array.isArray(d)?d[0]:d;
+if (error || !r || !r.ok) { const m=(r&&r.message)||(error&&error.message)||'فشل'; if(!handleSessionError(m)) Toast.error(m); return; }
+Modal.close(); Toast.success('تم حفظ القرار'); loadCgObjections();
+};
+document.getElementById('ro-accept').addEventListener('click', () => submit('accepted'));
+document.getElementById('ro-reject').addEventListener('click', () => submit('rejected'));
+}
+
+// ---- شاشة المشرف "موظفوني — Creative Gene" ----
+function renderCgMyTeam() {
+if (!(currentUser.role === 'supervisor' || currentUser.role === 'admin')) return '<div class="alert alert-danger">غير مصرح</div>';
+return `<div class="page-header"><div><div class="page-title">👥 موظفوني — Creative Gene</div><div class="page-subtitle">اتخاذ الإجراءات على تقييمات موظفيك</div></div></div>
+<div id="cgteam-list"><div class="card"><div class="card-body">⏳ جارٍ التحميل…</div></div></div>`;
+}
+async function loadCgMyTeam() {
+const host = document.getElementById('cgteam-list');
+if (!host) return;
+await loadDepartments();
+let emps = DB.getUsers({ role:'employee' }).filter(e => isCreativeGeneDept(e.department_id));
+if (currentUser.role === 'supervisor') emps = emps.filter(e => e.supervisor_id === currentUser.id);
+if (!emps.length) { host.innerHTML = '<div class="alert alert-info">لا يوجد موظفو Creative Gene تحت إشرافك.</div>'; return; }
+const rows = emps.map(e => {
+const evs = (DB.data.evaluations||[]).filter(x => x.employee_id===e.id && x.template_type==='pdf_based_weekly').sort((a,b)=>String(b.week_start||'').localeCompare(String(a.week_start||'')));
+const last = evs[0];
+const act = last ? `<button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${last.id})">📄 الملف</button> <button class="btn btn-sm btn-danger" onclick="takeActionModal(${last.id})">🎯 اتخاذ إجراء</button>` : '—';
+return `<tr><td>${Utils.escape(e.full_name)}</td><td>${last?last.week_start+' — '+last.percentage+'%':'لا يوجد تقييم'}</td><td>${act}</td></tr>`;
+}).join('');
+host.innerHTML = `<div class="card"><div class="card-body" style="padding:0;overflow-x:auto"><table class="table"><thead><tr><th>الموظف</th><th>آخر تقييم</th><th>الإجراء</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+async function takeActionModal(evalId) {
+const ev = DB.getEvaluation(evalId);
+if (!ev) { Toast.error('التقييم غير موجود'); return; }
+const emp = DB.getUser(ev.employee_id);
+const types = (ev.template_snapshot && ev.template_snapshot.allowed_action_types) || ['warning','training','praise','other'];
+const obj = await fetchObjection(evalId);
+Modal.show('اتخاذ إجراء', `
+<div style="margin-bottom:10px"><strong>الموظف:</strong> ${emp?Utils.escape(emp.full_name):'-'} — <strong>الدرجة:</strong> ${ev.percentage}%</div>
+${obj?`<div class="alert alert-warning"><strong>اعتراض الموظف:</strong> ${Utils.escape(obj.objection_text)}${obj.reviewer_response?'<br><strong>رد الجودة:</strong> '+Utils.escape(obj.reviewer_response):''}</div>`:''}
+<div class="form-group"><label class="form-label">نوع الإجراء *</label><select class="form-control" id="ta-type">${types.map(t=>`<option value="${t}">${actionTypeLabel(t)}</option>`).join('')}</select></div>
+<div class="form-group"><label class="form-label">تفاصيل الإجراء *</label><textarea class="form-control" id="ta-details" rows="3"></textarea></div>`,
+`<button class="btn btn-secondary" onclick="Modal.close()">إلغاء</button><button class="btn btn-danger" id="ta-save">حفظ الإجراء</button>`);
+document.getElementById('ta-save').addEventListener('click', async () => {
+const type = document.getElementById('ta-type').value, details = document.getElementById('ta-details').value.trim();
+if (!details) { Toast.error('تفاصيل الإجراء مطلوبة'); return; }
+const { data, error } = await window.sb.rpc('take_action', { p_session_token: cgToken(), p_evaluation_id: evalId, p_action_type: type, p_action_details: details, p_linked_objection_id: obj?obj.id:null });
+const r = Array.isArray(data)?data[0]:data;
+if (error || !r || !r.ok) { const m=(r&&r.message)||(error&&error.message)||'فشل'; if(!handleSessionError(m)) Toast.error(m); return; }
+Modal.close(); Toast.success('تم تسجيل الإجراء'); loadCgMyTeam();
+});
 }
 
 // ---- شاشة إدارة أسبوع Creative Gene (admin/quality) ----
@@ -2457,16 +2639,33 @@ const { data, error } = await window.sb.rpc('get_creative_gene_status', { p_sess
 if (error) { const m=error.message||'تعذّر التحميل'; if(!handleSessionError(m)) host.innerHTML = `<div class="alert alert-danger">${Utils.escape(m)}</div>`; return; }
 const rows = (data||[]);
 if (!rows.length) { host.innerHTML = '<div class="alert alert-info">لا يوجد موظفون في قسم Creative Gene.</div>'; return; }
+// اجلب الاعتراضات/الإجراءات لتقييمات هذا الأسبوع لعرض عمودَيها بدقّة
+const evalIds = rows.filter(r => r.evaluation_id).map(r => r.evaluation_id);
+const objMap = {}, actMap = {};
+if (evalIds.length) {
+try {
+const [{ data: objs }, { data: acts }] = await Promise.all([
+window.sb.from('creative_gene_objections').select('*').in('evaluation_id', evalIds),
+window.sb.from('creative_gene_actions').select('*').in('evaluation_id', evalIds)
+]);
+(objs||[]).forEach(o => objMap[o.evaluation_id] = o);
+(acts||[]).forEach(a => actMap[a.evaluation_id] = a);
+} catch(_){}
+}
 const body = rows.map(r => {
 const st = r.status;
-const badge = st==='evaluated' ? '<span class="badge badge-success">🟢 تم التقييم</span>' : (st==='uploaded_pending' ? '<span class="badge badge-warning">🟡 بانتظار التقييم</span>' : '<span class="badge badge-danger">🔴 لم يُرفع</span>');
+const evaluated = (st !== 'not_uploaded' && st !== 'uploaded_pending');
+const badge = evaluated ? '<span class="badge badge-success">🟢 تم التقييم</span>' : (st==='uploaded_pending' ? '<span class="badge badge-warning">🟡 بانتظار التقييم</span>' : '<span class="badge badge-danger">🔴 لم يُرفع</span>');
 let actions = '';
 if (st === 'uploaded_pending') actions = `<button class="btn btn-sm btn-secondary" onclick="openCgPdfByWeek(${r.employee_id},'${ws}')">📄 فتح</button> <button class="btn btn-sm btn-success" onclick="navigate('new-evaluation',{emp:${r.employee_id}})">📝 تقييم</button>`;
-else if (st === 'evaluated') actions = `<button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${r.evaluation_id})">📄 فتح</button> <span style="font-weight:700;color:var(--primary)">${r.percentage}%</span>`;
+else if (evaluated) actions = `<button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${r.evaluation_id})">📄 فتح</button> <span style="font-weight:700;color:var(--primary)">${r.percentage}%</span>`;
 else actions = `<button class="btn btn-sm btn-secondary" onclick="cgUploadBehalf(${r.employee_id},'${ws}')">📎 رفع نيابةً</button>`;
-return `<tr><td>${Utils.escape(r.employee_name)}</td><td>${badge}</td><td>${actions}</td></tr>`;
+const o = objMap[r.evaluation_id], a = actMap[r.evaluation_id];
+const objCol = o ? (o.status==='accepted'?'<span class="badge badge-success">مقبول</span>':(o.status==='rejected'?'<span class="badge badge-danger">مرفوض</span>':'<span class="badge badge-warning">قيد المراجعة</span>')) : '<span style="color:var(--muted)">—</span>';
+const actCol = a ? actionTypeLabel(a.action_type) : '<span style="color:var(--muted)">—</span>';
+return `<tr><td>${Utils.escape(r.employee_name)}</td><td>${badge}</td><td>${objCol}</td><td>${actCol}</td><td>${actions}</td></tr>`;
 }).join('');
-host.innerHTML = `<div class="card"><table class="table"><thead><tr><th>الموظف</th><th>الحالة</th><th>الإجراء</th></tr></thead><tbody>${body}</tbody></table></div>`;
+host.innerHTML = `<div class="card"><div class="card-body" style="padding:0;overflow-x:auto"><table class="table"><thead><tr><th>الموظف</th><th>الحالة</th><th>الاعتراض</th><th>الإجراء</th><th></th></tr></thead><tbody>${body}</tbody></table></div></div>`;
 }
 function cgUploadBehalf(empId, ws) { pickPdfAndUpload(empId, ws, () => loadCgWeekTable(ws)); }
 
@@ -5232,6 +5431,9 @@ loadCgWeekTable(ws);
 const di = document.getElementById('cgw-date');
 if (di) di.addEventListener('change', () => navigate('cg-week', { week: di.value }));
 }
+if (page === 'cg-objections') loadCgObjections();
+if (page === 'cg-my-team') loadCgMyTeam();
+if (page === 'view-evaluation') loadPdfViewExtra(currentParams.id);
 if (page === 'monthly-report') renderMonthlyReportCharts();
 if (page === 'actions-report') renderActionsReportCharts();
 if (page === 'errors-report') renderErrorsReportCharts();
