@@ -48,7 +48,7 @@ const pages = {
 'employees': renderEmployees,
 'view-employee': () => renderViewEmployee(params.id),
 'evaluations': renderEvaluations,
-'new-evaluation': renderNewEvaluation,
+'new-evaluation': () => renderNewEvaluation(params.dept),
 'cg-week': () => renderCgWeek(params.week),
 'cg-objections': renderCgObjections,
 'cg-my-team': renderCgMyTeam,
@@ -1705,7 +1705,9 @@ return `
 // ============================================
 function renderEvaluations() {
 const isEmp = currentUser.role === 'employee';
-const evals = DB.getEvaluations(isEmp ? { employee_id: currentUser.id } : {});
+let evals = DB.getEvaluations(isEmp ? { employee_id: currentUser.id } : {});
+const deptF = currentParams.dept ? parseInt(currentParams.dept) : null;
+if (deptF) evals = evals.filter(e => { const u = DB.getUser(e.employee_id); return u && u.department_id == deptF; });
 
 const rows = evals.map(e => {
 const emp = DB.getUser(e.employee_id);
@@ -1906,15 +1908,43 @@ return `
 </div>`;
 }
 
-function renderNewEvaluation() {
-const employees = DB.getUsers({ role:'employee', active:true });
+function cgDeptId() { const d = (window._departments||[]).find(x => x.template_type === 'pdf_based_weekly'); return d ? d.id : 3; }
+
+// مركز التقييم: قسمان منفصلان بصرياً (محزم / Creative Gene)
+function renderEvalHub() {
+if (!window._departments) loadDepartments(true).then(() => { if (currentPage === 'new-evaluation' && !currentParams.dept) navigate('new-evaluation', {}); });
+const mId = mahzamDeptId(), cId = cgDeptId();
+return `
+<div class="page-header"><div><div class="page-title">التقييم</div><div class="page-subtitle">اختر القسم لبدء التقييم أو إدارته</div></div></div>
+<div class="card" style="border-top:4px solid var(--primary);margin-bottom:20px">
+<div class="card-header" style="background:linear-gradient(to left,#e0edff,transparent)"><div class="card-title">📊 قسم محزم</div></div>
+<div class="card-body" style="display:flex;gap:10px;flex-wrap:wrap">
+<button class="btn btn-primary" onclick="navigate('new-evaluation',{dept:${mId}})">➕ تقييم جديد — محزم</button>
+<button class="btn btn-secondary" onclick="navigate('evaluations',{dept:${mId}})">📋 تقييمات محزم</button>
+<button class="btn btn-secondary" onclick="navigate('settings',{tab:'form'})">⚙️ تخصيص نموذج محزم</button>
+</div></div>
+<div class="card" style="border-top:4px solid #a855f7">
+<div class="card-header" style="background:linear-gradient(to left,#f3e8ff,transparent)"><div class="card-title">🎨 قسم Creative Gene</div></div>
+<div class="card-body" style="display:flex;gap:10px;flex-wrap:wrap">
+<button class="btn btn-primary" onclick="navigate('new-evaluation',{dept:${cId}})">➕ تقييم جديد — Creative Gene</button>
+<button class="btn btn-secondary" onclick="navigate('cg-week')">📄 أسبوع Creative Gene</button>
+<button class="btn btn-secondary" onclick="navigate('cg-objections')">⚖️ اعتراضات Creative Gene</button>
+<button class="btn btn-secondary" onclick="navigate('settings',{tab:'cg'})">⚙️ تخصيص نموذج Creative Gene</button>
+</div></div>`;
+}
+
+function renderNewEvaluation(deptFilter) {
+if (!deptFilter) return renderEvalHub();
+deptFilter = parseInt(deptFilter);
+if (!window._departments) loadDepartments(true).then(() => { if (currentPage === 'new-evaluation') navigate('new-evaluation', { dept: deptFilter }); });
+const dept = (window._departments||[]).find(d => d.id === deptFilter);
+const deptName = dept ? dept.name : '';
+let employees = DB.getUsers({ role:'employee', active:true }).filter(e => e.department_id == deptFilter);
 const empOpts = employees.map(e => `<option value="${e.id}">${Utils.escape(e.full_name)}</option>`).join('');
-// تأكد من تحميل الأقسام (لتحديد نوع النموذج حسب قسم الموظف)
-if (!window._departments) loadDepartments(true).then(() => { if (currentPage === 'new-evaluation') { const s=document.getElementById('ef-employee'); if (s && s.value) renderEvalBodyForEmployee(parseInt(s.value)); } });
 return `
 <div class="page-header">
-<div><div class="page-title">تقييم جديد</div><div class="page-subtitle">اختر الموظف لعرض نموذج قسمه</div></div>
-<button class="btn btn-secondary" data-nav="evaluations">← رجوع</button>
+<div><div class="page-title">تقييم جديد — ${Utils.escape(deptName)}</div><div class="page-subtitle">اختر الموظف لبدء التقييم</div></div>
+<button class="btn btn-secondary" onclick="navigate('new-evaluation',{})">← رجوع</button>
 </div>
 <div class="card">
 <div class="card-header"><div class="card-title">📋 بيانات التقييم</div></div>
@@ -1923,9 +1953,10 @@ return `
 <div class="form-group"><label class="form-label">الموظف *</label><select class="form-control" id="ef-employee" required><option value="">-- اختر --</option>${empOpts}</select></div>
 <div class="form-group"><label class="form-label">تاريخ التقييم *</label><input type="date" class="form-control" id="ef-date" required value="${new Date().toISOString().substring(0,10)}"></div>
 </div>
+${employees.length ? '' : '<div class="alert alert-info" style="margin-top:10px">لا يوجد موظفون في هذا القسم.</div>'}
 </div>
 </div>
-<div id="neval-body"><div class="alert alert-info">اختر الموظف لعرض نموذج التقييم المناسب لقسمه.</div></div>`;
+<div id="neval-body"><div class="alert alert-info">اختر الموظف لعرض نموذج التقييم.</div></div>`;
 }
 
 // جسم النموذج القطاعي (محزم) — نفس تجربة التقييم الحالية بدون بطاقة الموظف/التاريخ (أصبحت مشتركة)
@@ -2266,7 +2297,9 @@ catch(_) { return null; }
 async function uploadCreativeGenePdf(employeeId, weekStart, file) {
 if (!file) { Toast.error('اختر ملفاً'); return null; }
 if (file.type !== 'application/pdf') { Toast.error('الملف يجب أن يكون PDF فقط'); return null; }
-if (file.size > 20*1024*1024) { Toast.error('الحد الأقصى 20 ميجابايت'); return null; }
+let maxMb = 20;
+try { const tpl = await loadTemplateFor(cgDeptId()); if (tpl && tpl.ok && tpl.template && tpl.template.pdf_max_size_mb) maxMb = Math.min(20, tpl.template.pdf_max_size_mb); } catch(_){}
+if (file.size > maxMb*1024*1024) { Toast.error(`الحد الأقصى ${maxMb} ميجابايت`); return null; }
 const safe = (file.name||'file.pdf').replace(/[^\w.\-]+/g,'_');
 const path = employeeId + '/' + weekStart + '/' + Date.now() + '_' + safe;
 try {
@@ -2663,7 +2696,7 @@ const st = r.status;
 const evaluated = (st !== 'not_uploaded' && st !== 'uploaded_pending');
 const badge = evaluated ? '<span class="badge badge-success">🟢 تم التقييم</span>' : (st==='uploaded_pending' ? '<span class="badge badge-warning">🟡 بانتظار التقييم</span>' : '<span class="badge badge-danger">🔴 لم يُرفع</span>');
 let actions = '';
-if (st === 'uploaded_pending') actions = `<button class="btn btn-sm btn-secondary" onclick="openCgPdfByWeek(${r.employee_id},'${ws}')">📄 فتح</button> <button class="btn btn-sm btn-success" onclick="navigate('new-evaluation',{emp:${r.employee_id}})">📝 تقييم</button>`;
+if (st === 'uploaded_pending') actions = `<button class="btn btn-sm btn-secondary" onclick="openCgPdfByWeek(${r.employee_id},'${ws}')">📄 فتح</button> <button class="btn btn-sm btn-success" onclick="navigate('new-evaluation',{dept:${cgDeptId()},emp:${r.employee_id}})">📝 تقييم</button>`;
 else if (evaluated) actions = `<button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${r.evaluation_id})">📄 فتح</button> <span style="font-weight:700;color:var(--primary)">${r.percentage}%</span>`;
 else actions = `<button class="btn btn-sm btn-secondary" onclick="cgUploadBehalf(${r.employee_id},'${ws}')">📎 رفع نيابةً</button>`;
 const o = objMap[r.evaluation_id], a = actMap[r.evaluation_id];
@@ -4900,8 +4933,9 @@ return '<div class="alert alert-danger">🚫 غير مصرح لك بالوصول
 const isAdmin = currentUser.role === 'admin';
 // تبويب "تعديل التقييمات" (يحوي الحذف) للأدمن فقط
 const tabs = [
-{ key:'form', label:'📝 نموذج التقييم', icon:'📝' },
-{ key:'weights', label:'🎯 النقاط والأوزان', icon:'🎯' }
+{ key:'form', label:'📝 نموذج محزم', icon:'📝' },
+{ key:'weights', label:'🎯 النقاط والأوزان', icon:'🎯' },
+{ key:'cg', label:'🎨 نموذج Creative Gene', icon:'🎨' }
 ];
 if (isAdmin) tabs.push({ key:'evals', label:'✏️ تعديل التقييمات', icon:'✏️' });
 // موظف الجودة لا يصل لتبويب evals — حوّله لـ form
@@ -4913,12 +4947,13 @@ const tabsHTML = tabs.map(t => `
 let body = '';
 if (activeTab === 'form') body = renderSettingsForm();
 else if (activeTab === 'weights') body = renderSettingsWeights();
+else if (activeTab === 'cg') body = renderSettingsCg();
 else if (activeTab === 'evals' && isAdmin) body = renderSettingsEvals();
 
 return `
 <div class="page-header">
 <div><div class="page-title">⚙️ الإعدادات</div><div class="page-subtitle">تخصيص نموذج التقييم وإدارته</div></div>
-<button class="btn btn-danger" id="reset-criteria-btn">🔄 استعادة الإعدادات الافتراضية</button>
+${activeTab === 'cg' ? '' : '<button class="btn btn-danger" id="reset-criteria-btn">🔄 استعادة الإعدادات الافتراضية</button>'}
 </div>
 <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">${tabsHTML}</div>
 ${body}`;
@@ -5177,10 +5212,114 @@ return true;
 });
 }
 
+// ---- تخصيص نموذج Creative Gene ----
+function renderSettingsCg() {
+return `<div id="cg-settings-body"><div class="card"><div class="card-body">⏳ جارٍ تحميل النموذج…</div></div></div>`;
+}
+async function loadCgSettings() {
+const host = document.getElementById('cg-settings-body');
+if (!host) return;
+await loadDepartments();
+const tpl = await loadTemplateFor(cgDeptId());
+if (!tpl || !tpl.ok || !tpl.exists) { host.innerHTML = '<div class="alert alert-danger">تعذّر تحميل نموذج Creative Gene</div>'; return; }
+window._cgEdit = JSON.parse(JSON.stringify(tpl.template));
+if (!Array.isArray(window._cgEdit.criteria)) window._cgEdit.criteria = [];
+if (!Array.isArray(window._cgEdit.allowed_action_types)) window._cgEdit.allowed_action_types = ['warning','training','praise','other'];
+renderCgEditor();
+}
+function syncCgInputs() {
+const t = window._cgEdit; if (!t) return;
+document.querySelectorAll('.cg-crit-name').forEach(inp => { const i=+inp.dataset.i; if (t.criteria[i]) t.criteria[i].name = inp.value; });
+document.querySelectorAll('.cg-crit-weight').forEach(inp => { const i=+inp.dataset.i; if (t.criteria[i]) t.criteria[i].weight = parseFloat(inp.value)||0; });
+const oh=document.getElementById('cg-obj-hours'); if (oh) t.objection_window_hours = parseInt(oh.value)||48;
+const ps=document.getElementById('cg-pdf-size'); if (ps) t.pdf_max_size_mb = parseInt(ps.value)||20;
+}
+function renderCgEditor() {
+const host = document.getElementById('cg-settings-body'); if (!host) return;
+const t = window._cgEdit;
+const crit = t.criteria || [];
+const totalW = crit.reduce((s,c)=> s + (parseFloat(c.weight)||0), 0);
+const critRows = crit.map((c,i) => `<div class="card" style="margin-bottom:8px"><div class="card-body" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+<div class="form-group" style="flex:2;margin:0;min-width:180px"><label class="form-label">اسم المعيار</label><input class="form-control cg-crit-name" data-i="${i}" value="${Utils.escape(c.name||'')}"></div>
+<div class="form-group" style="flex:1;margin:0;min-width:90px"><label class="form-label">الوزن %</label><input type="number" min="0" max="100" class="form-control cg-crit-weight" data-i="${i}" value="${c.weight}"></div>
+<button class="btn btn-danger cg-crit-del" data-i="${i}">حذف</button>
+</div></div>`).join('');
+const types = t.allowed_action_types || [];
+const typeChips = types.map((ty,i)=>`<span class="badge badge-info" style="margin:2px;font-size:13px">${Utils.escape(actionTypeLabel(ty))} <a href="#" class="cg-type-del" data-i="${i}" style="color:#fff;text-decoration:none">✕</a></span>`).join('') || '<span style="color:var(--muted)">لا يوجد</span>';
+host.innerHTML = `
+<div class="alert ${totalW===100?'alert-success':'alert-warning'}">مجموع الأوزان: <strong>${totalW}%</strong> ${totalW===100?'✅':'— يجب أن يساوي 100% قبل الحفظ'}</div>
+<div class="card"><div class="card-header"><div class="card-title">📊 معايير التقييم</div></div><div class="card-body">
+${critRows || '<div class="alert alert-info">لا توجد معايير.</div>'}
+<button class="btn btn-secondary" id="cg-add-crit">➕ إضافة معيار</button>
+</div></div>
+<div class="card"><div class="card-header"><div class="card-title">⚙️ إعدادات متقدمة</div></div><div class="card-body">
+<div class="grid grid-2">
+<div class="form-group"><label class="form-label">نافذة الاعتراض (ساعات)</label><input type="number" min="1" class="form-control" id="cg-obj-hours" value="${t.objection_window_hours||48}"></div>
+<div class="form-group"><label class="form-label">الحد الأقصى لحجم PDF (ميجا)</label><input type="number" min="1" max="100" class="form-control" id="cg-pdf-size" value="${t.pdf_max_size_mb||20}"></div>
+</div>
+<div class="form-group"><label class="form-label">أنواع الإجراءات المسموحة</label><div id="cg-types" style="margin-bottom:8px">${typeChips}</div>
+<div style="display:flex;gap:8px"><input class="form-control" id="cg-new-type" placeholder="كود الإجراء (إنجليزي، مثل: suspension)" style="max-width:260px"><button class="btn btn-secondary" id="cg-add-type">إضافة</button></div>
+</div>
+</div></div>
+<div style="display:flex;justify-content:flex-end"><button class="btn btn-success" id="cg-save-tpl" style="padding:12px 26px">💾 حفظ نموذج Creative Gene</button></div>
+<div class="alert alert-info" style="margin-top:12px;font-size:13px">تعديل/حذف/إضافة معيار أو تغيير الأوزان لا يؤثّر على التقييمات السابقة (محفوظة بـ snapshot) — يُطبَّق على التقييمات الجديدة فقط.</div>`;
+attachCgEditorHandlers();
+}
+function attachCgEditorHandlers() {
+const addCrit = document.getElementById('cg-add-crit');
+if (addCrit) addCrit.addEventListener('click', () => {
+Modal.show('إضافة معيار', `
+<div class="form-group"><label class="form-label">اسم المعيار *</label><input class="form-control" id="nc-name"></div>
+<div class="form-group"><label class="form-label">الوزن % *</label><input type="number" min="0" max="100" class="form-control" id="nc-weight" value="0"></div>
+<div class="form-group"><label class="form-label">النوع</label><select class="form-control" id="nc-type"><option value="score">درجة (0-100)</option><option value="percentage">نسبة مئوية</option></select></div>`,
+`<button class="btn btn-secondary" onclick="Modal.close()">إلغاء</button><button class="btn btn-primary" id="nc-save">إضافة</button>`);
+document.getElementById('nc-save').addEventListener('click', () => {
+const name=document.getElementById('nc-name').value.trim(); const weight=parseFloat(document.getElementById('nc-weight').value)||0; const type=document.getElementById('nc-type').value;
+if (!name) { Toast.error('اسم المعيار مطلوب'); return; }
+syncCgInputs();
+const id = 'c_' + name.replace(/[^\w]+/g,'_').toLowerCase() + '_' + (window._cgEdit.criteria.length+1);
+window._cgEdit.criteria.push({ id, name, weight, type, min:0, max:100 });
+Modal.close(); renderCgEditor();
+});
+});
+document.querySelectorAll('.cg-crit-del').forEach(b => b.addEventListener('click', () => {
+if (!confirm('حذف هذا المعيار؟ لن يؤثر على التقييمات السابقة، ولن يظهر في الجديدة.')) return;
+syncCgInputs(); window._cgEdit.criteria.splice(+b.dataset.i, 1); renderCgEditor();
+}));
+const addType = document.getElementById('cg-add-type');
+if (addType) addType.addEventListener('click', () => {
+const v = (document.getElementById('cg-new-type').value||'').trim().toLowerCase().replace(/\s+/g,'_');
+if (!v) { Toast.error('أدخل كود الإجراء'); return; }
+syncCgInputs();
+if (!window._cgEdit.allowed_action_types.includes(v)) window._cgEdit.allowed_action_types.push(v);
+renderCgEditor();
+});
+document.querySelectorAll('.cg-type-del').forEach(a => a.addEventListener('click', (e) => {
+e.preventDefault(); syncCgInputs(); window._cgEdit.allowed_action_types.splice(+a.dataset.i, 1); renderCgEditor();
+}));
+const save = document.getElementById('cg-save-tpl');
+if (save) save.addEventListener('click', async () => {
+syncCgInputs();
+const t = window._cgEdit;
+if (!t.criteria.length) { Toast.error('أضف معياراً واحداً على الأقل'); return; }
+if (t.criteria.some(c => !c.name || !c.name.trim())) { Toast.error('كل معيار يحتاج اسماً'); return; }
+const totalW = t.criteria.reduce((s,c)=> s + (parseFloat(c.weight)||0), 0);
+if (Math.round(totalW) !== 100) { Toast.error(`مجموع الأوزان = ${totalW}% — يجب أن يساوي 100%`); return; }
+await submitWithFeedback(save, 'جاري الحفظ...', null, async () => {
+const { data, error } = await window.sb.rpc('upsert_evaluation_template', { p_session_token: cgToken(), p_department_id: cgDeptId(), p_template: t, p_template_type: 'pdf_based_weekly' });
+const r = Array.isArray(data)?data[0]:data;
+if (error || !r || !r.ok) { const m=(r&&r.message)||(error&&error.message)||'تعذّر الحفظ'; if(!handleSessionError(m)) Toast.error(m); return false; }
+if (window._templates) delete window._templates[cgDeptId()];
+Toast.success('تم حفظ نموذج Creative Gene'); return true;
+});
+});
+}
+
 function attachSettingsHandlers(tab) {
 document.querySelectorAll('[data-nav-settings]').forEach(b => {
 b.addEventListener('click', () => navigate('settings', { tab: b.dataset.navSettings }));
 });
+if (tab === 'cg') { loadCgSettings(); return; }
 
 const reset = document.getElementById('reset-criteria-btn');
 if (reset) reset.addEventListener('click', async (e) => {
