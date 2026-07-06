@@ -2868,24 +2868,45 @@ ${sectionsHTML}`;
 // ============================================
 // Reports
 // ============================================
+// موزّع تقارير بتبويبين منفصلين (محزم / Creative Gene) — فصل تام بـ department_id
 function renderReports() {
+if (currentUser.role === 'employee') return '<div class="alert alert-danger">🚫 غير مصرح لك بعرض التقارير</div>';
+const mId = mahzamDeptId(), cId = cgDeptId();
+const isSup = currentUser.role === 'supervisor';
+const supEmps = isSup ? DB.getUsers({ role:'employee' }).filter(e => e.supervisor_id === currentUser.id || e.supervisor_name === currentUser.full_name) : [];
+const supDepts = new Set(supEmps.map(e => e.department_id));
+let tabs = [];
+if (!isSup) tabs = [{k:'mahzam',l:'📊 تقارير محزم'},{k:'cg',l:'🎨 تقارير Creative Gene'}];
+else { if (supDepts.has(mId)) tabs.push({k:'mahzam',l:'📊 تقارير محزم'}); if (supDepts.has(cId)) tabs.push({k:'cg',l:'🎨 تقارير Creative Gene'}); }
+if (!tabs.length) tabs = [{k:'mahzam',l:'📊 تقارير محزم'}];
+let tab = currentParams.reportTab;
+if (!tab || !tabs.some(t => t.k === tab)) {
+tab = (isSup && supDepts.has(cId) && !supDepts.has(mId)) ? 'cg' : 'mahzam';
+if (!tabs.some(t => t.k === tab)) tab = tabs[0].k;
+}
+window._reportTab = tab;
+const tabBar = tabs.length > 1 ? `<div style="display:flex;gap:8px;margin-bottom:16px">${tabs.map(t => `<button class="btn ${tab===t.k?'btn-primary':'btn-secondary'}" onclick="navigate('reports',{reportTab:'${t.k}'})">${t.l}</button>`).join('')}</div>` : '';
+return tabBar + (tab === 'cg' ? renderCgReports() : renderMahzamReports());
+}
+
+function renderMahzamReports() {
 const period = currentParams.period || 'all'; // all, year, month, custom
 const year = parseInt(currentParams.year) || new Date().getFullYear();
 const month = currentParams.month || ''; // YYYY-MM
-const filterDept = currentParams.dept || '';
 const filterSup = currentParams.sup || '';
 const fromDate = currentParams.from || '';
 const toDate = currentParams.to || '';
 
-let employees = DB.getUsers({ role:'employee' });
+// حصر صارم بقسم محزم عبر department_id (لا الحقل النصّي القديم)
+let employees = DB.getUsers({ role:'employee' }).filter(e => e.department_id === mahzamDeptId());
 if (currentUser.role === 'supervisor') {
-employees = employees.filter(e => e.supervisor_name === currentUser.full_name);
+employees = employees.filter(e => e.supervisor_name === currentUser.full_name || e.supervisor_id === currentUser.id);
 }
-if (filterDept) employees = employees.filter(e => (e.department||'') === filterDept);
 if (filterSup) employees = employees.filter(e => (e.supervisor_name||'') === filterSup);
+const empIdSet = new Set(employees.map(e => e.id));
 
-// Filter evaluations by period
-let allEvals = DB.data.evaluations.slice();
+// Filter evaluations by period + حصر بموظفي محزم فقط
+let allEvals = DB.data.evaluations.filter(ev => empIdSet.has(ev.employee_id));
 if (period === 'year') {
 allEvals = allEvals.filter(ev => new Date(ev.evaluation_date).getFullYear() === year);
 } else if (period === 'month' && month) {
@@ -2931,14 +2952,9 @@ const allYears = new Set([new Date().getFullYear()]);
 DB.data.evaluations.forEach(ev => allYears.add(new Date(ev.evaluation_date).getFullYear()));
 const yearOpts = Array.from(allYears).sort().reverse().map(y => `<option value="${y}" ${y===year?'selected':''}>${y}</option>`).join('');
 
-// Department list
-const deptSet = new Set();
-DB.getUsers({role:'employee'}).forEach(u => { if (u.department) deptSet.add(u.department); });
-const deptOpts = Array.from(deptSet).map(d => `<option value="${d}" ${d===filterDept?'selected':''}>${d}</option>`).join('');
-
-// Supervisor list
+// Supervisor list (محزم فقط)
 const supSet = new Set();
-DB.getUsers({role:'employee'}).forEach(u => { if (u.supervisor_name && u.supervisor_name !== '-') supSet.add(u.supervisor_name); });
+DB.getUsers({role:'employee'}).filter(u => u.department_id === mahzamDeptId()).forEach(u => { if (u.supervisor_name && u.supervisor_name !== '-') supSet.add(u.supervisor_name); });
 const supOpts = Array.from(supSet).map(s => `<option value="${s}" ${s===filterSup?'selected':''}>${s}</option>`).join('');
 
 // Month options
@@ -2998,12 +3014,6 @@ return `
 <input type="date" class="form-control rep-filter" id="rep-to" value="${toDate}">
 </div>
 <div class="form-group" style="margin:0">
-<label class="form-label" style="font-size:12px">القسم/الإدارة</label>
-<select class="form-control rep-filter" id="rep-dept">
-<option value="">الكل</option>${deptOpts}
-</select>
-</div>
-<div class="form-group" style="margin:0">
 <label class="form-label" style="font-size:12px">المشرف</label>
 <select class="form-control rep-filter" id="rep-sup">
 <option value="">الكل</option>${supOpts}
@@ -3045,7 +3055,8 @@ return `
 }
 
 function renderReportsCharts() {
-const employees = DB.getUsers({ role:'employee' });
+if (window._reportTab === 'cg') return; // تبويب CG له عرضه الخاص بلا رسوم محزم
+const employees = DB.getUsers({ role:'employee' }).filter(e => e.department_id === mahzamDeptId());
 const empData = employees.map(e => {
 const ue = DB.data.evaluations.filter(ev => ev.employee_id === e.id);
 return {
@@ -3086,7 +3097,8 @@ options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:
 // تصدير التقارير - Excel & PDF
 // ============================================
 function exportReportsXLSX() {
-const employees = DB.getUsers({ role:'employee' });
+if (window._reportTab === 'cg') return exportCgReportsXLSX();
+const employees = DB.getUsers({ role:'employee' }).filter(e => e.department_id === mahzamDeptId());
 const allEvals = DB.data.evaluations;
 const data = employees.map(e => {
 const ue = allEvals.filter(ev => ev.employee_id === e.id);
@@ -3115,7 +3127,8 @@ Toast.success('تم تصدير ملف Excel');
 }
 
 async function exportReportsPDF() {
-const employees = DB.getUsers({ role:'employee' });
+if (window._reportTab === 'cg') return exportCgReportsPDF();
+const employees = DB.getUsers({ role:'employee' }).filter(e => e.department_id === mahzamDeptId());
 const allEvals = DB.data.evaluations;
 const empData = employees.map(e => {
 const ue = allEvals.filter(ev => ev.employee_id === e.id);
@@ -3129,6 +3142,94 @@ const overallAvg = Math.round(empData.reduce((s,e)=>s+e.avg,0)/empData.length*10
 const rows = empData.map((e,i) => `<tr><td>${i+1}</td><td>${Utils.escape(e.employee_number)}</td><td>${Utils.escape(e.name)}</td><td>${Utils.escape(e.supervisor)}</td><td style="text-align:center">${e.count}</td><td style="text-align:center"><strong>${e.avg}%</strong></td><td style="text-align:center;color:#059669">${e.high}%</td><td style="text-align:center;color:#dc2626">${e.low}%</td><td>${e.avg>=85?'ناجح':'راسب'}</td></tr>`).join('');
 const html = `<div style="padding:30px;font-family:'Cairo',sans-serif;direction:rtl;background:white">${buildPDFHeader('تقرير الأداء الشامل', 'تحليل أداء فريق العمل', '#06579F')}<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px"><div style="background:#dbeafe;padding:14px;border-radius:8px;text-align:center"><div style="font-size:22px;font-weight:800;color:#06579F">${empData.length}</div><div style="color:#64748b;font-size:12px">موظف تم تقييمه</div></div><div style="background:#d1fae5;padding:14px;border-radius:8px;text-align:center"><div style="font-size:22px;font-weight:800;color:#059669">${overallAvg}%</div><div style="color:#64748b;font-size:12px">المتوسط العام</div></div><div style="background:#fef3c7;padding:14px;border-radius:8px;text-align:center"><div style="font-size:22px;font-weight:800;color:#d97706">${empData.filter(e=>e.avg>=85).length}</div><div style="color:#64748b;font-size:12px">ناجح</div></div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#06579F;color:white"><th style="padding:8px;border:1px solid #044a87">#</th><th style="padding:8px;border:1px solid #044a87">الرقم الوظيفي</th><th style="padding:8px;border:1px solid #044a87">الموظف</th><th style="padding:8px;border:1px solid #044a87">المشرف</th><th style="padding:8px;border:1px solid #044a87">التقييمات</th><th style="padding:8px;border:1px solid #044a87">المتوسط</th><th style="padding:8px;border:1px solid #044a87">أعلى</th><th style="padding:8px;border:1px solid #044a87">أدنى</th><th style="padding:8px;border:1px solid #044a87">التقدير</th></tr></thead><tbody style="background:white">${rows.replace(/<td/g,'<td style="padding:6px;border:1px solid #cbd5e1"').replace(/style="text-align:center"/g,'style="text-align:center;padding:6px;border:1px solid #cbd5e1"').replace(/style="text-align:center;color:#059669"/g,'style="text-align:center;color:#059669;padding:6px;border:1px solid #cbd5e1"').replace(/style="text-align:center;color:#dc2626"/g,'style="text-align:center;color:#dc2626;padding:6px;border:1px solid #cbd5e1"')}</tbody></table></div>`;
 await htmlToPDF(html, `تقرير_الأداء_${new Date().toISOString().slice(0,10)}.pdf`);
+}
+
+// ============================================
+// تقارير Creative Gene (منفصلة تماماً بـ department_id)
+// ============================================
+function renderCgReports() {
+const period = currentParams.period||'all', month = currentParams.month||'', fromDate = currentParams.from||'', toDate = currentParams.to||'', empF = currentParams.emp||'';
+let cgEmps = DB.getUsers({ role:'employee' }).filter(e => e.department_id === cgDeptId());
+if (currentUser.role === 'supervisor') cgEmps = cgEmps.filter(e => e.supervisor_id === currentUser.id || e.supervisor_name === currentUser.full_name);
+const empOpts = cgEmps.map(e => `<option value="${e.id}" ${String(e.id)===String(empF)?'selected':''}>${Utils.escape(e.full_name)}</option>`).join('');
+const monthSet = new Set();
+(DB.data.evaluations||[]).filter(e => e.template_type==='pdf_based_weekly').forEach(e => { if (e.week_start) { const d=new Date(e.week_start); monthSet.add(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`); } });
+const monthOpts = Array.from(monthSet).sort().reverse().map(m => `<option value="${m}" ${m===month?'selected':''}>${arabicMonthName(m)}</option>`).join('');
+return `
+<div class="page-header"><div><div class="page-title">🎨 تقارير Creative Gene</div><div class="page-subtitle">التقييمات الأسبوعية بالملفات</div></div>
+<div style="display:flex;gap:8px"><button class="btn btn-success" id="rep-export-xlsx">📊 تصدير Excel</button><button class="btn btn-danger" id="rep-export-pdf">📄 تصدير PDF</button></div></div>
+<div class="card" style="margin-bottom:20px"><div style="padding:16px;background:#f8fafc;border-bottom:1px solid var(--border)">
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;align-items:end">
+<div class="form-group" style="margin:0"><label class="form-label" style="font-size:12px">الفترة</label><select class="form-control rep-filter" id="rep-period"><option value="all" ${period==='all'?'selected':''}>كل البيانات</option><option value="month" ${period==='month'?'selected':''}>شهر</option><option value="custom" ${period==='custom'?'selected':''}>فترة مخصصة</option></select></div>
+<div class="form-group" style="margin:0;${period==='month'?'':'display:none'}" id="rep-month-wrap"><label class="form-label" style="font-size:12px">الشهر</label><select class="form-control rep-filter" id="rep-month">${monthOpts}</select></div>
+<div class="form-group" style="margin:0;${period==='custom'?'':'display:none'}" id="rep-from-wrap"><label class="form-label" style="font-size:12px">من</label><input type="date" class="form-control rep-filter" id="rep-from" value="${fromDate}"></div>
+<div class="form-group" style="margin:0;${period==='custom'?'':'display:none'}" id="rep-to-wrap"><label class="form-label" style="font-size:12px">إلى</label><input type="date" class="form-control rep-filter" id="rep-to" value="${toDate}"></div>
+<div class="form-group" style="margin:0"><label class="form-label" style="font-size:12px">الموظف</label><select class="form-control rep-filter" id="rep-emp"><option value="">الكل</option>${empOpts}</select></div>
+<button class="btn btn-secondary" id="rep-clear" style="height:42px">🔄 إعادة تعيين</button>
+</div></div></div>
+<div id="cg-reports-body"><div class="card"><div class="card-body">⏳ جارٍ التحميل…</div></div></div>`;
+}
+async function loadCgReports() {
+const host = document.getElementById('cg-reports-body'); if (!host) return;
+await loadDepartments();
+const tpl = await loadTemplateFor(cgDeptId());
+const criteria = (tpl && tpl.ok && tpl.exists && Array.isArray(tpl.template.criteria)) ? tpl.template.criteria : [];
+const period = currentParams.period||'all', month = currentParams.month||'', fromDate = currentParams.from||'', toDate = currentParams.to||'', empF = currentParams.emp?parseInt(currentParams.emp):null;
+let cgEmpIds = new Set(DB.getUsers({ role:'employee' }).filter(e => e.department_id === cgDeptId() && (currentUser.role!=='supervisor' || e.supervisor_id===currentUser.id || e.supervisor_name===currentUser.full_name)).map(e => e.id));
+let evals = (DB.data.evaluations||[]).filter(e => e.template_type==='pdf_based_weekly' && cgEmpIds.has(e.employee_id));
+if (empF) evals = evals.filter(e => e.employee_id === empF);
+const inPeriod = (dstr) => { if (period==='all' || !dstr) return true; const d=new Date(dstr); if (period==='month'&&month){const[y,m]=month.split('-').map(Number);return d.getFullYear()===y&&d.getMonth()===m-1;} if (period==='custom'&&fromDate&&toDate){return d>=new Date(fromDate)&&d<=new Date(toDate);} return true; };
+evals = evals.filter(e => inPeriod(e.week_start||e.evaluation_date)).sort((a,b)=> String(b.week_start||'').localeCompare(String(a.week_start||'')));
+const evalIds = evals.map(e => e.id);
+const objMap = {}, actMap = {};
+if (evalIds.length) { try { const [{ data:objs },{ data:acts }] = await Promise.all([window.sb.from('creative_gene_objections').select('*').in('evaluation_id',evalIds), window.sb.from('creative_gene_actions').select('*').in('evaluation_id',evalIds)]); (objs||[]).forEach(o=>objMap[o.evaluation_id]=o); (acts||[]).forEach(a=>actMap[a.evaluation_id]=a); } catch(_){} }
+let uploads = 0, openObj = 0;
+try { const { data:st } = await window.sb.from('creative_gene_weekly_status').select('employee_id,pdf_file_path'); uploads = (st||[]).filter(s => s.pdf_file_path && cgEmpIds.has(s.employee_id)).length; } catch(_){}
+try { const { data:ob } = await window.sb.from('creative_gene_objections').select('status,employee_id'); openObj = (ob||[]).filter(o => o.status==='pending' && cgEmpIds.has(o.employee_id)).length; } catch(_){}
+const evalCount = evals.length;
+const avg = evalCount ? Math.round(evals.reduce((s,e)=> s+(+e.percentage||0), 0)/evalCount*10)/10 : 0;
+const actionsCount = Object.keys(actMap).length;
+const objLabel = (o) => o ? (o.status==='accepted'?'مقبول':(o.status==='rejected'?'مرفوض':'قيد المراجعة')) : '—';
+const exportRows = [];
+const rowsHtml = evals.map(e => { const emp=DB.getUser(e.employee_id); const scores=e.section_scores||e.items||{}; const o=objMap[e.id], a=actMap[e.id];
+const critCells = criteria.map(c => `<td style="text-align:center">${scores[c.id]!=null?scores[c.id]:'—'}</td>`).join('');
+const row = { 'الموظف': emp?emp.full_name:'-', 'الأسبوع': (e.week_start||'')+' - '+(e.week_end||'') };
+criteria.forEach(c => { row[c.name] = scores[c.id]!=null?scores[c.id]:''; });
+row['الدرجة الكلية %'] = e.percentage; row['الملاحظات'] = e.evaluation_notes||''; row['الاعتراض'] = objLabel(o); row['الإجراء'] = a ? actionTypeLabel(a.action_type).replace(/[^؀-ۿ ]/g,'').trim() : '—';
+exportRows.push(row);
+return `<tr><td>${emp?Utils.escape(emp.full_name):'-'}</td><td>${e.week_start||''} ← ${e.week_end||''}</td><td><button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${e.id})">📄 فتح</button></td>${critCells}<td style="text-align:center"><strong>${e.percentage}%</strong></td><td>${e.evaluation_notes?Utils.escape(e.evaluation_notes):'—'}</td><td>${objLabel(o)}</td><td>${a?actionTypeLabel(a.action_type):'—'}</td></tr>`;
+}).join('');
+window._cgReportData = exportRows;
+const critHeaders = criteria.map(c => `<th style="text-align:center">${Utils.escape(c.name)}</th>`).join('');
+host.innerHTML = `
+<div class="stats-grid">
+<div class="stat-card" style="background:linear-gradient(135deg,#a855f7,#7c3aed);color:white"><div class="stat-icon" style="background:rgba(255,255,255,0.25)">📎</div><div class="stat-value" style="color:white">${uploads}</div><div class="stat-label" style="color:rgba(255,255,255,0.9)">ملفات مرفوعة</div></div>
+<div class="stat-card" style="background:linear-gradient(135deg,#06b6d4,#0891b2);color:white"><div class="stat-icon" style="background:rgba(255,255,255,0.25)">📋</div><div class="stat-value" style="color:white">${evalCount}</div><div class="stat-label" style="color:rgba(255,255,255,0.9)">تقييمات</div></div>
+<div class="stat-card" style="background:linear-gradient(135deg,#10b981,#059669);color:white"><div class="stat-icon" style="background:rgba(255,255,255,0.25)">⭐</div><div class="stat-value" style="color:white">${avg}%</div><div class="stat-label" style="color:rgba(255,255,255,0.9)">متوسط الدرجة</div></div>
+<div class="stat-card" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:white"><div class="stat-icon" style="background:rgba(255,255,255,0.25)">⚖️</div><div class="stat-value" style="color:white">${openObj}</div><div class="stat-label" style="color:rgba(255,255,255,0.9)">اعتراضات مفتوحة</div></div>
+<div class="stat-card" style="background:linear-gradient(135deg,#ef4444,#dc2626);color:white"><div class="stat-icon" style="background:rgba(255,255,255,0.25)">🎯</div><div class="stat-value" style="color:white">${actionsCount}</div><div class="stat-label" style="color:rgba(255,255,255,0.9)">إجراءات متخذة</div></div>
+</div>
+<div class="card" style="margin-top:20px"><div class="card-header"><div class="card-title">📄 التقييمات الأسبوعية</div></div>
+<div style="overflow-x:auto"><table class="table"><thead><tr><th>الموظف</th><th>الأسبوع</th><th>PDF</th>${critHeaders}<th>الدرجة الكلية</th><th>الملاحظات</th><th>الاعتراض</th><th>الإجراء</th></tr></thead>
+<tbody>${rowsHtml || `<tr><td colspan="${7+criteria.length}" style="text-align:center;padding:20px;color:var(--muted)">لا توجد بيانات</td></tr>`}</tbody></table></div></div>`;
+}
+function exportCgReportsXLSX() {
+const data = window._cgReportData || [];
+if (!data.length) { Toast.error('لا توجد بيانات للتصدير'); return; }
+const ws = XLSX.utils.json_to_sheet(data);
+const wb = XLSX.utils.book_new();
+XLSX.utils.book_append_sheet(wb, ws, 'تقرير Creative Gene');
+XLSX.writeFile(wb, `تقرير_Creative_Gene_${new Date().toISOString().slice(0,10)}.xlsx`);
+Toast.success('تم تصدير ملف Excel');
+}
+async function exportCgReportsPDF() {
+const data = window._cgReportData || [];
+if (!data.length) { Toast.error('لا توجد بيانات للتصدير'); return; }
+const cols = Object.keys(data[0]);
+const head = cols.map(c => `<th style="padding:6px;border:1px solid #cbd5e1;background:#7c3aed;color:white">${Utils.escape(c)}</th>`).join('');
+const body = data.map(r => `<tr>${cols.map(c => `<td style="padding:5px;border:1px solid #cbd5e1;text-align:center">${Utils.escape(r[c]!=null?String(r[c]):'')}</td>`).join('')}</tr>`).join('');
+const html = `<div style="padding:24px;font-family:'Cairo',sans-serif;direction:rtl;background:white">${buildPDFHeader('تقرير Creative Gene','التقييمات الأسبوعية بالملفات','#7c3aed')}<table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+await htmlToPDF(html, `تقرير_Creative_Gene_${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
 // ============================================
@@ -5255,7 +5356,7 @@ ${critRows || '<div class="alert alert-info">لا توجد معايير.</div>'}
 <div class="card"><div class="card-header"><div class="card-title">⚙️ إعدادات متقدمة</div></div><div class="card-body">
 <div class="grid grid-2">
 <div class="form-group"><label class="form-label">نافذة الاعتراض (ساعات)</label><input type="number" min="1" class="form-control" id="cg-obj-hours" value="${t.objection_window_hours||48}"></div>
-<div class="form-group"><label class="form-label">الحد الأقصى لحجم PDF (ميجا)</label><input type="number" min="1" max="100" class="form-control" id="cg-pdf-size" value="${t.pdf_max_size_mb||20}"></div>
+<div class="form-group"><label class="form-label">الحد الأقصى لحجم PDF (ميجا) <span style="color:var(--muted);font-size:11px">(الأقصى 20)</span></label><input type="number" min="1" max="20" class="form-control" id="cg-pdf-size" value="${t.pdf_max_size_mb||20}"></div>
 </div>
 <div class="form-group"><label class="form-label">أنواع الإجراءات المسموحة</label><div id="cg-types" style="margin-bottom:8px">${typeChips}</div>
 <div style="display:flex;gap:8px"><input class="form-control" id="cg-new-type" placeholder="كود الإجراء (إنجليزي، مثل: suspension)" style="max-width:260px"><button class="btn btn-secondary" id="cg-add-type">إضافة</button></div>
@@ -5305,6 +5406,7 @@ if (!t.criteria.length) { Toast.error('أضف معياراً واحداً على
 if (t.criteria.some(c => !c.name || !c.name.trim())) { Toast.error('كل معيار يحتاج اسماً'); return; }
 const totalW = t.criteria.reduce((s,c)=> s + (parseFloat(c.weight)||0), 0);
 if (Math.round(totalW) !== 100) { Toast.error(`مجموع الأوزان = ${totalW}% — يجب أن يساوي 100%`); return; }
+if ((parseInt(t.pdf_max_size_mb)||20) > 20) { Toast.error('الحد الأقصى المسموح حالياً 20MB. لزيادة السقف يتطلب تعديل bucket من الخادم.'); return; }
 await submitWithFeedback(save, 'جاري الحفظ...', null, async () => {
 const { data, error } = await window.sb.rpc('upsert_evaluation_template', { p_session_token: cgToken(), p_department_id: cgDeptId(), p_template: t, p_template_type: 'pdf_based_weekly' });
 const r = Array.isArray(data)?data[0]:data;
@@ -5837,20 +5939,22 @@ const xlsBtn = document.getElementById('rep-export-xlsx');
 if (xlsBtn) xlsBtn.addEventListener('click', exportReportsXLSX);
 const pdfBtn = document.getElementById('rep-export-pdf');
 if (pdfBtn) pdfBtn.addEventListener('click', exportReportsPDF);
+if (window._reportTab === 'cg') loadCgReports();
 
 const applyRepFilters = () => {
 const period = document.getElementById('rep-period')?.value || 'all';
 const params = { period };
+if (window._reportTab) params.reportTab = window._reportTab; // إبقاء التبويب الحالي
 if (period === 'year') params.year = document.getElementById('rep-year')?.value;
 if (period === 'month') params.month = document.getElementById('rep-month')?.value;
 if (period === 'custom') { params.from = document.getElementById('rep-from')?.value; params.to = document.getElementById('rep-to')?.value; }
-const d = document.getElementById('rep-dept')?.value; if (d) params.dept = d;
 const s = document.getElementById('rep-sup')?.value; if (s) params.sup = s;
+const em = document.getElementById('rep-emp')?.value; if (em) params.emp = em;
 navigate('reports', params);
 };
 document.querySelectorAll('.rep-filter').forEach(el => el.addEventListener('change', applyRepFilters));
 const clrBtn = document.getElementById('rep-clear');
-if (clrBtn) clrBtn.addEventListener('click', () => navigate('reports', {}));
+if (clrBtn) clrBtn.addEventListener('click', () => navigate('reports', window._reportTab ? { reportTab: window._reportTab } : {}));
 }
 }
 
