@@ -699,7 +699,13 @@ const menu = [
 { key:'profile', icon:'👤', label:'الملف الشخصي', roles:['admin','quality_officer','supervisor','employee'] }
 ];
 
-const menuHTML = menu.filter(m => m.roles.includes(currentUser.role)).map(m => `
+const menuHTML = menu.filter(m => m.roles.includes(currentUser.role)).filter(m => {
+// بند "موظفوني — Creative Gene": يظهر للمشرف فقط إن كان لديه موظفو CG فعلاً (عزل عن مشرفي محزم)
+if (m.key === 'cg-my-team' && currentUser.role === 'supervisor') {
+return (DB.getUsers({ role:'employee' }) || []).some(e => e.supervisor_id === currentUser.id && isCreativeGeneDept(e.department_id));
+}
+return true;
+}).map(m => `
 <div class="menu-item ${currentPage === m.key ? 'active' : ''}" data-nav="${m.key}">
 <span>${m.icon}</span><span>${m.label}</span>
 </div>`).join('');
@@ -5400,6 +5406,8 @@ Toast.success('تم حفظ الأهداف'); if (window._templates) delete windo
 }
 
 function attachPageHandlers(page) {
+// حمّل الأقسام مرّة واحدة لتظهر بنود Creative Gene الصحيحة في القائمة (عزل مشرفي محزم)
+if (!window._departments) { loadDepartments(true).then(() => { if (typeof navigate === 'function' && currentPage === page) navigate(page, currentParams); }); }
 document.querySelectorAll('[data-nav-eval]').forEach(el => {
 el.addEventListener('click', e => {
 if (e.target.dataset && (e.target.dataset.delEval || e.target.dataset.viewEmp)) return;
