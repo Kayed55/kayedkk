@@ -929,6 +929,7 @@ const quickActions = !isEmp ? `
 return `
 ${welcomeBanner}
 ${isEmp ? '<div id="emp-cg-week"></div>' : ''}
+${currentUser.role === 'admin' ? cgNoSupervisorCardHTML() : ''}
 ${cards}
 ${quickActions}
 ${!isEmp ? renderQualityKPIs() : ''}
@@ -1278,11 +1279,16 @@ const job_role = document.getElementById('ef-jobrole').value || null;
 const deptObj = (window._departments || []).find(d => d.id === department_id);
 const department = deptObj ? deptObj.name : '';
 
-if (!full_name || !employee_number || !position || !supervisor_name || !email) {
+if (!full_name || !employee_number || !position || !email) {
 Toast.error('يرجى تعبئة جميع الحقول المطلوبة');
 return false;
 }
 if (!department_id) { Toast.error('يرجى اختيار القسم'); return false; }
+const _isCg = isCreativeGeneDept(department_id);
+if (!supervisor_name && !_isCg) { Toast.error('يجب اختيار المشرف للموظف'); return false; }
+if (!supervisor_name && _isCg) {
+if (!confirm('⚠️ لم يتم تعيين مشرف. الإجراءات على هذا الموظف ستكون من admin فقط.\n\nهل تريد المتابعة؟')) return false;
+}
 if (!Utils.validateEmail(email)) { Toast.error('بريد إلكتروني غير صالح'); return false; }
 
 const _tok = (window.getSessionToken ? window.getSessionToken() : null);
@@ -2338,6 +2344,20 @@ window.open(row.url, '_blank');
 
 // ---- شاشة "تقييم جديد" لموظف Creative Gene ----
 function actionTypeLabel(t) { return ({warning:'⚠️ تنبيه', training:'📚 تدريب', praise:'👏 إشادة', other:'📌 أخرى'})[t] || t; }
+function cgNoSupervisorList() { return DB.getUsers({ role:'employee' }).filter(e => isCreativeGeneDept(e.department_id) && !e.supervisor_id); }
+function cgNoSupervisorCardHTML() {
+const list = cgNoSupervisorList();
+if (!list.length) return '';
+return `<div class="card" style="border:2px solid var(--warning);background:#fffbeb;margin-bottom:20px"><div class="card-body" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+<div><strong>⚠️ ${list.length} موظف Creative Gene بلا مشرف</strong><div style="font-size:13px;color:var(--muted)">الإجراءات عليهم من admin فقط — يُنصح بتعيين مشرف.</div></div>
+<button class="btn btn-warning btn-sm" onclick="showCgNoSupervisorList()">عرض القائمة</button>
+</div></div>`;
+}
+function showCgNoSupervisorList() {
+const list = cgNoSupervisorList();
+const rows = list.map(e => `<tr><td>${Utils.escape(e.full_name)}</td><td>${Utils.escape(e.employee_number||'-')}</td><td><button class="btn btn-sm btn-secondary" onclick="Modal.close();navigate('employees')">تعيين مشرف</button></td></tr>`).join('') || '<tr><td colspan="3" style="text-align:center">لا يوجد</td></tr>';
+Modal.show('موظفو Creative Gene بلا مشرف', `<table class="table"><thead><tr><th>الاسم</th><th>الرقم الوظيفي</th><th></th></tr></thead><tbody>${rows}</tbody></table>`, `<button class="btn btn-secondary" onclick="Modal.close()">إغلاق</button>`);
+}
 function objectionDeadline(ev) {
 const hours = (ev.template_snapshot && ev.template_snapshot.objection_window_hours) || 48;
 if (ev.objection_deadline) return new Date(ev.objection_deadline);
@@ -2346,14 +2366,22 @@ const c = new Date(ev.created_at); c.setHours(c.getHours() + hours); return c;
 function objectionWindowOpen(ev) { try { return new Date() < objectionDeadline(ev); } catch(_) { return false; } }
 async function fetchObjection(evalId) { try { const { data } = await window.sb.from('creative_gene_objections').select('*').eq('evaluation_id', evalId).maybeSingle(); return data || null; } catch(_) { return null; } }
 async function fetchAction(evalId) { try { const { data } = await window.sb.from('creative_gene_actions').select('*').eq('evaluation_id', evalId).order('id', { ascending:false }).limit(1); return (data && data[0]) || null; } catch(_) { return null; } }
-async function raiseObjectionFlow(evalId, onDone) {
-const text = prompt('اكتب نص اعتراضك على التقييم:');
-if (text === null) return;
-if (!text.trim()) { Toast.error('نص الاعتراض مطلوب'); return; }
-const { data, error } = await window.sb.rpc('raise_objection', { p_session_token: cgToken(), p_evaluation_id: evalId, p_objection_text: text.trim() });
+function raiseObjectionFlow(ev, onDone) {
+const dl = objectionDeadline(ev);
+const remMs = dl - new Date();
+const remH = Math.max(0, Math.floor(remMs/3600000)), remM = Math.max(0, Math.floor((remMs%3600000)/60000));
+Modal.show('تقديم اعتراض', `
+<div class="alert alert-info">⏳ الوقت المتبقّي لتقديم الاعتراض: <strong>${remH} ساعة و${remM} دقيقة</strong></div>
+<div class="form-group"><label class="form-label">نص الاعتراض *</label><textarea class="form-control" id="obj-text" rows="4" placeholder="اشرح سبب اعتراضك على التقييم..."></textarea></div>`,
+`<button class="btn btn-secondary" onclick="Modal.close()">إلغاء</button><button class="btn btn-warning" id="obj-submit">⚖️ إرسال الاعتراض</button>`);
+document.getElementById('obj-submit').addEventListener('click', async () => {
+const text = ((document.getElementById('obj-text')||{}).value || '').trim();
+if (!text) { Toast.error('نص الاعتراض مطلوب'); return; }
+const { data, error } = await window.sb.rpc('raise_objection', { p_session_token: cgToken(), p_evaluation_id: ev.id, p_objection_text: text });
 const r = Array.isArray(data)?data[0]:data;
 if (error || !r || !r.ok) { const m=(r&&r.message)||(error&&error.message)||'تعذّر تقديم الاعتراض'; if(!handleSessionError(m)) Toast.error(m); return; }
-Toast.success('تم تقديم الاعتراض'); if (onDone) onDone();
+Modal.close(); Toast.success('تم تقديم الاعتراض'); if (onDone) onDone();
+});
 }
 
 async function renderPdfEvalInto(body, emp) {
@@ -2506,7 +2534,7 @@ if (up) up.addEventListener('click', () => pickPdfAndUpload(currentUser.id, ws, 
 const openb = document.getElementById('emp-cg-open');
 if (openb) openb.addEventListener('click', () => { if (ev) openCgPdfByEval(ev.id); else openCgPdfByWeek(currentUser.id, ws); });
 const objb = document.getElementById('emp-cg-object');
-if (objb && ev) objb.addEventListener('click', () => raiseObjectionFlow(ev.id, () => loadEmployeeWeekCard()));
+if (objb && ev) objb.addEventListener('click', () => raiseObjectionFlow(ev, () => loadEmployeeWeekCard()));
 }
 function employeeWeekCardHTML(ws, row, ev, obj, act) {
 const st = row ? row.status : 'not_uploaded';
@@ -2568,27 +2596,42 @@ if (!(currentUser.role === 'admin' || currentUser.role === 'quality_officer')) r
 return `<div class="page-header"><div><div class="page-title">⚖️ اعتراضات Creative Gene</div><div class="page-subtitle">مراجعة اعتراضات الموظفين على تقييماتهم</div></div></div>
 <div id="cgobj-list"><div class="card"><div class="card-body">⏳ جارٍ التحميل…</div></div></div>`;
 }
+function critBreakdownHTML(ev) {
+const crit = (ev.template_snapshot && ev.template_snapshot.criteria) || [];
+const scores = ev.section_scores || ev.items || {};
+const rows = crit.filter(c => scores[c.id] != null).map(c => `<div style="display:flex;justify-content:space-between;padding:3px 0"><span>${Utils.escape(c.name)} <span style="color:var(--muted);font-size:11px">(${c.weight}%)</span></span><strong>${scores[c.id]}</strong></div>`).join('');
+if (!rows) return '';
+return `<div style="background:#f8fafc;padding:10px;border-radius:8px;margin-bottom:10px">${rows}<div style="display:flex;justify-content:space-between;padding-top:6px;border-top:1px solid var(--border);margin-top:4px"><strong>الدرجة الكلية</strong><strong style="color:var(--primary)">${ev.percentage}%</strong></div></div>`;
+}
 async function loadCgObjections() {
 const host = document.getElementById('cgobj-list');
 if (!host) return;
 const { data, error } = await window.sb.from('creative_gene_objections').select('*').order('raised_at', { ascending:false });
 if (error) { if(!handleSessionError(error.message)) host.innerHTML = `<div class="alert alert-danger">${Utils.escape(error.message)}</div>`; return; }
 const objs = data || [];
-if (!objs.length) { host.innerHTML = '<div class="alert alert-info">لا توجد اعتراضات.</div>'; return; }
-const rows = objs.map(o => { const emp = DB.getUser(o.employee_id), ev = DB.getEvaluation(o.evaluation_id);
+const pending = objs.filter(o => o.status === 'pending');
+const history = objs.filter(o => o.status !== 'pending');
+const rowHtml = (o) => { const emp = DB.getUser(o.employee_id), ev = DB.getEvaluation(o.evaluation_id);
 const stB = o.status==='accepted'?'<span class="badge badge-success">مقبول</span>':(o.status==='rejected'?'<span class="badge badge-danger">مرفوض</span>':'<span class="badge badge-warning">قيد المراجعة</span>');
 const act = (o.status==='pending' && currentUser.role==='quality_officer') ? `<button class="btn btn-sm btn-primary" onclick="reviewObjectionModal(${o.id})">مراجعة</button>` : `<button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${o.evaluation_id})">📄 الملف</button>`;
-return `<tr><td>${emp?Utils.escape(emp.full_name):'-'}</td><td>${ev?ev.percentage+'%':'-'}</td><td>${Utils.escape((o.objection_text||'').slice(0,70))}</td><td>${stB}</td><td>${act}</td></tr>`;
-}).join('');
-host.innerHTML = `<div class="card"><div class="card-body" style="padding:0;overflow-x:auto"><table class="table"><thead><tr><th>الموظف</th><th>الدرجة</th><th>الاعتراض</th><th>الحالة</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+return `<tr><td>${emp?Utils.escape(emp.full_name):'-'}</td><td>${ev?Utils.formatDate(ev.evaluation_date):'-'}</td><td>${Utils.escape((o.objection_text||'').slice(0,70))}</td><td>${stB}</td><td>${act}</td></tr>`;
+};
+const table = (arr, empty) => arr.length ? `<div class="card"><div class="card-body" style="padding:0;overflow-x:auto"><table class="table"><thead><tr><th>الموظف</th><th>تاريخ التقييم</th><th>الاعتراض</th><th>الحالة</th><th></th></tr></thead><tbody>${arr.map(rowHtml).join('')}</tbody></table></div></div>` : `<div class="alert alert-info">${empty}</div>`;
+host.innerHTML = `
+<div class="page-header" style="margin-bottom:8px"><div class="page-title" style="font-size:16px">🟡 اعتراضات مفتوحة (${pending.length})</div></div>
+${table(pending, 'لا توجد اعتراضات مفتوحة.')}
+<div class="page-header" style="margin:20px 0 8px"><div class="page-title" style="font-size:16px">📚 السجل التاريخي (${history.length})</div></div>
+${table(history, 'لا يوجد سجل بعد.')}`;
 }
 async function reviewObjectionModal(objId) {
 const { data } = await window.sb.from('creative_gene_objections').select('*').eq('id', objId).maybeSingle();
 if (!data) { Toast.error('الاعتراض غير موجود'); return; }
 const emp = DB.getUser(data.employee_id), ev = DB.getEvaluation(data.evaluation_id);
 Modal.show('مراجعة اعتراض', `
-<div style="margin-bottom:10px"><strong>الموظف:</strong> ${emp?Utils.escape(emp.full_name):'-'} — <strong>الدرجة:</strong> ${ev?ev.percentage+'%':'-'}</div>
-<div class="alert alert-info">${Utils.escape(data.objection_text)}</div>
+<div style="margin-bottom:10px"><strong>الموظف:</strong> ${emp?Utils.escape(emp.full_name):'-'} — <strong>تاريخ التقييم:</strong> ${ev?Utils.formatDate(ev.evaluation_date):'-'}</div>
+${ev?critBreakdownHTML(ev):''}
+${ev&&ev.evaluation_notes?`<div style="margin-bottom:8px"><strong>ملاحظات المُقيّم:</strong> ${Utils.escape(ev.evaluation_notes)}</div>`:''}
+<div class="alert alert-warning"><strong>نص الاعتراض:</strong> ${Utils.escape(data.objection_text)}</div>
 <button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${data.evaluation_id})">📄 فتح ملف التقييم</button>
 <div class="form-group" style="margin-top:12px"><label class="form-label">ردّك (اختياري)</label><textarea class="form-control" id="ro-resp" rows="3"></textarea></div>`,
 `<button class="btn btn-danger" id="ro-reject">رفض</button><button class="btn btn-success" id="ro-accept">قبول</button>`);
@@ -2616,13 +2659,19 @@ await loadDepartments();
 let emps = DB.getUsers({ role:'employee' }).filter(e => isCreativeGeneDept(e.department_id));
 if (currentUser.role === 'supervisor') emps = emps.filter(e => e.supervisor_id === currentUser.id);
 if (!emps.length) { host.innerHTML = '<div class="alert alert-info">لا يوجد موظفو Creative Gene تحت إشرافك.</div>'; return; }
-const rows = emps.map(e => {
-const evs = (DB.data.evaluations||[]).filter(x => x.employee_id===e.id && x.template_type==='pdf_based_weekly').sort((a,b)=>String(b.week_start||'').localeCompare(String(a.week_start||'')));
-const last = evs[0];
-const act = last ? `<button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${last.id})">📄 الملف</button> <button class="btn btn-sm btn-danger" onclick="takeActionModal(${last.id})">🎯 اتخاذ إجراء</button>` : '—';
-return `<tr><td>${Utils.escape(e.full_name)}</td><td>${last?last.week_start+' — '+last.percentage+'%':'لا يوجد تقييم'}</td><td>${act}</td></tr>`;
+const lastByEmp = {};
+emps.forEach(e => { const evs=(DB.data.evaluations||[]).filter(x=>x.employee_id===e.id&&x.template_type==='pdf_based_weekly').sort((a,b)=>String(b.week_start||'').localeCompare(String(a.week_start||''))); lastByEmp[e.id]=evs[0]||null; });
+const evalIds = Object.values(lastByEmp).filter(Boolean).map(e=>e.id);
+const objMap = {}, actMap = {};
+if (evalIds.length) { try { const [{ data:objs },{ data:acts }] = await Promise.all([window.sb.from('creative_gene_objections').select('*').in('evaluation_id',evalIds), window.sb.from('creative_gene_actions').select('*').in('evaluation_id',evalIds)]); (objs||[]).forEach(o=>objMap[o.evaluation_id]=o); (acts||[]).forEach(a=>actMap[a.evaluation_id]=a); } catch(_){} }
+const rows = emps.map(e => { const last = lastByEmp[e.id];
+if (!last) return `<tr><td>${Utils.escape(e.full_name)}</td><td colspan="4" style="color:var(--muted)">لا يوجد تقييم</td><td>—</td></tr>`;
+const o = objMap[last.id], a = actMap[last.id];
+const objCol = o ? (o.status==='accepted'?'<span class="badge badge-success">مقبول</span>':(o.status==='rejected'?'<span class="badge badge-danger">مرفوض</span>':'<span class="badge badge-warning">قيد المراجعة</span>')) : '<span style="color:var(--muted)">—</span>';
+const actCol = a ? actionTypeLabel(a.action_type) : '<span style="color:var(--muted)">—</span>';
+return `<tr><td>${Utils.escape(e.full_name)}</td><td>${last.week_start||''}</td><td><strong>${last.percentage}%</strong></td><td>${objCol}</td><td>${actCol}</td><td><button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${last.id})">📄</button> <button class="btn btn-sm btn-danger" onclick="takeActionModal(${last.id})">🎯 إجراء</button></td></tr>`;
 }).join('');
-host.innerHTML = `<div class="card"><div class="card-body" style="padding:0;overflow-x:auto"><table class="table"><thead><tr><th>الموظف</th><th>آخر تقييم</th><th>الإجراء</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+host.innerHTML = `<div class="card"><div class="card-body" style="padding:0;overflow-x:auto"><table class="table"><thead><tr><th>الموظف</th><th>آخر أسبوع</th><th>الدرجة</th><th>الاعتراض</th><th>الإجراء</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 async function takeActionModal(evalId) {
 const ev = DB.getEvaluation(evalId);
@@ -2631,7 +2680,10 @@ const emp = DB.getUser(ev.employee_id);
 const types = (ev.template_snapshot && ev.template_snapshot.allowed_action_types) || ['warning','training','praise','other'];
 const obj = await fetchObjection(evalId);
 Modal.show('اتخاذ إجراء', `
-<div style="margin-bottom:10px"><strong>الموظف:</strong> ${emp?Utils.escape(emp.full_name):'-'} — <strong>الدرجة:</strong> ${ev.percentage}%</div>
+<div style="margin-bottom:10px"><strong>الموظف:</strong> ${emp?Utils.escape(emp.full_name):'-'} — <strong>الأسبوع:</strong> ${ev.week_start||''}</div>
+${critBreakdownHTML(ev)}
+${ev.evaluation_notes?`<div style="margin-bottom:8px"><strong>ملاحظات المُقيّم:</strong> ${Utils.escape(ev.evaluation_notes)}</div>`:''}
+<button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${ev.id})" style="margin-bottom:10px">📄 فتح ملف التقييم</button>
 ${obj?`<div class="alert alert-warning"><strong>اعتراض الموظف:</strong> ${Utils.escape(obj.objection_text)}${obj.reviewer_response?'<br><strong>رد الجودة:</strong> '+Utils.escape(obj.reviewer_response):''}</div>`:''}
 <div class="form-group"><label class="form-label">نوع الإجراء *</label><select class="form-control" id="ta-type">${types.map(t=>`<option value="${t}">${actionTypeLabel(t)}</option>`).join('')}</select></div>
 <div class="form-group"><label class="form-label">تفاصيل الإجراء *</label><textarea class="form-control" id="ta-details" rows="3"></textarea></div>`,
