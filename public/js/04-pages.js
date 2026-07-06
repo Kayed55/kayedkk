@@ -24,7 +24,7 @@ let _navToken = 0;
 let _navDebounce = null;
 const _FORM_PAGES = ['new-evaluation', 'edit-evaluation'];
 // عناوين الأقسام — تُستخدم في الشريط العلوي وفي عنوان تبويب المتصفّح
-const PAGE_TITLES = {dashboard:'لوحة التحكم', employees:'إدارة الموظفين', 'view-employee':'بيانات الموظف', evaluations:'التقييمات', 'new-evaluation':'تقييم جديد', 'view-evaluation':'تفاصيل التقييم', 'edit-evaluation':'تعديل التقييم', reports:'التقارير', 'monthly-report':'التقرير الشهري', 'actions-report':'تقرير الإجراءات المتخذة', 'errors-report':'الأخطاء المتكررة الشهرية', objections:'الاعتراضات', 'view-objection':'تفاصيل الاعتراض', 'new-objection':'تقديم اعتراض', 'audit-log':'سجل العمليات', users:'إدارة المستخدمين', profile:'الملف الشخصي', notifications:'الإشعارات', settings:'الإعدادات', login:'تسجيل الدخول'};
+const PAGE_TITLES = {dashboard:'لوحة التحكم', employees:'إدارة الموظفين', 'view-employee':'بيانات الموظف', evaluations:'التقييمات', 'new-evaluation':'تقييم جديد', 'cg-week':'أسبوع Creative Gene', 'view-evaluation':'تفاصيل التقييم', 'edit-evaluation':'تعديل التقييم', reports:'التقارير', 'monthly-report':'التقرير الشهري', 'actions-report':'تقرير الإجراءات المتخذة', 'errors-report':'الأخطاء المتكررة الشهرية', objections:'الاعتراضات', 'view-objection':'تفاصيل الاعتراض', 'new-objection':'تقديم اعتراض', 'audit-log':'سجل العمليات', users:'إدارة المستخدمين', profile:'الملف الشخصي', notifications:'الإشعارات', settings:'الإعدادات', login:'تسجيل الدخول'};
 
 function destroyCharts() {
 charts.forEach(c => { try { c.destroy(); } catch(e){} });
@@ -49,6 +49,7 @@ const pages = {
 'view-employee': () => renderViewEmployee(params.id),
 'evaluations': renderEvaluations,
 'new-evaluation': renderNewEvaluation,
+'cg-week': () => renderCgWeek(params.week),
 'view-evaluation': () => renderViewEvaluation(params.id),
 'edit-evaluation': () => renderEditEvaluation(params.id),
 'reports': renderReports,
@@ -680,6 +681,7 @@ const menu = [
 { key:'dashboard', icon:'📊', label:'لوحة التحكم', roles:['admin','quality_officer','supervisor','employee'] },
 { key:'evaluations', icon:'📝', label:'التقييمات', roles:['admin','quality_officer','supervisor','employee'] },
 { key:'new-evaluation', icon:'➕', label:'تقييم جديد', roles:['admin','quality_officer'] },
+{ key:'cg-week', icon:'📄', label:'أسبوع Creative Gene', roles:['admin','quality_officer'] },
 { key:'employees', icon:'👥', label:'الموظفون', roles:['admin','quality_officer','supervisor'] },
 { key:'objections', icon:'⚖️', label:'الاعتراضات', roles:['admin','quality_officer','supervisor','employee'] },
 { key:'reports', icon:'📈', label:'التقارير', roles:['admin','quality_officer','supervisor'] },
@@ -916,6 +918,7 @@ const quickActions = !isEmp ? `
 
 return `
 ${welcomeBanner}
+${isEmp ? '<div id="emp-cg-week"></div>' : ''}
 ${cards}
 ${quickActions}
 ${!isEmp ? renderQualityKPIs() : ''}
@@ -2003,6 +2006,9 @@ const tpl = await loadTemplateFor(dept.id);
 if (!tpl || !tpl.ok || !tpl.exists) { body.innerHTML = '<div class="alert alert-danger">لا يوجد نموذج لهذا القسم</div>'; return; }
 body.innerHTML = renderWeeklyEvalBody(dept, emp, tpl.template);
 attachWeeklyHandlers(dept, emp, tpl.template);
+} else if (type === 'pdf_based_weekly') {
+body.innerHTML = '<div class="card"><div class="card-body">⏳ جارٍ التحميل…</div></div>';
+await renderPdfEvalInto(body, emp);
 } else {
 body.innerHTML = renderSectionEvalBody();
 attachSectionEvalHandlers();
@@ -2135,6 +2141,7 @@ function attachNewEvalHandlers() {
 const empSel = document.getElementById('ef-employee');
 if (!empSel) return;
 empSel.addEventListener('change', () => renderEvalBodyForEmployee(parseInt(empSel.value)));
+if (currentParams && currentParams.emp) { empSel.value = String(currentParams.emp); }
 if (empSel.value) renderEvalBodyForEmployee(parseInt(empSel.value));
 }
 
@@ -2233,6 +2240,236 @@ return true;
 // ============================================
 // View Evaluation
 // ============================================
+// ============================================
+// Creative Gene — تقييم PDF أسبوعي (م3-ج)
+// ============================================
+function cgToken() { return window.getSessionToken ? getSessionToken() : null; }
+function isCreativeGeneDept(deptId) {
+const d = (window._departments||[]).find(x => x.id === deptId);
+return !!(d && d.template_type === 'pdf_based_weekly');
+}
+function weekEndStr(ws) { const d = new Date(ws + 'T00:00:00'); d.setDate(d.getDate()+6); return d.toISOString().substring(0,10); }
+async function fetchCgStatusRow(employeeId, weekStart) {
+try { const { data } = await window.sb.from('creative_gene_weekly_status').select('*').eq('employee_id', employeeId).eq('week_start', weekStart).maybeSingle(); return data || null; }
+catch(_) { return null; }
+}
+async function uploadCreativeGenePdf(employeeId, weekStart, file) {
+if (!file) { Toast.error('اختر ملفاً'); return null; }
+if (file.type !== 'application/pdf') { Toast.error('الملف يجب أن يكون PDF فقط'); return null; }
+if (file.size > 20*1024*1024) { Toast.error('الحد الأقصى 20 ميجابايت'); return null; }
+const safe = (file.name||'file.pdf').replace(/[^\w.\-]+/g,'_');
+const path = employeeId + '/' + weekStart + '/' + Date.now() + '_' + safe;
+try {
+const up = await window.sb.storage.from('creative-gene-pdfs').upload(path, file, { contentType:'application/pdf', upsert:false });
+if (up.error) { Toast.error('تعذّر رفع الملف: ' + up.error.message); return null; }
+const { data, error } = await window.sb.rpc('upload_creative_gene_pdf', { p_session_token: cgToken(), p_employee_id: employeeId, p_week_start: weekStart, p_file_path: path, p_file_name: file.name });
+const row = Array.isArray(data)?data[0]:data;
+if (error || !row || !row.ok) {
+const m = (row&&row.message)||(error&&error.message)||'فشل تسجيل الملف';
+if (!handleSessionError(m)) Toast.error(m);
+try { await window.sb.storage.from('creative-gene-pdfs').remove([path]); } catch(_){}
+return null;
+}
+Toast.success('تم رفع الملف بنجاح');
+return { path: path, name: file.name };
+} catch(e) { Toast.error(e.message); return null; }
+}
+function pickPdfAndUpload(employeeId, weekStart, onDone) {
+const inp = document.createElement('input');
+inp.type = 'file'; inp.accept = 'application/pdf';
+inp.onchange = async () => { const f = inp.files && inp.files[0]; if (!f) return; const res = await uploadCreativeGenePdf(employeeId, weekStart, f); if (res && onDone) onDone(res); };
+inp.click();
+}
+async function openCgPdfByEval(evalId) {
+const { data, error } = await window.sb.rpc('get_pdf_download_url', { p_session_token: cgToken(), p_evaluation_id: evalId });
+const row = Array.isArray(data)?data[0]:data;
+if (error || !row || !row.ok || !row.url) { const m=(row&&row.message)||'تعذّر فتح الملف'; if(!handleSessionError(m)) Toast.error(m); return; }
+window.open(row.url, '_blank');
+}
+async function openCgPdfByWeek(employeeId, weekStart) {
+const { data, error } = await window.sb.rpc('get_cg_week_pdf_url', { p_session_token: cgToken(), p_employee_id: employeeId, p_week_start: weekStart });
+const row = Array.isArray(data)?data[0]:data;
+if (error || !row || !row.ok || !row.url) { const m=(row&&row.message)||'تعذّر فتح الملف'; if(!handleSessionError(m)) Toast.error(m); return; }
+window.open(row.url, '_blank');
+}
+
+// ---- شاشة "تقييم جديد" لموظف Creative Gene ----
+async function renderPdfEvalInto(body, emp) {
+const ws = weekStartSaturdayJS();
+const row = await fetchCgStatusRow(emp.id, ws);
+body.innerHTML = pdfEvalFormHTML(emp, ws, row);
+attachPdfEvalHandlers(emp, ws, row);
+}
+function pdfEvalFormHTML(emp, ws, row) {
+const st = row ? row.status : 'not_uploaded';
+let fileBlock;
+if (!row || st === 'not_uploaded') {
+fileBlock = `<div class="alert alert-warning">🔴 لم يرفع الموظف ملف PDF لهذا الأسبوع.</div>
+<button type="button" class="btn btn-secondary" id="pdf-upload-behalf">📎 رفع ملف نيابةً عن الموظف</button>`;
+} else {
+fileBlock = `<div class="alert ${st==='evaluated'?'alert-success':'alert-info'}">${st==='evaluated'?'🟢 تم تقييم هذا الأسبوع':'🟡 تم رفع الملف — بانتظار التقييم'}</div>
+<button type="button" class="btn btn-primary" id="pdf-open">📄 فتح ملف PDF</button>`;
+}
+const canEval = row && st === 'uploaded_pending';
+const evaluatedNote = st === 'evaluated' ? `<div class="alert alert-info" style="margin-top:12px">تم تقييم هذا الأسبوع مسبقاً. لإعادة التقييم احذف التقييم الحالي أولاً.</div>` : '';
+return `<form id="pdf-eval-form">
+<div class="card"><div class="card-header"><div class="card-title">📄 التقييم الأسبوعي (PDF) — ${Utils.escape(emp.full_name)}</div></div>
+<div class="card-body">
+<div class="grid grid-2">
+<div class="form-group"><label class="form-label">بداية الأسبوع (السبت)</label><input type="date" class="form-control" id="pdf-ws" value="${ws}"></div>
+<div class="form-group"><label class="form-label">نهاية الأسبوع</label><input type="date" class="form-control" value="${weekEndStr(ws)}" disabled></div>
+</div>
+${fileBlock}${evaluatedNote}
+</div></div>
+${canEval ? `<div class="card"><div class="card-header"><div class="card-title">📝 التقييم</div></div><div class="card-body">
+<div class="form-group"><label class="form-label">درجة التقييم (0-100) *</label><input type="number" min="0" max="100" class="form-control" id="pdf-score" placeholder="0-100"></div>
+<div class="form-group"><label class="form-label">الملاحظات (اختياري)</label><textarea class="form-control" id="pdf-notes" rows="3"></textarea></div>
+</div></div>
+<div class="card" style="position:sticky;bottom:0;z-index:10;border:2px solid var(--primary)"><div class="card-body" style="display:flex;justify-content:flex-end;gap:10px">
+<button type="button" class="btn btn-secondary" data-nav="evaluations">إلغاء</button>
+<button type="submit" class="btn btn-success" id="pdf-save" disabled style="padding:12px 26px;font-size:15px">💾 حفظ التقييم</button>
+</div></div>` : ''}
+</form>`;
+}
+function attachPdfEvalHandlers(emp, ws, row) {
+const form = document.getElementById('pdf-eval-form');
+if (!form) return;
+const wsInp = document.getElementById('pdf-ws');
+if (wsInp) wsInp.addEventListener('change', async () => {
+const body = document.getElementById('neval-body');
+if (!body) return;
+body.innerHTML = '<div class="card"><div class="card-body">⏳ جارٍ التحميل…</div></div>';
+const newWs = wsInp.value;
+const r = await fetchCgStatusRow(emp.id, newWs);
+body.innerHTML = pdfEvalFormHTML(emp, newWs, r);
+attachPdfEvalHandlers(emp, newWs, r);
+});
+const openBtn = document.getElementById('pdf-open');
+if (openBtn) openBtn.addEventListener('click', () => openCgPdfByWeek(emp.id, ws));
+const behalf = document.getElementById('pdf-upload-behalf');
+if (behalf) behalf.addEventListener('click', () => pickPdfAndUpload(emp.id, ws, () => renderEvalBodyForEmployee(emp.id)));
+const score = document.getElementById('pdf-score'), save = document.getElementById('pdf-save');
+if (score && save) score.addEventListener('input', () => { const v = parseFloat(score.value); save.disabled = !(v>=0 && v<=100); });
+form.addEventListener('submit', async e => {
+e.preventDefault();
+const btn = document.getElementById('pdf-save');
+await submitWithFeedback(btn, 'جاري حفظ التقييم...', null, async () => {
+const v = parseFloat((document.getElementById('pdf-score')||{}).value);
+if (!(v>=0 && v<=100)) { Toast.error('أدخل درجة صحيحة بين 0 و100'); return false; }
+if (!row || !row.pdf_file_path) { Toast.error('لا يوجد ملف PDF مرفوع'); return false; }
+const notes = ((document.getElementById('pdf-notes')||{}).value || '').trim();
+const { data, error } = await window.sb.rpc('create_evaluation', {
+p_session_token: cgToken(), p_employee_id: emp.id, p_evaluation_date: ws,
+p_score: v, p_pdf_file_path: row.pdf_file_path, p_pdf_file_name: (row.pdf_file_path||'').split('/').pop(),
+p_evaluation_notes: notes, p_week_start: ws
+});
+const rr = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
+if (!rr || !rr.ok) { const m=(rr&&rr.message)||(error&&error.message)||'تعذّر حفظ التقييم'; if(!handleSessionError(m)) Toast.error(m); return false; }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(true); }catch(_){} }
+Toast.success(`تم حفظ التقييم — ${rr.percentage}% (${rr.grade})`);
+navigate('view-evaluation', { id: rr.evaluation_id });
+return true;
+});
+});
+}
+
+// ---- عرض تقييم PDF ----
+function renderPdfEvalView(ev) {
+const emp = DB.getUser(ev.employee_id), evr = DB.getUser(ev.evaluator_id);
+const pct = ev.percentage;
+return `<div class="page-header"><div><div class="page-title">📄 تقييم أسبوعي (PDF)</div><div class="page-subtitle">${emp?Utils.escape(emp.full_name):''} — ${ev.week_start||''} ← ${ev.week_end||''}</div></div><button class="btn btn-secondary" data-nav="evaluations">← رجوع</button></div>
+<div class="card"><div class="card-body" style="display:flex;gap:32px;flex-wrap:wrap;align-items:center">
+<div><div style="font-size:13px;color:var(--muted)">الدرجة</div><div style="font-size:34px;font-weight:800;color:var(--primary)">${pct}%</div>${Utils.gradeBadge(pct)}</div>
+<div><div style="font-size:13px;color:var(--muted)">المُقيِّم</div><div style="font-size:16px;font-weight:600">${evr?Utils.escape(evr.full_name):'—'}</div></div>
+<div><div style="font-size:13px;color:var(--muted)">تاريخ التقييم</div><div style="font-size:16px;font-weight:600">${Utils.formatDate(ev.evaluation_date)}</div></div>
+<div><button class="btn btn-primary" onclick="openCgPdfByEval(${ev.id})">📄 فتح ملف PDF</button></div>
+</div></div>
+${ev.evaluation_notes ? `<div class="card"><div class="card-header"><div class="card-title">📝 ملاحظات المُقيّم</div></div><div class="card-body">${Utils.escape(ev.evaluation_notes)}</div></div>` : ''}`;
+}
+
+// ---- بطاقة أسبوع الموظف في لوحة التحكم ----
+async function loadEmployeeWeekCard() {
+const host = document.getElementById('emp-cg-week');
+if (!host) return;
+await loadDepartments();
+const me = DB.getUser(currentUser.id) || currentUser;
+if (!isCreativeGeneDept(me.department_id)) { host.innerHTML = ''; return; }
+const ws = weekStartSaturdayJS();
+const row = await fetchCgStatusRow(currentUser.id, ws);
+host.innerHTML = employeeWeekCardHTML(ws, row);
+const up = document.getElementById('emp-cg-upload');
+if (up) up.addEventListener('click', () => pickPdfAndUpload(currentUser.id, ws, () => loadEmployeeWeekCard()));
+const openb = document.getElementById('emp-cg-open');
+if (openb) openb.addEventListener('click', () => { if (row && row.evaluation_id) openCgPdfByEval(row.evaluation_id); else openCgPdfByWeek(currentUser.id, ws); });
+}
+function employeeWeekCardHTML(ws, row) {
+const st = row ? row.status : 'not_uploaded';
+const badge = st==='evaluated' ? '<span class="badge badge-success">🟢 تم التقييم</span>' : (st==='uploaded_pending' ? '<span class="badge badge-warning">🟡 بانتظار التقييم</span>' : '<span class="badge badge-danger">🔴 لم يتم الرفع</span>');
+const ev = (row && row.evaluation_id) ? DB.getEvaluation(row.evaluation_id) : null;
+let extra = '';
+if (st === 'evaluated' && ev) {
+extra = `<div style="margin-top:12px;display:flex;gap:24px;flex-wrap:wrap;align-items:center">
+<div><div style="font-size:12px;color:var(--muted)">درجتك</div><div style="font-size:26px;font-weight:800;color:var(--primary)">${ev.percentage}%</div>${Utils.gradeBadge(ev.percentage)}</div>
+${ev.evaluation_notes ? `<div style="flex:1;min-width:200px"><div style="font-size:12px;color:var(--muted)">ملاحظات المُقيّم</div><div>${Utils.escape(ev.evaluation_notes)}</div></div>` : ''}
+</div>`;
+}
+const canUpload = st !== 'evaluated';
+const canOpen = row && (st === 'uploaded_pending' || st === 'evaluated');
+return `<div class="card" style="border:2px solid var(--primary);margin-bottom:24px"><div class="card-header" style="background:linear-gradient(to left,#e0edff,transparent)"><div class="card-title">📄 تقييم هذا الأسبوع (${ws} ← ${weekEndStr(ws)})</div>${badge}</div>
+<div class="card-body">
+<div style="display:flex;gap:10px;flex-wrap:wrap">
+${canUpload ? `<button class="btn btn-primary" id="emp-cg-upload">📎 ${st==='uploaded_pending'?'استبدال الملف':'رفع ملف PDF'}</button>` : ''}
+${canOpen ? `<button class="btn btn-secondary" id="emp-cg-open">📄 فتح ملفي</button>` : ''}
+</div>
+${extra}
+</div></div>`;
+}
+
+// ---- شاشة إدارة أسبوع Creative Gene (admin/quality) ----
+function renderCgWeek(weekParam) {
+if (!(currentUser.role === 'admin' || currentUser.role === 'quality_officer')) return '<div class="alert alert-danger">غير مصرح</div>';
+const ws = weekParam || weekStartSaturdayJS();
+return `<div class="page-header"><div><div class="page-title">📄 أسبوع Creative Gene</div><div class="page-subtitle">حالة رفع وتقييم الملفات الأسبوعية</div></div></div>
+<div class="card"><div class="card-body"><div class="grid grid-2">
+<div class="form-group"><label class="form-label">بداية الأسبوع (السبت)</label><input type="date" class="form-control" id="cgw-date" value="${ws}"></div>
+<div class="form-group"><label class="form-label">نهاية الأسبوع</label><input type="date" class="form-control" value="${weekEndStr(ws)}" disabled></div>
+</div></div></div>
+<div id="cgw-table"><div class="card"><div class="card-body">⏳ جارٍ التحميل…</div></div></div>
+<div class="page-header" style="margin-top:24px"><div><div class="page-title" style="font-size:18px">📊 سجل تقييمات Creative Gene</div><div class="page-subtitle">جميع التقييمات الأسبوعية السابقة</div></div></div>
+${cgHistoryHTML()}`;
+}
+function cgHistoryHTML() {
+const evs = (DB.data.evaluations||[]).filter(e => e.template_type === 'pdf_based_weekly').sort((a,b)=> String(b.week_start||'').localeCompare(String(a.week_start||'')));
+if (!evs.length) return '<div class="alert alert-info">لا توجد تقييمات بعد.</div>';
+const rows = evs.map(e => { const emp = DB.getUser(e.employee_id); return `<tr>
+<td>${emp?Utils.escape(emp.full_name):'-'}</td>
+<td>${e.week_start||''} ← ${e.week_end||''}</td>
+<td>${Utils.gradeBadge(e.percentage)} <span style="font-weight:700">${e.percentage}%</span></td>
+<td>${e.evaluation_notes?Utils.escape(e.evaluation_notes):'<span style="color:var(--muted)">—</span>'}</td>
+<td><button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${e.id})">📄 فتح PDF</button></td>
+</tr>`; }).join('');
+return `<div class="card"><div class="card-body" style="padding:0;overflow-x:auto"><table class="table"><thead><tr><th>الموظف</th><th>الأسبوع</th><th>الدرجة</th><th>الملاحظات</th><th>ملف PDF</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+async function loadCgWeekTable(ws) {
+const host = document.getElementById('cgw-table');
+if (!host) return;
+const { data, error } = await window.sb.rpc('get_creative_gene_status', { p_session_token: cgToken(), p_week_start: ws });
+if (error) { const m=error.message||'تعذّر التحميل'; if(!handleSessionError(m)) host.innerHTML = `<div class="alert alert-danger">${Utils.escape(m)}</div>`; return; }
+const rows = (data||[]);
+if (!rows.length) { host.innerHTML = '<div class="alert alert-info">لا يوجد موظفون في قسم Creative Gene.</div>'; return; }
+const body = rows.map(r => {
+const st = r.status;
+const badge = st==='evaluated' ? '<span class="badge badge-success">🟢 تم التقييم</span>' : (st==='uploaded_pending' ? '<span class="badge badge-warning">🟡 بانتظار التقييم</span>' : '<span class="badge badge-danger">🔴 لم يُرفع</span>');
+let actions = '';
+if (st === 'uploaded_pending') actions = `<button class="btn btn-sm btn-secondary" onclick="openCgPdfByWeek(${r.employee_id},'${ws}')">📄 فتح</button> <button class="btn btn-sm btn-success" onclick="navigate('new-evaluation',{emp:${r.employee_id}})">📝 تقييم</button>`;
+else if (st === 'evaluated') actions = `<button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${r.evaluation_id})">📄 فتح</button> <span style="font-weight:700;color:var(--primary)">${r.percentage}%</span>`;
+else actions = `<button class="btn btn-sm btn-secondary" onclick="cgUploadBehalf(${r.employee_id},'${ws}')">📎 رفع نيابةً</button>`;
+return `<tr><td>${Utils.escape(r.employee_name)}</td><td>${badge}</td><td>${actions}</td></tr>`;
+}).join('');
+host.innerHTML = `<div class="card"><table class="table"><thead><tr><th>الموظف</th><th>الحالة</th><th>الإجراء</th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+function cgUploadBehalf(empId, ws) { pickPdfAndUpload(empId, ws, () => loadCgWeekTable(ws)); }
+
 function renderWeeklyView(ev) {
 const emp = DB.getUser(ev.employee_id); const evr = DB.getUser(ev.evaluator_id);
 const sc = ev.section_scores || {}; const detail = sc.kpi_detail || [];
@@ -2274,6 +2511,7 @@ return '<div class="alert alert-danger">ليس لديك صلاحية لعرض ه
 }
 
 if (ev.template_type === 'task_based_weekly') return renderWeeklyView(ev);
+if (ev.template_type === 'pdf_based_weekly') return renderPdfEvalView(ev);
 
 const emp = DB.getUser(ev.employee_id);
 const evr = DB.getUser(ev.evaluator_id);
@@ -4986,8 +5224,14 @@ document.querySelectorAll('[data-nav-newobj]').forEach(el => {
 el.addEventListener('click', e => { e.stopPropagation(); navigate('new-objection', { evaluation_id: parseInt(el.dataset.navNewobj) }); });
 });
 
-if (page === 'dashboard') renderDashboardCharts();
+if (page === 'dashboard') { renderDashboardCharts(); if (currentUser.role === 'employee') loadEmployeeWeekCard(); }
 if (page === 'reports') renderReportsCharts();
+if (page === 'cg-week') {
+const ws = currentParams.week || weekStartSaturdayJS();
+loadCgWeekTable(ws);
+const di = document.getElementById('cgw-date');
+if (di) di.addEventListener('change', () => navigate('cg-week', { week: di.value }));
+}
 if (page === 'monthly-report') renderMonthlyReportCharts();
 if (page === 'actions-report') renderActionsReportCharts();
 if (page === 'errors-report') renderErrorsReportCharts();
