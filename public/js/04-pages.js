@@ -1156,7 +1156,7 @@ return `<tr data-search="${Utils.escape((u.full_name||'')+' '+(u.employee_number
 <td><strong>${Utils.escape(u.employee_number||'-')}</strong></td>
 <td><div style="display:flex;align-items:center;gap:10px"><div class="user-avatar">${Utils.getInitials(u.full_name)}</div><div>${Utils.escape(u.full_name)}</div></div></td>
 <td><div style="font-size:13px;direction:ltr;text-align:right">${Utils.escape(u.email||'-')}</div></td>
-<td>${Utils.escape(u.position||'-')}</td>
+<td>${u.job_title?Utils.escape(u.job_title):(u.position?'<span style="color:var(--muted)">'+Utils.escape(u.position)+'</span>':'—')}</td>
 <td>👨‍💼 ${Utils.escape(u.supervisor_name||'-')}</td>
 <td>${u.is_active ? '<span class="badge badge-success">✓ نشط</span>' : '<span class="badge badge-danger">✗ غير نشط</span>'}</td>
 <td><div style="font-size:12px;color:var(--muted)">${Utils.formatDate(u.created_at)}</div></td>
@@ -1677,7 +1677,7 @@ const supActionsHTML = supActions.length ? supActions.map(a => `<tr>
 
 return `
 <div class="page-header">
-<div><div class="page-title">${Utils.escape(emp.full_name)}</div><div class="page-subtitle">${Utils.escape(emp.position||'')} - ${Utils.escape(emp.department||'')} | المشرف: ${Utils.escape(emp.supervisor_name||'-')}</div></div>
+<div><div class="page-title">${Utils.escape(emp.full_name)}</div><div class="page-subtitle">المسمى: ${emp.job_title?Utils.escape(emp.job_title):'—'} | القسم: ${(() => { const d=(window._departments||[]).find(x=>x.id===emp.department_id); return d?Utils.escape(d.name):Utils.escape(emp.department||'—'); })()} | المشرف: ${Utils.escape(emp.supervisor_name||'-')}</div></div>
 <button class="btn btn-secondary" data-nav="employees">← رجوع</button>
 </div>
 <div class="stats-grid">
@@ -1718,6 +1718,22 @@ return `
 // ============================================
 // Evaluations List
 // ============================================
+// النموذج المُستخدم — يُستنتج من template_snapshot (مُجمّد) لتقييمات Creative Gene
+function usedTemplateLabel(ev) {
+if (!ev || !ev.template_snapshot) return '—';
+if (ev.template_type === 'section_based' || !ev.template_type) return 'نموذج محزم (بنود) — الافتراضي الأصلي';
+if (ev.template_type === 'pdf_based_weekly') {
+const ids = ((ev.template_snapshot.criteria)||[]).map(c => c.id);
+if (ids.includes('clients_new')) return 'نموذج مسوّق عقاري';
+if (ids.includes('design_quality')) return 'نموذج مصمّم';
+if (ids.includes('posts')) return 'نموذج سوشيال ميديا';
+if (ids.includes('ranking')) return 'نموذج SEO';
+if (ids.includes('editorial_plan')) return 'نموذج مدير محتوى';
+return 'النموذج الافتراضي';
+}
+return '—';
+}
+function jobTitleCell(emp) { return (emp && emp.job_title) ? Utils.escape(emp.job_title) : '<span style="color:var(--muted)">—</span>'; }
 function deptBadgeHTML(dept) {
 if (!dept) return '<span style="color:var(--muted)">—</span>';
 const isCg = dept.template_type === 'pdf_based_weekly';
@@ -2534,17 +2550,20 @@ return true;
 function renderPdfEvalView(ev) {
 const emp = DB.getUser(ev.employee_id), evr = DB.getUser(ev.evaluator_id);
 const pct = ev.percentage;
+const dept = emp ? (window._departments||[]).find(d => d.id === emp.department_id) : null;
 const crit = (ev.template_snapshot && ev.template_snapshot.criteria) || [];
 const scores = ev.section_scores || ev.items || {};
-const critRows = crit.filter(c => scores[c.id] != null).map(c => `<tr><td>${Utils.escape(c.name)}</td><td>${c.weight}%</td><td><strong>${scores[c.id]}</strong></td></tr>`).join('');
+const critRows = crit.filter(c => scores[c.id] != null).map(c => `<tr><td>${Utils.escape(c.name)}</td><td><strong>${scores[c.id]} / ${c.weight}</strong></td></tr>`).join('');
 return `<div class="page-header"><div><div class="page-title">📄 تقييم أسبوعي (PDF)</div><div class="page-subtitle">${emp?Utils.escape(emp.full_name):''} — ${ev.week_start||''} ← ${ev.week_end||''}</div></div><button class="btn btn-secondary" data-nav="evaluations">← رجوع</button></div>
-<div class="card"><div class="card-body" style="display:flex;gap:32px;flex-wrap:wrap;align-items:center">
-<div><div style="font-size:13px;color:var(--muted)">الدرجة</div><div style="font-size:34px;font-weight:800;color:var(--primary)">${pct}%</div>${Utils.gradeBadge(pct)}</div>
+<div class="card"><div class="card-body">
+<div style="padding:10px 12px;background:#f3e8ff;border-radius:8px;margin-bottom:14px;font-size:13px">المسمى: <strong>${jobTitleCell(emp)}</strong> &nbsp;|&nbsp; القسم: ${deptBadgeHTML(dept)} &nbsp;|&nbsp; النموذج المُستخدم: <strong>${usedTemplateLabel(ev)}</strong></div>
+<div style="display:flex;gap:32px;flex-wrap:wrap;align-items:center">
+<div><div style="font-size:13px;color:var(--muted)">الدرجة الكلية</div><div style="font-size:34px;font-weight:800;color:var(--primary)">${pct} / 100</div>${Utils.gradeBadge(pct)}</div>
 <div><div style="font-size:13px;color:var(--muted)">المُقيِّم</div><div style="font-size:16px;font-weight:600">${evr?Utils.escape(evr.full_name):'—'}</div></div>
 <div><div style="font-size:13px;color:var(--muted)">تاريخ التقييم</div><div style="font-size:16px;font-weight:600">${Utils.formatDate(ev.evaluation_date)}</div></div>
 <div><button class="btn btn-primary" onclick="openCgPdfByEval(${ev.id})">📄 فتح ملف PDF</button></div>
-</div></div>
-${critRows ? `<div class="card"><div class="card-header"><div class="card-title">📊 المعايير التفصيلية</div></div><div class="card-body" style="padding:0"><table class="table"><thead><tr><th>المعيار</th><th>الوزن</th><th>الدرجة</th></tr></thead><tbody>${critRows}</tbody></table></div></div>` : ''}
+</div></div></div>
+${critRows ? `<div class="card"><div class="card-header"><div class="card-title">📊 المعايير التفصيلية</div></div><div class="card-body" style="padding:0"><table class="table"><thead><tr><th>المعيار</th><th>الدرجة / الحد الأقصى</th></tr></thead><tbody>${critRows}</tbody></table></div></div>` : ''}
 ${ev.evaluation_notes ? `<div class="card"><div class="card-header"><div class="card-title">📝 ملاحظات المُقيّم</div></div><div class="card-body">${Utils.escape(ev.evaluation_notes)}</div></div>` : ''}
 <div id="pdf-view-extra"></div>`;
 }
@@ -2715,13 +2734,13 @@ const evalIds = Object.values(lastByEmp).filter(Boolean).map(e=>e.id);
 const objMap = {}, actMap = {};
 if (evalIds.length) { try { const [{ data:objs },{ data:acts }] = await Promise.all([window.sb.from('creative_gene_objections').select('*').in('evaluation_id',evalIds), window.sb.from('creative_gene_actions').select('*').in('evaluation_id',evalIds)]); (objs||[]).forEach(o=>objMap[o.evaluation_id]=o); (acts||[]).forEach(a=>actMap[a.evaluation_id]=a); } catch(_){} }
 const rows = emps.map(e => { const last = lastByEmp[e.id];
-if (!last) return `<tr><td>${Utils.escape(e.full_name)}</td><td colspan="4" style="color:var(--muted)">لا يوجد تقييم</td><td>—</td></tr>`;
+if (!last) return `<tr><td>${Utils.escape(e.full_name)}</td><td>${jobTitleCell(e)}</td><td colspan="4" style="color:var(--muted)">لا يوجد تقييم</td><td>—</td></tr>`;
 const o = objMap[last.id], a = actMap[last.id];
 const objCol = o ? (o.status==='accepted'?'<span class="badge badge-success">مقبول</span>':(o.status==='rejected'?'<span class="badge badge-danger">مرفوض</span>':'<span class="badge badge-warning">قيد المراجعة</span>')) : '<span style="color:var(--muted)">—</span>';
 const actCol = a ? actionTypeLabel(a.action_type) : '<span style="color:var(--muted)">—</span>';
-return `<tr><td>${Utils.escape(e.full_name)}</td><td>${last.week_start||''}</td><td><strong>${last.percentage}%</strong></td><td>${objCol}</td><td>${actCol}</td><td><button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${last.id})">📄</button> <button class="btn btn-sm btn-danger" onclick="takeActionModal(${last.id})">🎯 إجراء</button></td></tr>`;
+return `<tr><td>${Utils.escape(e.full_name)}</td><td>${jobTitleCell(e)}</td><td>${last.week_start||''}</td><td><strong>${last.percentage}%</strong></td><td>${objCol}</td><td>${actCol}</td><td><button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${last.id})">📄</button> <button class="btn btn-sm btn-danger" onclick="takeActionModal(${last.id})">🎯 إجراء</button></td></tr>`;
 }).join('');
-host.innerHTML = `<div class="card"><div class="card-body" style="padding:0;overflow-x:auto"><table class="table"><thead><tr><th>الموظف</th><th>آخر أسبوع</th><th>الدرجة</th><th>الاعتراض</th><th>الإجراء</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+host.innerHTML = `<div class="card"><div class="card-body" style="padding:0;overflow-x:auto"><table class="table"><thead><tr><th>الموظف</th><th>المسمى الوظيفي</th><th>آخر أسبوع</th><th>الدرجة</th><th>الاعتراض</th><th>الإجراء</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 async function takeActionModal(evalId) {
 const ev = DB.getEvaluation(evalId);
@@ -2885,6 +2904,7 @@ const existingObj = DB.getObjections({ evaluation_id: ev.id }).sort((a,b)=>new D
 const showObjButton = currentUser.role === 'employee' && ev.employee_id === currentUser.id && (!existingObj || (existingObj.status !== 'pending' && existingObj.status !== 'under_review'));
 const showObjStatus = existingObj;
 
+const _vDept = emp ? (window._departments||[]).find(d => d.id === emp.department_id) : null;
 return `
 <div class="page-header">
 <div><div class="page-title">تقييم #${ev.id}</div><div class="page-subtitle">${Utils.escape(emp?emp.full_name:'-')} - ${Utils.formatDate(ev.evaluation_date)}</div></div>
@@ -2900,6 +2920,7 @@ ${existingObj ? `<button class="btn btn-info" data-nav-obj="${existingObj.id}">�
 <button class="btn btn-secondary" data-nav="evaluations">← رجوع</button>
 </div>
 </div>
+<div class="card" style="margin-bottom:16px"><div class="card-body" style="padding:10px 14px;font-size:13px">المسمى: <strong>${jobTitleCell(emp)}</strong> &nbsp;|&nbsp; القسم: ${deptBadgeHTML(_vDept)} &nbsp;|&nbsp; النموذج المُستخدم: <strong>${usedTemplateLabel(ev)}</strong></div></div>
 <div class="stats-grid">
 <div class="stat-card"><div class="stat-icon" style="background:var(--primary)">👤</div><div class="stat-value" style="font-size:16px">${Utils.escape(emp?emp.full_name:'-')}</div><div class="stat-label">الموظف</div></div>
 <div class="stat-card"><div class="stat-icon" style="background:var(--info)">👨‍💼</div><div class="stat-value" style="font-size:16px">${Utils.escape(evr?evr.full_name:'-')}</div><div class="stat-label">المقيِّم</div></div>
@@ -3028,6 +3049,7 @@ return {
 id: e.id,
 employee_number: e.employee_number || '-',
 name: e.full_name,
+job_title: e.job_title || '',
 supervisor: e.supervisor_name || '-',
 department: e.department || '-',
 position: e.position || '-',
@@ -3070,6 +3092,7 @@ const rows = empData.map((e, i) => `<tr>
 <td><div style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:${i<3?(i===0?'#fbbf24':i===1?'#94a3b8':'#cd7f32'):'#e2e8f0'};color:white;font-weight:700">${i+1}</div></td>
 <td><strong>${Utils.escape(e.employee_number)}</strong></td>
 <td><div style="display:flex;align-items:center;gap:10px"><div class="user-avatar">${Utils.getInitials(e.name)}</div>${Utils.escape(e.name)}</div></td>
+<td>${e.job_title ? Utils.escape(e.job_title) : '<span style="color:var(--muted)">—</span>'}</td>
 <td>${Utils.escape(e.supervisor)}</td>
 <td style="text-align:center">${e.count}</td>
 <td style="text-align:center"><strong>${e.avg}%</strong></td>
@@ -3149,8 +3172,8 @@ return `
 <div class="card-header"><div class="card-title">🏆 ترتيب الموظفين حسب الأداء</div></div>
 <div style="overflow-x:auto">
 <table class="table" id="rep-table">
-<thead><tr><th>الترتيب</th><th>الرقم الوظيفي</th><th>الموظف</th><th>المشرف</th><th style="text-align:center">عدد التقييمات</th><th style="text-align:center">المتوسط</th><th style="text-align:center">أعلى</th><th style="text-align:center">أدنى</th><th>التقدير</th></tr></thead>
-<tbody>${rows || '<tr><td colspan="9" style="text-align:center;padding:20px">لا توجد بيانات</td></tr>'}</tbody>
+<thead><tr><th>الترتيب</th><th>الرقم الوظيفي</th><th>الموظف</th><th>المسمى الوظيفي</th><th>المشرف</th><th style="text-align:center">عدد التقييمات</th><th style="text-align:center">المتوسط</th><th style="text-align:center">أعلى</th><th style="text-align:center">أدنى</th><th>التقدير</th></tr></thead>
+<tbody>${rows || '<tr><td colspan="10" style="text-align:center;padding:20px">لا توجد بيانات</td></tr>'}</tbody>
 </table>
 </div>
 </div>`;
@@ -3210,7 +3233,7 @@ const low = ue.length ? Math.min(...ue.map(x=>x.percentage)) : 0;
 return {
 'الرقم الوظيفي': e.employee_number || '-',
 'اسم الموظف': e.full_name,
-'المسمى الوظيفي': e.position || '-',
+'المسمى الوظيفي': e.job_title || '-',
 'اسم المشرف': e.supervisor_name || '-',
 'عدد التقييمات': ue.length,
 'المتوسط %': avg,
@@ -3237,12 +3260,12 @@ const ue = allEvals.filter(ev => ev.employee_id === e.id);
 const avg = ue.length ? Math.round(ue.reduce((s,x)=>s+x.percentage,0)/ue.length*10)/10 : 0;
 const high = ue.length ? Math.max(...ue.map(x=>x.percentage)) : 0;
 const low = ue.length ? Math.min(...ue.map(x=>x.percentage)) : 0;
-return { employee_number:e.employee_number||'-', name:e.full_name, position:e.position||'-', supervisor:e.supervisor_name||'-', count:ue.length, avg, high, low };
+return { employee_number:e.employee_number||'-', name:e.full_name, job_title:e.job_title||'-', supervisor:e.supervisor_name||'-', count:ue.length, avg, high, low };
 }).filter(e => e.count>0).sort((a,b) => b.avg - a.avg);
 if (!empData.length) { Toast.error('لا توجد بيانات للتصدير'); return; }
 const overallAvg = Math.round(empData.reduce((s,e)=>s+e.avg,0)/empData.length*10)/10;
-const rows = empData.map((e,i) => `<tr><td>${i+1}</td><td>${Utils.escape(e.employee_number)}</td><td>${Utils.escape(e.name)}</td><td>${Utils.escape(e.supervisor)}</td><td style="text-align:center">${e.count}</td><td style="text-align:center"><strong>${e.avg}%</strong></td><td style="text-align:center;color:#059669">${e.high}%</td><td style="text-align:center;color:#dc2626">${e.low}%</td><td>${e.avg>=85?'ناجح':'راسب'}</td></tr>`).join('');
-const html = `<div style="padding:30px;font-family:'Cairo',sans-serif;direction:rtl;background:white">${buildPDFHeader('تقرير الأداء الشامل', 'تحليل أداء فريق العمل', '#06579F')}<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px"><div style="background:#dbeafe;padding:14px;border-radius:8px;text-align:center"><div style="font-size:22px;font-weight:800;color:#06579F">${empData.length}</div><div style="color:#64748b;font-size:12px">موظف تم تقييمه</div></div><div style="background:#d1fae5;padding:14px;border-radius:8px;text-align:center"><div style="font-size:22px;font-weight:800;color:#059669">${overallAvg}%</div><div style="color:#64748b;font-size:12px">المتوسط العام</div></div><div style="background:#fef3c7;padding:14px;border-radius:8px;text-align:center"><div style="font-size:22px;font-weight:800;color:#d97706">${empData.filter(e=>e.avg>=85).length}</div><div style="color:#64748b;font-size:12px">ناجح</div></div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#06579F;color:white"><th style="padding:8px;border:1px solid #044a87">#</th><th style="padding:8px;border:1px solid #044a87">الرقم الوظيفي</th><th style="padding:8px;border:1px solid #044a87">الموظف</th><th style="padding:8px;border:1px solid #044a87">المشرف</th><th style="padding:8px;border:1px solid #044a87">التقييمات</th><th style="padding:8px;border:1px solid #044a87">المتوسط</th><th style="padding:8px;border:1px solid #044a87">أعلى</th><th style="padding:8px;border:1px solid #044a87">أدنى</th><th style="padding:8px;border:1px solid #044a87">التقدير</th></tr></thead><tbody style="background:white">${rows.replace(/<td/g,'<td style="padding:6px;border:1px solid #cbd5e1"').replace(/style="text-align:center"/g,'style="text-align:center;padding:6px;border:1px solid #cbd5e1"').replace(/style="text-align:center;color:#059669"/g,'style="text-align:center;color:#059669;padding:6px;border:1px solid #cbd5e1"').replace(/style="text-align:center;color:#dc2626"/g,'style="text-align:center;color:#dc2626;padding:6px;border:1px solid #cbd5e1"')}</tbody></table></div>`;
+const rows = empData.map((e,i) => `<tr><td>${i+1}</td><td>${Utils.escape(e.employee_number)}</td><td>${Utils.escape(e.name)}</td><td>${Utils.escape(e.job_title)}</td><td>${Utils.escape(e.supervisor)}</td><td style="text-align:center">${e.count}</td><td style="text-align:center"><strong>${e.avg}%</strong></td><td style="text-align:center;color:#059669">${e.high}%</td><td style="text-align:center;color:#dc2626">${e.low}%</td><td>${e.avg>=85?'ناجح':'راسب'}</td></tr>`).join('');
+const html = `<div style="padding:30px;font-family:'Cairo',sans-serif;direction:rtl;background:white">${buildPDFHeader('تقرير الأداء الشامل', 'تحليل أداء فريق العمل', '#06579F')}<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px"><div style="background:#dbeafe;padding:14px;border-radius:8px;text-align:center"><div style="font-size:22px;font-weight:800;color:#06579F">${empData.length}</div><div style="color:#64748b;font-size:12px">موظف تم تقييمه</div></div><div style="background:#d1fae5;padding:14px;border-radius:8px;text-align:center"><div style="font-size:22px;font-weight:800;color:#059669">${overallAvg}%</div><div style="color:#64748b;font-size:12px">المتوسط العام</div></div><div style="background:#fef3c7;padding:14px;border-radius:8px;text-align:center"><div style="font-size:22px;font-weight:800;color:#d97706">${empData.filter(e=>e.avg>=85).length}</div><div style="color:#64748b;font-size:12px">ناجح</div></div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#06579F;color:white"><th style="padding:8px;border:1px solid #044a87">#</th><th style="padding:8px;border:1px solid #044a87">الرقم الوظيفي</th><th style="padding:8px;border:1px solid #044a87">الموظف</th><th style="padding:8px;border:1px solid #044a87">المسمى الوظيفي</th><th style="padding:8px;border:1px solid #044a87">المشرف</th><th style="padding:8px;border:1px solid #044a87">التقييمات</th><th style="padding:8px;border:1px solid #044a87">المتوسط</th><th style="padding:8px;border:1px solid #044a87">أعلى</th><th style="padding:8px;border:1px solid #044a87">أدنى</th><th style="padding:8px;border:1px solid #044a87">التقدير</th></tr></thead><tbody style="background:white">${rows.replace(/<td/g,'<td style="padding:6px;border:1px solid #cbd5e1"').replace(/style="text-align:center"/g,'style="text-align:center;padding:6px;border:1px solid #cbd5e1"').replace(/style="text-align:center;color:#059669"/g,'style="text-align:center;color:#059669;padding:6px;border:1px solid #cbd5e1"').replace(/style="text-align:center;color:#dc2626"/g,'style="text-align:center;color:#dc2626;padding:6px;border:1px solid #cbd5e1"')}</tbody></table></div>`;
 await htmlToPDF(html, `تقرير_الأداء_${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
@@ -3295,11 +3318,12 @@ const objLabel = (o) => o ? (o.status==='accepted'?'مقبول':(o.status==='rej
 const exportRows = [];
 const rowsHtml = evals.map(e => { const emp=DB.getUser(e.employee_id); const scores=e.section_scores||e.items||{}; const o=objMap[e.id], a=actMap[e.id];
 const critCells = criteria.map(c => `<td style="text-align:center">${scores[c.id]!=null?scores[c.id]:'—'}</td>`).join('');
-const row = { 'الموظف': emp?emp.full_name:'-', 'الأسبوع': (e.week_start||'')+' - '+(e.week_end||'') };
+const tplLabel = usedTemplateLabel(e);
+const row = { 'الموظف': emp?emp.full_name:'-', 'المسمى الوظيفي': (emp&&emp.job_title)?emp.job_title:'-', 'الأسبوع': (e.week_start||'')+' - '+(e.week_end||''), 'النموذج المُستخدم': tplLabel };
 criteria.forEach(c => { row[c.name] = scores[c.id]!=null?scores[c.id]:''; });
-row['الدرجة الكلية %'] = e.percentage; row['الملاحظات'] = e.evaluation_notes||''; row['الاعتراض'] = objLabel(o); row['الإجراء'] = a ? actionTypeLabel(a.action_type).replace(/[^؀-ۿ ]/g,'').trim() : '—';
+row['الدرجة الكلية'] = e.percentage; row['الملاحظات'] = e.evaluation_notes||''; row['الاعتراض'] = objLabel(o); row['الإجراء'] = a ? actionTypeLabel(a.action_type).replace(/[^؀-ۿ ]/g,'').trim() : '—';
 exportRows.push(row);
-return `<tr><td>${emp?Utils.escape(emp.full_name):'-'}</td><td>${e.week_start||''} ← ${e.week_end||''}</td><td><button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${e.id})">📄 فتح</button></td>${critCells}<td style="text-align:center"><strong>${e.percentage}%</strong></td><td>${e.evaluation_notes?Utils.escape(e.evaluation_notes):'—'}</td><td>${objLabel(o)}</td><td>${a?actionTypeLabel(a.action_type):'—'}</td></tr>`;
+return `<tr><td>${emp?Utils.escape(emp.full_name):'-'}</td><td>${jobTitleCell(emp)}</td><td>${e.week_start||''} ← ${e.week_end||''}</td><td style="font-size:12px;color:var(--muted)">${Utils.escape(tplLabel)}</td><td><button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${e.id})">📄 فتح</button></td>${critCells}<td style="text-align:center"><strong>${e.percentage} / 100</strong></td><td>${e.evaluation_notes?Utils.escape(e.evaluation_notes):'—'}</td><td>${objLabel(o)}</td><td>${a?actionTypeLabel(a.action_type):'—'}</td></tr>`;
 }).join('');
 window._cgReportData = exportRows;
 const critHeaders = criteria.map(c => `<th style="text-align:center">${Utils.escape(c.name)}</th>`).join('');
@@ -3312,8 +3336,8 @@ host.innerHTML = `
 <div class="stat-card" style="background:linear-gradient(135deg,#ef4444,#dc2626);color:white"><div class="stat-icon" style="background:rgba(255,255,255,0.25)">🎯</div><div class="stat-value" style="color:white">${actionsCount}</div><div class="stat-label" style="color:rgba(255,255,255,0.9)">إجراءات متخذة</div></div>
 </div>
 <div class="card" style="margin-top:20px"><div class="card-header"><div class="card-title">📄 التقييمات الأسبوعية</div></div>
-<div style="overflow-x:auto"><table class="table"><thead><tr><th>الموظف</th><th>الأسبوع</th><th>PDF</th>${critHeaders}<th>الدرجة الكلية</th><th>الملاحظات</th><th>الاعتراض</th><th>الإجراء</th></tr></thead>
-<tbody>${rowsHtml || `<tr><td colspan="${7+criteria.length}" style="text-align:center;padding:20px;color:var(--muted)">لا توجد بيانات</td></tr>`}</tbody></table></div></div>`;
+<div style="overflow-x:auto"><table class="table"><thead><tr><th>الموظف</th><th>المسمى الوظيفي</th><th>الأسبوع</th><th>النموذج المُستخدم</th><th>PDF</th>${critHeaders}<th>الدرجة الكلية</th><th>الملاحظات</th><th>الاعتراض</th><th>الإجراء</th></tr></thead>
+<tbody>${rowsHtml || `<tr><td colspan="${9+criteria.length}" style="text-align:center;padding:20px;color:var(--muted)">لا توجد بيانات</td></tr>`}</tbody></table></div></div>`;
 }
 function exportCgReportsXLSX() {
 const data = window._cgReportData || [];
