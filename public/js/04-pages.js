@@ -5709,6 +5709,10 @@ if (t.template_type === 'section_based') {
 const secs = (t.template.sections||[]).length;
 return selector + `<div class="card"><div class="card-body"><h3 style="font-size:16px">📋 نموذج بنود — ${dept?Utils.escape(dept.name):''}</h3><p style="color:var(--muted)">${secs} أقسام. تُعدَّل تفاصيل الأقسام/البنود من <a href="#" onclick="navigate('settings',{tab:'form'});return false;">صفحة الإعدادات</a>.</p></div></div>`;
 }
+if (t.template_type === 'pdf_based_weekly') {
+const nc = (t.template.criteria||[]).length;
+return selector + `<div class="card"><div class="card-body"><h3 style="font-size:16px">🎨 نموذج Creative Gene (PDF) — ${dept?Utils.escape(dept.name):''}</h3><p style="color:var(--muted)">${nc} معايير + نماذج لكل مسمى وظيفي. يُعدَّل من <a href="#" onclick="navigate('settings',{tab:'cg'});return false;">تخصيص نموذج Creative Gene</a> في الإعدادات.</p></div></div>`;
+}
 // task_based: محرّر الأهداف
 const tj = t.template, roles = tj.role_kpis || {};
 let inner = `<h3 style="font-size:16px">📅 نموذج أسبوعي — أهداف المؤشرات (${dept?Utils.escape(dept.name):''})</h3>
