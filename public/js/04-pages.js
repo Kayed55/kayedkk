@@ -2415,17 +2415,36 @@ Modal.close(); Toast.success('تم تقديم الاعتراض'); if (onDone) on
 });
 }
 
+async function fetchCgRoleTemplate(jobRole) {
+try {
+let q = window.sb.from('evaluation_templates').select('*').eq('department_id', cgDeptId()).eq('is_active', true);
+q = jobRole ? q.eq('job_role', jobRole) : q.is('job_role', null);
+const { data } = await q.limit(1);
+return (data && data[0]) ? data[0] : null;
+} catch(_) { return null; }
+}
 async function renderPdfEvalInto(body, emp) {
 const ws = weekStartSaturdayJS();
 await loadDepartments();
-const dept = (window._departments||[]).find(d => d.id === emp.department_id);
-let criteria = [];
-if (dept) { const tpl = await loadTemplateFor(dept.id); if (tpl && tpl.ok && tpl.exists && tpl.template.criteria) criteria = tpl.template.criteria; }
-const row = await fetchCgStatusRow(emp.id, ws);
-body.innerHTML = pdfEvalFormHTML(emp, ws, row, criteria);
-attachPdfEvalHandlers(emp, ws, row, criteria);
+// Creative Gene يتطلّب مسمى وظيفي (دور) لاختيار النموذج
+if (!emp.job_role) {
+body.innerHTML = `<div class="card"><div class="card-body">
+<div class="alert alert-danger">لا يمكن إنشاء التقييم — الموظف <strong>${Utils.escape(emp.full_name)}</strong> بلا مسمى وظيفي. الرجاء تعيين المسمى أولاً من إدارة الموظفين.</div>
+<button class="btn btn-primary" onclick="navigate('employees')">الذهاب لإدارة الموظفين</button>
+</div></div>`;
+return;
 }
-function pdfEvalFormHTML(emp, ws, row, criteria) {
+let tpl = await fetchCgRoleTemplate(emp.job_role); let usedDefault = false;
+if (!tpl) { tpl = await fetchCgRoleTemplate(null); usedDefault = true; }
+if (!tpl) { body.innerHTML = '<div class="alert alert-danger">لا يوجد نموذج لهذا المسمى ولا نموذج افتراضي</div>'; return; }
+const criteria = (tpl.template_jsonb && tpl.template_jsonb.criteria) || [];
+const roleLabel = ((JOB_ROLES.find(x => x[0] === emp.job_role)||[])[1]) || emp.job_role;
+const tplLabel = usedDefault ? 'النموذج الافتراضي' : ('نموذج ' + roleLabel);
+const row = await fetchCgStatusRow(emp.id, ws);
+body.innerHTML = pdfEvalFormHTML(emp, ws, row, criteria, roleLabel, tplLabel);
+attachPdfEvalHandlers(emp, ws, row, criteria, roleLabel, tplLabel);
+}
+function pdfEvalFormHTML(emp, ws, row, criteria, roleLabel, tplLabel) {
 const st = row ? row.status : 'not_uploaded';
 let fileBlock;
 if (!row || st === 'not_uploaded') {
@@ -2437,21 +2456,22 @@ fileBlock = `<div class="alert ${st==='uploaded_pending'?'alert-info':'alert-suc
 }
 const canEval = row && st === 'uploaded_pending';
 const evaluatedNote = st !== 'not_uploaded' && st !== 'uploaded_pending' ? `<div class="alert alert-info" style="margin-top:12px">تم تقييم هذا الأسبوع. لإعادة التقييم افتح البوابة أو احذف التقييم.</div>` : '';
-const critHTML = (criteria||[]).map(c => `<div class="form-group"><label class="form-label">${Utils.escape(c.name)} <span style="color:var(--muted);font-size:12px">(وزن ${c.weight}%)</span></label><input type="number" min="0" max="100" class="form-control pdf-crit" data-cid="${c.id}" data-weight="${c.weight}" placeholder="0-100"></div>`).join('');
+const critHTML = (criteria||[]).map(c => `<div class="form-group"><label class="form-label">${Utils.escape(c.name)} <span style="color:var(--muted);font-size:12px">(0 - ${c.weight})</span></label><input type="number" min="0" max="${c.weight}" step="0.5" class="form-control pdf-crit" data-cid="${c.id}" data-weight="${c.weight}" placeholder="0 - ${c.weight}"></div>`).join('');
 return `<form id="pdf-eval-form">
 <div class="card"><div class="card-header"><div class="card-title">📄 التقييم الأسبوعي (PDF) — ${Utils.escape(emp.full_name)}</div></div>
 <div class="card-body">
+<div style="padding:10px 12px;background:#f3e8ff;border-radius:8px;margin-bottom:12px;font-size:13px">المسمى: <strong>${Utils.escape(roleLabel||'—')}</strong> &nbsp;|&nbsp; النموذج المُستخدم: <strong>${Utils.escape(tplLabel||'—')}</strong></div>
 <div class="grid grid-2">
 <div class="form-group"><label class="form-label">بداية الأسبوع (السبت)</label><input type="date" class="form-control" id="pdf-ws" value="${ws}"></div>
 <div class="form-group"><label class="form-label">نهاية الأسبوع</label><input type="date" class="form-control" value="${weekEndStr(ws)}" disabled></div>
 </div>
 ${fileBlock}${evaluatedNote}
 </div></div>
-${canEval ? `<div class="card"><div class="card-header"><div class="card-title">📝 التقييم — المعايير الخمسة</div></div><div class="card-body">
+${canEval ? `<div class="card"><div class="card-header"><div class="card-title">📝 التقييم — درجة كل معيار محدودة بوزنه</div></div><div class="card-body">
 ${critHTML}
 <div class="form-group"><label class="form-label">الملاحظات (اختياري)</label><textarea class="form-control" id="pdf-notes" rows="3"></textarea></div>
 <div style="padding:14px;background:#f0f7ff;border-radius:10px;display:flex;justify-content:space-between;align-items:center;margin-top:8px">
-<span style="font-weight:700">الدرجة الكلية (متوسط موزون)</span>
+<span style="font-weight:700">الدرجة الكلية (مجموع)</span>
 <span id="pdf-live-total" style="font-size:28px;font-weight:800;color:var(--primary)">—</span>
 </div>
 </div></div>
@@ -2461,7 +2481,7 @@ ${critHTML}
 </div></div>` : ''}
 </form>`;
 }
-function attachPdfEvalHandlers(emp, ws, row, criteria) {
+function attachPdfEvalHandlers(emp, ws, row, criteria, roleLabel, tplLabel) {
 const form = document.getElementById('pdf-eval-form');
 if (!form) return;
 const wsInp = document.getElementById('pdf-ws');
@@ -2471,8 +2491,8 @@ if (!body) return;
 body.innerHTML = '<div class="card"><div class="card-body">⏳ جارٍ التحميل…</div></div>';
 const newWs = wsInp.value;
 const r = await fetchCgStatusRow(emp.id, newWs);
-body.innerHTML = pdfEvalFormHTML(emp, newWs, r, criteria);
-attachPdfEvalHandlers(emp, newWs, r, criteria);
+body.innerHTML = pdfEvalFormHTML(emp, newWs, r, criteria, roleLabel, tplLabel);
+attachPdfEvalHandlers(emp, newWs, r, criteria, roleLabel, tplLabel);
 });
 const openBtn = document.getElementById('pdf-open');
 if (openBtn) openBtn.addEventListener('click', () => openCgPdfByWeek(emp.id, ws));
@@ -2480,10 +2500,9 @@ const behalf = document.getElementById('pdf-upload-behalf');
 if (behalf) behalf.addEventListener('click', () => pickPdfAndUpload(emp.id, ws, () => renderEvalBodyForEmployee(emp.id)));
 const crits = form.querySelectorAll('.pdf-crit'), save = document.getElementById('pdf-save');
 const updateTotal = () => {
-let wsum=0, sumw=0, allValid = crits.length > 0;
-crits.forEach(i => { const v=parseFloat(i.value), w=parseFloat(i.dataset.weight)||0; if(!(v>=0&&v<=100)){allValid=false;} else {wsum+=v*w; sumw+=w;} });
-const total = sumw>0 ? Math.round(wsum/sumw*100)/100 : 0;
-const tEl = document.getElementById('pdf-live-total'); if (tEl) tEl.textContent = allValid ? total + '%' : '—';
+let sum=0, allValid = crits.length > 0;
+crits.forEach(i => { const v=parseFloat(i.value), w=parseFloat(i.dataset.weight)||0; if(!(v>=0 && v<=w)){allValid=false;} else {sum+=v;} });
+const tEl = document.getElementById('pdf-live-total'); if (tEl) tEl.textContent = allValid ? (Math.round(sum*100)/100) + ' / 100' : '—';
 if (save) save.disabled = !allValid;
 };
 crits.forEach(i => i.addEventListener('input', updateTotal));
@@ -2492,8 +2511,8 @@ e.preventDefault();
 const btn = document.getElementById('pdf-save');
 await submitWithFeedback(btn, 'جاري حفظ التقييم...', null, async () => {
 const scores = {}; let ok = crits.length > 0;
-crits.forEach(i => { const v=parseFloat(i.value); if(!(v>=0&&v<=100)) ok=false; scores[i.dataset.cid]=v; });
-if (!ok) { Toast.error('أدخل جميع درجات المعايير (0-100)'); return false; }
+crits.forEach(i => { const v=parseFloat(i.value), w=parseFloat(i.dataset.weight)||0; if(!(v>=0 && v<=w)) ok=false; scores[i.dataset.cid]=v; });
+if (!ok) { Toast.error('كل درجة يجب أن تكون بين 0 والحد الأقصى للمعيار'); return false; }
 if (!row || !row.pdf_file_path) { Toast.error('لا يوجد ملف PDF مرفوع'); return false; }
 const notes = ((document.getElementById('pdf-notes')||{}).value || '').trim();
 const { data, error } = await window.sb.rpc('create_evaluation', {
@@ -5410,15 +5429,33 @@ return true;
 
 // ---- تخصيص نموذج Creative Gene ----
 function renderSettingsCg() {
-return `<div id="cg-settings-body"><div class="card"><div class="card-body">⏳ جارٍ تحميل النموذج…</div></div></div>`;
+const roleOpts = JOB_ROLES.map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
+return `<div class="card"><div class="card-body"><div class="form-group" style="margin:0"><label class="form-label">النموذج (حسب المسمى الوظيفي)</label>
+<select class="form-control" id="cg-role-select" onchange="loadCgSettings(this.value)" style="max-width:320px"><option value="">🟣 النموذج الافتراضي</option>${roleOpts}</select></div></div></div>
+<div id="cg-settings-body"><div class="card"><div class="card-body">⏳ جارٍ تحميل النموذج…</div></div></div>`;
 }
-async function loadCgSettings() {
+async function loadCgSettings(role) {
 const host = document.getElementById('cg-settings-body');
 if (!host) return;
 await loadDepartments();
-const tpl = await loadTemplateFor(cgDeptId());
-if (!tpl || !tpl.ok || !tpl.exists) { host.innerHTML = '<div class="alert alert-danger">تعذّر تحميل نموذج Creative Gene</div>'; return; }
-window._cgEdit = JSON.parse(JSON.stringify(tpl.template));
+window._cgEditRole = role || null;
+const tpl = await fetchCgRoleTemplate(window._cgEditRole);
+if (!tpl) {
+const def = await fetchCgRoleTemplate(null);
+window._cgEdit = null;
+host.innerHTML = `<div class="alert alert-info">لا يوجد نموذج مخصّص لهذا المسمى — سيُستخدم <strong>النموذج الافتراضي</strong> عند التقييم.</div>
+${def ? '<button class="btn btn-primary" onclick="createCgRoleTemplate()">➕ إنشاء نموذج مخصّص (نسخ من الافتراضي)</button>' : '<div class="alert alert-danger">لا يوجد نموذج افتراضي</div>'}`;
+return;
+}
+window._cgEdit = JSON.parse(JSON.stringify(tpl.template_jsonb));
+if (!Array.isArray(window._cgEdit.criteria)) window._cgEdit.criteria = [];
+if (!Array.isArray(window._cgEdit.allowed_action_types)) window._cgEdit.allowed_action_types = ['warning','training','praise','other'];
+renderCgEditor();
+}
+async function createCgRoleTemplate() {
+const def = await fetchCgRoleTemplate(null);
+if (!def) { Toast.error('لا يوجد نموذج افتراضي'); return; }
+window._cgEdit = JSON.parse(JSON.stringify(def.template_jsonb));
 if (!Array.isArray(window._cgEdit.criteria)) window._cgEdit.criteria = [];
 if (!Array.isArray(window._cgEdit.allowed_action_types)) window._cgEdit.allowed_action_types = ['warning','training','praise','other'];
 renderCgEditor();
@@ -5503,7 +5540,7 @@ const totalW = t.criteria.reduce((s,c)=> s + (parseFloat(c.weight)||0), 0);
 if (Math.round(totalW) !== 100) { Toast.error(`مجموع الأوزان = ${totalW}% — يجب أن يساوي 100%`); return; }
 if ((parseInt(t.pdf_max_size_mb)||20) > 20) { Toast.error('الحد الأقصى المسموح حالياً 20MB. لزيادة السقف يتطلب تعديل bucket من الخادم.'); return; }
 await submitWithFeedback(save, 'جاري الحفظ...', null, async () => {
-const { data, error } = await window.sb.rpc('upsert_evaluation_template', { p_session_token: cgToken(), p_department_id: cgDeptId(), p_template: t, p_template_type: 'pdf_based_weekly' });
+const { data, error } = await window.sb.rpc('upsert_evaluation_template', { p_session_token: cgToken(), p_department_id: cgDeptId(), p_template: t, p_template_type: 'pdf_based_weekly', p_job_role: window._cgEditRole || null });
 const r = Array.isArray(data)?data[0]:data;
 if (error || !r || !r.ok) { const m=(r&&r.message)||(error&&error.message)||'تعذّر الحفظ'; if(!handleSessionError(m)) Toast.error(m); return false; }
 if (window._templates) delete window._templates[cgDeptId()];
