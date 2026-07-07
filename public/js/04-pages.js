@@ -1143,20 +1143,21 @@ if (currentUser.role === 'supervisor') {
 users = users.filter(u => u.supervisor_name === currentUser.full_name);
 }
 
+if (!window._departments) loadDepartments(true).then(() => { if (currentPage === 'employees') navigate('employees'); });
 const supervisors = DB.getSupervisors();
 const supOpts = supervisors.map(s => `<option value="${Utils.escape(s.full_name)}">${Utils.escape(s.full_name)}</option>`).join('');
-const deptSet = new Set();
-users.forEach(u => { if (u.department) deptSet.add(u.department); });
-const deptOpts = Array.from(deptSet).map(d => `<option value="${Utils.escape(d)}">${Utils.escape(d)}</option>`).join('');
+const deptOpts = (window._departments||[]).filter(d => d.is_active).map(d => `<option value="${d.id}">${Utils.escape(d.name)}</option>`).join('');
 
 const rows = users.map(u => {
 const avg = DB.getAvgScore(u.id);
 const count = DB.data.evaluations.filter(e => e.employee_id === u.id).length;
-return `<tr data-search="${Utils.escape((u.full_name||'')+' '+(u.employee_number||'')+' '+(u.supervisor_name||'')+' '+(u.email||'')+' '+(u.department||''))}" data-status="${u.is_active?'active':'inactive'}" data-dept="${Utils.escape(u.department||'')}" data-sup="${Utils.escape(u.supervisor_name||'')}">
+const uDept = (window._departments||[]).find(d => d.id === u.department_id);
+return `<tr data-search="${Utils.escape((u.full_name||'')+' '+(u.employee_number||'')+' '+(u.supervisor_name||'')+' '+(u.email||'')+' '+(u.department||''))}" data-status="${u.is_active?'active':'inactive'}" data-deptid="${u.department_id||''}" data-sup="${Utils.escape(u.supervisor_name||'')}">
 <td><strong>${Utils.escape(u.employee_number||'-')}</strong></td>
 <td><div style="display:flex;align-items:center;gap:10px"><div class="user-avatar">${Utils.getInitials(u.full_name)}</div><div>${Utils.escape(u.full_name)}</div></div></td>
 <td><div style="font-size:13px;direction:ltr;text-align:right">${Utils.escape(u.email||'-')}</div></td>
 <td>${u.job_title?Utils.escape(u.job_title):(u.position?'<span style="color:var(--muted)">'+Utils.escape(u.position)+'</span>':'—')}</td>
+<td>${deptBadgeHTML(uDept)}</td>
 <td>👨‍💼 ${Utils.escape(u.supervisor_name||'-')}</td>
 <td>${u.is_active ? '<span class="badge badge-success">✓ نشط</span>' : '<span class="badge badge-danger">✗ غير نشط</span>'}</td>
 <td><div style="font-size:12px;color:var(--muted)">${Utils.formatDate(u.created_at)}</div></td>
@@ -1189,7 +1190,7 @@ ${noteIfNoSup}
 <option value="">👨‍💼 جميع المشرفين</option>${supOpts}
 </select>
 <select class="form-control emp-filter" id="emp-search-dept">
-<option value="">🏢 جميع الإدارات</option>${deptOpts}
+<option value="">🏢 جميع الأقسام</option>${deptOpts}
 </select>
 <select class="form-control emp-filter" id="emp-search-status">
 <option value="">📋 الحالة (الكل)</option>
@@ -1201,8 +1202,8 @@ ${noteIfNoSup}
 </div>
 <div style="overflow-x:auto">
 <table class="table" id="emp-table">
-<thead><tr><th>الرقم الوظيفي</th><th>اسم الموظف</th><th>البريد الإلكتروني</th><th>المسمى الوظيفي</th><th>اسم المشرف</th><th>حالة الحساب</th><th>تاريخ الإنشاء</th><th>متوسط الأداء</th><th>إجراءات</th></tr></thead>
-<tbody>${rows || '<tr><td colspan="9" style="text-align:center;padding:30px;color:var(--muted)">لا يوجد موظفون</td></tr>'}</tbody>
+<thead><tr><th>الرقم الوظيفي</th><th>اسم الموظف</th><th>البريد الإلكتروني</th><th>المسمى الوظيفي</th><th>القسم</th><th>اسم المشرف</th><th>حالة الحساب</th><th>تاريخ الإنشاء</th><th>متوسط الأداء</th><th>إجراءات</th></tr></thead>
+<tbody>${rows || '<tr><td colspan="10" style="text-align:center;padding:30px;color:var(--muted)">لا يوجد موظفون</td></tr>'}</tbody>
 </table>
 </div>
 </div>`;
@@ -1222,23 +1223,28 @@ async function loadDepartments(force) {
   return window._departments;
 }
 
+function onEmpDeptChange() {
+const dv = parseInt((document.getElementById('ef-deptid')||{}).value);
+const wrap = document.getElementById('ef-jobrole-wrap');
+const isCg = dv === cgDeptId();
+if (wrap) wrap.style.display = isCg ? '' : 'none';
+if (!isCg) { const jr = document.getElementById('ef-jobrole'); if (jr) jr.value = ''; }
+}
 async function showEmployeeModal(editId=null) {
 const ed = editId ? DB.getUser(editId) : null;
 const depts = (await loadDepartments()).filter(d => d.is_active);
 const deptOpts = depts.map(d => `<option value="${d.id}" ${ed && ed.department_id === d.id ? 'selected' : ''}>${Utils.escape(d.name)}</option>`).join('');
-const jobOpts = JOB_ROLES.map(([v,l]) => `<option value="${v}" ${ed && ed.job_role === v ? 'selected' : ''}>${l}</option>`).join('');
-const supervisors = DB.getSupervisors();
+const _cgId = cgDeptId();
+const CG_JOB_ROLES = JOB_ROLES.filter(([v]) => v !== 'quality_agent');
+const jobOpts = CG_JOB_ROLES.map(([v,l]) => `<option value="${v}" ${ed && ed.job_role === v ? 'selected' : ''}>${l}</option>`).join('');
+const supervisors = DB.data.users.filter(u => ['supervisor','admin'].includes(u.role) && u.is_active !== false).sort((a,b) => (a.full_name||'').localeCompare(b.full_name||'','ar'));
 const currentSup = ed ? (ed.supervisor_name||'') : '';
-const supOpts = supervisors.map(s => `<option value="${Utils.escape(s.full_name)}" ${s.full_name===currentSup?'selected':''}>${Utils.escape(s.full_name)} (${Utils.escape(s.email||'-')})</option>`).join('');
-const supDropdown = supervisors.length === 0
-? `<div style="padding:10px;background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;color:#991b1b;font-size:13px">
-⚠️ لا يوجد مشرفون مسجلون. أضف حساب مشرف من <strong>صفحة إدارة المستخدمين</strong> أولاً.
-</div>`
-: `<select class="form-control" id="ef-sup" required>
-<option value="">-- اختر المشرف --</option>
+const supOpts = supervisors.map(s => `<option value="${Utils.escape(s.full_name)}" ${s.full_name===currentSup?'selected':''}>${Utils.escape(s.full_name)} (${Utils.escape(s.role==='admin'?'مدير':'مشرف')})</option>`).join('');
+const supDropdown = `<select class="form-control" id="ef-sup">
+<option value="">-- بلا مشرف --</option>
 ${supOpts}
 </select>
-<div style="font-size:11px;color:var(--muted);margin-top:4px">القائمة تشمل جميع الحسابات المسجلة بصلاحية "مشرف"</div>`;
+<div style="font-size:11px;color:var(--muted);margin-top:4px">اختياري — القائمة تشمل المشرفين والمديرين</div>`;
 
 const body = `<form id="emp-form">
 <div class="alert alert-info" style="margin-bottom:16px;font-size:13px">
@@ -1249,11 +1255,11 @@ const body = `<form id="emp-form">
 <div class="form-group"><label class="form-label">الرقم الوظيفي *</label><input class="form-control" id="ef-num" required value="${ed?Utils.escape(ed.employee_number||''):''}" placeholder="مثال: EMP001" ${ed?'readonly':''}></div>
 <div class="form-group"><label class="form-label">📧 البريد الإلكتروني *</label><input type="email" class="form-control" id="ef-email" required value="${ed?Utils.escape(ed.email||''):''}" placeholder="employee@example.com"></div>
 <div class="form-group"><label class="form-label">📱 رقم الجوال</label><input class="form-control" id="ef-phone" value="${ed?Utils.escape(ed.phone||''):''}" placeholder="05xxxxxxxx"></div>
-<div class="form-group"><label class="form-label">المسمى الوظيفي *</label><input class="form-control" id="ef-pos" required value="${ed?Utils.escape(ed.position||''):'موظف خدمة'}"></div>
-<div class="form-group"><label class="form-label">👨‍💼 اسم المشرف *</label>${supDropdown}</div>
-<div class="form-group"><label class="form-label">القسم * <span style="font-size:11px;color:var(--muted)">(يحدّد نموذج التقييم)</span></label><select class="form-control" id="ef-deptid" required><option value="">-- اختر القسم --</option>${deptOpts}</select></div>
-<div class="form-group"><label class="form-label">الدور الوظيفي</label><select class="form-control" id="ef-jobrole"><option value="">-- غير محدّد --</option>${jobOpts}</select></div>
-${currentUser.role === 'admin' ? `<div class="form-group"><label class="form-label">المسمى الوظيفي <span style="font-size:11px;color:var(--muted)">(يظهر في القوائم والتقارير)</span></label><input class="form-control" id="ef-jobtitle" value="${ed?Utils.escape(ed.job_title||''):''}" placeholder="مثال: مصمم جرافيك"></div>` : ''}
+<div class="form-group"><label class="form-label">الوصف الوظيفي *</label><input class="form-control" id="ef-pos" required value="${ed?Utils.escape(ed.position||''):'موظف خدمة'}"></div>
+<div class="form-group"><label class="form-label">👨‍💼 المشرف</label>${supDropdown}</div>
+<div class="form-group"><label class="form-label">القسم * <span style="font-size:11px;color:var(--muted)">(يحدّد نموذج التقييم)</span></label><select class="form-control" id="ef-deptid" required onchange="onEmpDeptChange()"><option value="">-- اختر القسم --</option>${deptOpts}</select></div>
+<div class="form-group" id="ef-jobrole-wrap" style="${ed && ed.department_id === _cgId ? '' : 'display:none'}"><label class="form-label">المسمى الوظيفي التقني (الدور) * <span style="font-size:11px;color:var(--muted)">(يحدّد نموذج التقييم)</span></label><select class="form-control" id="ef-jobrole"><option value="">-- اختر المسمى --</option>${jobOpts}</select></div>
+<div class="form-group"><label class="form-label">المسمى الوظيفي المرئي <span style="font-size:11px;color:var(--muted)">(يظهر في القوائم والتقارير)</span></label><input class="form-control" id="ef-jobtitle" value="${ed?Utils.escape(ed.job_title||''):''}" placeholder="مثال: مصمم جرافيك"></div>
 ${!ed ? `<div style="background:#eff6ff;padding:10px;border-radius:8px;font-size:12px;color:var(--primary-dark)">🔐 ستُولَّد كلمة مرور مؤقتة تلقائياً وتُرسَل لبريد الموظف وتُعرَض لك بعد الإضافة.</div>` : ''}
 </div>
 ${!ed ? `<div style="background:#f1f5f9;padding:10px;border-radius:8px;font-size:12px;color:var(--muted);margin-top:8px">
@@ -1273,28 +1279,30 @@ await submitWithFeedback(btn, 'جاري الحفظ...', null, async () => {
 const full_name = document.getElementById('ef-name').value.trim();
 const employee_number = document.getElementById('ef-num').value.trim();
 const position = document.getElementById('ef-pos').value.trim();
-const supEl = document.getElementById('ef-sup');
-if (!supEl) { Toast.error('يجب إضافة حساب مشرف أولاً من إدارة المستخدمين'); return false; }
-const supervisor_name = supEl.value;
-const supObj = DB.getSupervisors().find(s => s.full_name === supervisor_name);
+const supervisor_name = ((document.getElementById('ef-sup')||{}).value) || '';
+const supObj = DB.data.users.find(s => s.full_name === supervisor_name && ['supervisor','admin'].includes(s.role));
 const supervisor_id = supObj ? supObj.id : null;
 const email = document.getElementById('ef-email').value.trim();
 const phone = document.getElementById('ef-phone').value.trim();
 const department_id = document.getElementById('ef-deptid').value ? parseInt(document.getElementById('ef-deptid').value) : null;
-const job_role = document.getElementById('ef-jobrole').value || null;
-const job_title = ((document.getElementById('ef-jobtitle')||{}).value || '').trim();
 const deptObj = (window._departments || []).find(d => d.id === department_id);
 const department = deptObj ? deptObj.name : '';
+const _isCg = isCreativeGeneDept(department_id);
+const job_role = _isCg ? (document.getElementById('ef-jobrole').value || null) : null;
+const job_title = ((document.getElementById('ef-jobtitle')||{}).value || '').trim();
 
 if (!full_name || !employee_number || !position || !email) {
 Toast.error('يرجى تعبئة جميع الحقول المطلوبة');
 return false;
 }
-if (!department_id) { Toast.error('يرجى اختيار القسم'); return false; }
-const _isCg = isCreativeGeneDept(department_id);
-if (!supervisor_name && !_isCg) { Toast.error('يجب اختيار المشرف للموظف'); return false; }
+if (!department_id) { Toast.error('الرجاء اختيار القسم'); return false; }
+if (_isCg && !job_role) { Toast.error('الرجاء اختيار المسمى الوظيفي (الدور) لموظف Creative Gene'); return false; }
 if (!supervisor_name && _isCg) {
 if (!confirm('⚠️ لم يتم تعيين مشرف. الإجراءات على هذا الموظف ستكون من admin فقط.\n\nهل تريد المتابعة؟')) return false;
+}
+// تحذير عند نقل الموظف بين الأقسام
+if (ed && ed.department_id && ed.department_id !== department_id) {
+if (!confirm('⚠️ تغيير قسم الموظف قد يؤثّر على النموذج المُستخدم في تقييماته الجديدة.\nالتقييمات السابقة محفوظة بـ snapshot ولن تتأثّر.\n\nهل تريد المتابعة؟')) return false;
 }
 if (!Utils.validateEmail(email)) { Toast.error('بريد إلكتروني غير صالح'); return false; }
 
@@ -1310,7 +1318,7 @@ p_department_id: department_id, p_job_role: job_role
 });
 const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر الحفظ'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
-if (currentUser.role === 'admin') { try { await window.sb.rpc('admin_set_job_title', { p_session_token: _tok, p_user_id: editId, p_job_title: job_title }); } catch(_){} }
+if (['admin','quality_officer'].includes(currentUser.role)) { try { await window.sb.rpc('admin_set_job_title', { p_session_token: _tok, p_user_id: editId, p_job_title: job_title }); } catch(_){} }
 if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(true); }catch(_){} }
 } else {
 const conflict = DB.getUserByEmail(email);
@@ -1329,7 +1337,7 @@ p_department_id: department_id, p_job_role: job_role
 const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر إضافة الموظف'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
 if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(true); }catch(_){} }
-if (currentUser.role === 'admin' && job_title) { try { const nu = DB.data.users.find(u => u.employee_number === employee_number); if (nu) { await window.sb.rpc('admin_set_job_title', { p_session_token: _tok, p_user_id: nu.id, p_job_title: job_title }); if (window.SupabaseSync && SupabaseSync.pullAll) await SupabaseSync.pullAll(true); } } catch(_){} }
+if (['admin','quality_officer'].includes(currentUser.role) && job_title) { try { const nu = DB.data.users.find(u => u.employee_number === employee_number); if (nu) { await window.sb.rpc('admin_set_job_title', { p_session_token: _tok, p_user_id: nu.id, p_job_title: job_title }); if (window.SupabaseSync && SupabaseSync.pullAll) await SupabaseSync.pullAll(true); } } catch(_){} }
 try { if (window.EmailService) window.EmailService.sendNewUserEmail({ email, full_name, username: employee_number, role:'employee' }, row.temp_password).catch(()=>{}); } catch(_){}
 Modal.close();
 Modal.show('✅ تم إضافة الموظف', `<div style="font-size:14px;line-height:1.9"><div class="alert alert-success">أُرسلت كلمة المرور المؤقتة لبريد الموظف. يمكنك نسخها:</div><div class="form-group"><input class="form-control" readonly value="${row.temp_password||''}" style="font-family:monospace;font-weight:700;text-align:center;color:var(--primary)"></div></div>`, `<button class="btn btn-primary" onclick="Modal.close(); navigate('employees')">تم</button>`);
@@ -6008,7 +6016,7 @@ if (cells.length < 4) return;
 const num = (cells[0].textContent || '').toLowerCase();
 const name = (cells[1].textContent || '').toLowerCase();
 const sup = tr.dataset.sup || '';
-const dept = tr.dataset.dept || '';
+const dept = tr.dataset.deptid || '';
 const status = tr.dataset.status || '';
 const okName = !qn || name.includes(qn);
 const okNum = !qnum || num.includes(qnum);
