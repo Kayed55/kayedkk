@@ -2713,13 +2713,15 @@ let tpl = await fetchCgRoleTemplate(emp.job_role); let usedDefault = false;
 if (!tpl) { tpl = await fetchCgRoleTemplate(null); usedDefault = true; }
 if (!tpl) { body.innerHTML = '<div class="alert alert-danger">لا يوجد نموذج لهذا المسمى ولا نموذج افتراضي</div>'; return; }
 const criteria = (tpl.template_jsonb && tpl.template_jsonb.criteria) || [];
+const actionTypes = (tpl.template_jsonb && Array.isArray(tpl.template_jsonb.allowed_action_types) && tpl.template_jsonb.allowed_action_types.length) ? tpl.template_jsonb.allowed_action_types : ['warning','training','praise','other'];
 const roleLabel = ((JOB_ROLES.find(x => x[0] === emp.job_role)||[])[1]) || emp.job_role;
 const tplLabel = usedDefault ? 'النموذج الافتراضي' : ('نموذج ' + roleLabel);
 const row = await fetchCgStatusRow(emp.id, ws);
-body.innerHTML = pdfEvalFormHTML(emp, ws, row, criteria, roleLabel, tplLabel);
-attachPdfEvalHandlers(emp, ws, row, criteria, roleLabel, tplLabel);
+body.innerHTML = pdfEvalFormHTML(emp, ws, row, criteria, roleLabel, tplLabel, actionTypes);
+attachPdfEvalHandlers(emp, ws, row, criteria, roleLabel, tplLabel, actionTypes);
 }
-function pdfEvalFormHTML(emp, ws, row, criteria, roleLabel, tplLabel) {
+function pdfEvalFormHTML(emp, ws, row, criteria, roleLabel, tplLabel, actionTypes) {
+const _acts = (Array.isArray(actionTypes) && actionTypes.length) ? actionTypes : ['warning','training','praise','other'];
 const st = row ? row.status : 'not_uploaded';
 let fileBlock;
 if (!row || st === 'not_uploaded') {
@@ -2745,7 +2747,15 @@ ${fileBlock}${evaluatedNote}
 ${canEval ? `<div class="card"><div class="card-header"><div class="card-title">📝 التقييم — درجة كل معيار محدودة بوزنه</div></div><div class="card-body">
 ${critHTML}
 <div class="form-group"><label class="form-label">الملاحظات (اختياري)</label><textarea class="form-control" id="pdf-notes" rows="3"></textarea></div>
-<div style="padding:14px;background:#f0f7ff;border-radius:10px;display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+<div style="border:2px solid var(--warning);background:#fffbeb;border-radius:10px;padding:14px;margin-top:8px">
+<div style="font-weight:800;margin-bottom:4px">🎯 اتخاذ إجراء <span style="color:var(--danger)">*</span></div>
+<div style="font-size:12px;color:var(--muted);margin-bottom:10px">حدّد الإجراء المطلوب — سيراجعه المشرف ويعتمده (أو يعدّله).</div>
+<div class="grid grid-2">
+<div class="form-group" style="margin:0"><label class="form-label">نوع الإجراء</label><select class="form-control" id="pdf-action-type">${_acts.map(t=>`<option value="${t}">${actionTypeLabel(t)}</option>`).join('')}</select></div>
+<div class="form-group" style="margin:0"><label class="form-label">تفاصيل الإجراء</label><textarea class="form-control" id="pdf-action-details" rows="2" placeholder="اكتب تفاصيل الإجراء المطلوب..."></textarea></div>
+</div>
+</div>
+<div style="padding:14px;background:#f0f7ff;border-radius:10px;display:flex;justify-content:space-between;align-items:center;margin-top:12px">
 <span style="font-weight:700">الدرجة الكلية (مجموع)</span>
 <span id="pdf-live-total" style="font-size:28px;font-weight:800;color:var(--primary)">—</span>
 </div>
@@ -2756,7 +2766,7 @@ ${critHTML}
 </div></div>` : ''}
 </form>`;
 }
-function attachPdfEvalHandlers(emp, ws, row, criteria, roleLabel, tplLabel) {
+function attachPdfEvalHandlers(emp, ws, row, criteria, roleLabel, tplLabel, actionTypes) {
 const form = document.getElementById('pdf-eval-form');
 if (!form) return;
 const wsInp = document.getElementById('pdf-ws');
@@ -2766,8 +2776,8 @@ if (!body) return;
 body.innerHTML = '<div class="card"><div class="card-body">⏳ جارٍ التحميل…</div></div>';
 const newWs = wsInp.value;
 const r = await fetchCgStatusRow(emp.id, newWs);
-body.innerHTML = pdfEvalFormHTML(emp, newWs, r, criteria, roleLabel, tplLabel);
-attachPdfEvalHandlers(emp, newWs, r, criteria, roleLabel, tplLabel);
+body.innerHTML = pdfEvalFormHTML(emp, newWs, r, criteria, roleLabel, tplLabel, actionTypes);
+attachPdfEvalHandlers(emp, newWs, r, criteria, roleLabel, tplLabel, actionTypes);
 });
 const openBtn = document.getElementById('pdf-open');
 if (openBtn) openBtn.addEventListener('click', () => openCgPdfByWeek(emp.id, ws));
@@ -2790,6 +2800,10 @@ crits.forEach(i => { const v=parseFloat(i.value), w=parseFloat(i.dataset.weight)
 if (!ok) { Toast.error('كل درجة يجب أن تكون بين 0 والحد الأقصى للمعيار'); return false; }
 if (!row || !row.pdf_file_path) { Toast.error('لا يوجد ملف PDF مرفوع'); return false; }
 const notes = ((document.getElementById('pdf-notes')||{}).value || '').trim();
+const actionType = ((document.getElementById('pdf-action-type')||{}).value || '').trim();
+const actionDetails = ((document.getElementById('pdf-action-details')||{}).value || '').trim();
+if (!actionType) { Toast.error('اختر نوع الإجراء'); return false; }
+if (!actionDetails) { Toast.error('تفاصيل الإجراء مطلوبة'); return false; }
 const { data, error } = await window.sb.rpc('create_evaluation', {
 p_session_token: cgToken(), p_employee_id: emp.id, p_evaluation_date: ws,
 p_criteria_scores: scores, p_pdf_file_path: row.pdf_file_path, p_pdf_file_name: (row.pdf_file_path||'').split('/').pop(),
@@ -2799,6 +2813,12 @@ const rr = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!rr || !rr.ok) { const m=(rr&&rr.message)||(error&&error.message)||'تعذّر حفظ التقييم'; if(!handleSessionError(m)) Toast.error(m); return false; }
 if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(true); }catch(_){} }
 try { if (rr.evaluation_id && !DB.getEvaluation(rr.evaluation_id) && window.sb) { const { data: ne } = await window.sb.from('evaluations').select('*').eq('id', rr.evaluation_id).maybeSingle(); if (ne) { DB.data.evaluations = (DB.data.evaluations || []).filter(x => x.id !== ne.id).concat(ne); localStorage.setItem(DB.KEY, JSON.stringify(DB.data)); } } } catch(_){}
+// حفظ الإجراء الذي حدّده موظف الجودة مع التقييم
+try {
+const { data: ad, error: aerr } = await window.sb.rpc('cg_set_eval_action', { p_session_token: cgToken(), p_evaluation_id: rr.evaluation_id, p_action_type: actionType, p_action_details: actionDetails });
+const ar = Array.isArray(ad)?ad[0]:ad;
+if (aerr || !ar || !ar.ok) { if (Toast.warning) Toast.warning((ar&&ar.message)||'حُفظ التقييم لكن تعذّر حفظ الإجراء — يمكن للمشرف إضافته'); }
+} catch(_) { if (Toast.warning) Toast.warning('حُفظ التقييم لكن تعذّر حفظ الإجراء'); }
 Toast.success(`تم حفظ التقييم — ${rr.percentage}% (${rr.grade})`);
 navigate('view-evaluation', { id: rr.evaluation_id });
 return true;
@@ -3019,22 +3039,34 @@ if (!ev) { Toast.error('التقييم غير موجود'); return; }
 const emp = DB.getUser(ev.employee_id);
 const types = (ev.template_snapshot && ev.template_snapshot.allowed_action_types) || ['warning','training','praise','other'];
 const obj = await fetchObjection(evalId);
-Modal.show('اتخاذ إجراء', `
-<div style="margin-bottom:10px"><strong>الموظف:</strong> ${emp?Utils.escape(emp.full_name):'-'} — <strong>الأسبوع:</strong> ${ev.week_start||''}</div>
+const proposed = await fetchAction(evalId); // الإجراء الذي حدّده موظف الجودة
+const preType = proposed ? proposed.action_type : (types[0]||'');
+const preDetails = proposed ? (proposed.action_details||'') : '';
+const proposer = (proposed && proposed.created_by) ? DB.getUser(proposed.created_by) : null;
+Modal.show('مراجعة واعتماد التقييم', `
+<div style="margin-bottom:10px"><strong>الموظف:</strong> ${emp?Utils.escape(emp.full_name):'-'} — <strong>الأسبوع:</strong> ${ev.week_start||''} — <strong>الدرجة:</strong> ${ev.percentage}% ${passFailBadge(ev.percentage, emp?emp.department_id:cgDeptId())}</div>
 ${critBreakdownHTML(ev)}
 ${ev.evaluation_notes?`<div style="margin-bottom:8px"><strong>ملاحظات المُقيّم:</strong> ${Utils.escape(ev.evaluation_notes)}</div>`:''}
 <button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${ev.id})" style="margin-bottom:10px">📄 فتح ملف التقييم</button>
 ${obj?`<div class="alert alert-warning"><strong>اعتراض الموظف:</strong> ${Utils.escape(obj.objection_text)}${obj.reviewer_response?'<br><strong>رد الجودة:</strong> '+Utils.escape(obj.reviewer_response):''}</div>`:''}
-<div class="form-group"><label class="form-label">نوع الإجراء *</label><select class="form-control" id="ta-type">${types.map(t=>`<option value="${t}">${actionTypeLabel(t)}</option>`).join('')}</select></div>
-<div class="form-group"><label class="form-label">تفاصيل الإجراء *</label><textarea class="form-control" id="ta-details" rows="3"></textarea></div>`,
-`<button class="btn btn-secondary" onclick="Modal.close()">إلغاء</button><button class="btn btn-danger" id="ta-save">حفظ الإجراء</button>`);
+<div style="border:2px solid var(--warning);background:#fffbeb;border-radius:10px;padding:12px">
+<div style="font-weight:800;margin-bottom:8px">🎯 الإجراء ${proposed?`<span style="font-size:11px;font-weight:400;color:var(--muted)">(اقتراح ${proposer?Utils.escape(proposer.full_name):'موظف الجودة'})</span>`:'<span style="font-size:11px;font-weight:400;color:var(--danger)">(لم يحدّده الجودة — أدخله)</span>'}</div>
+<div class="form-group" style="margin-bottom:8px"><label class="form-label">نوع الإجراء *</label><select class="form-control" id="ta-type" ${proposed?'disabled':''}>${types.map(t=>`<option value="${t}" ${t===preType?'selected':''}>${actionTypeLabel(t)}</option>`).join('')}</select></div>
+<div class="form-group" style="margin:0"><label class="form-label">تفاصيل الإجراء *</label><textarea class="form-control" id="ta-details" rows="3" ${proposed?'disabled':''}>${Utils.escape(preDetails)}</textarea></div>
+${proposed?`<button type="button" class="btn btn-sm btn-secondary" id="ta-edit" style="margin-top:8px">✏️ تعديل الإجراء</button>`:''}
+</div>`,
+`<button class="btn btn-secondary" onclick="Modal.close()">إلغاء</button><button class="btn btn-success" id="ta-save">✅ اعتماد</button>`);
+const editBtn = document.getElementById('ta-edit');
+if (editBtn) editBtn.addEventListener('click', () => { const t=document.getElementById('ta-type'), d=document.getElementById('ta-details'); if(t)t.disabled=false; if(d){d.disabled=false; d.focus();} editBtn.style.display='none'; });
 document.getElementById('ta-save').addEventListener('click', async () => {
 const type = document.getElementById('ta-type').value, details = document.getElementById('ta-details').value.trim();
 if (!details) { Toast.error('تفاصيل الإجراء مطلوبة'); return; }
 const { data, error } = await window.sb.rpc('take_action', { p_session_token: cgToken(), p_evaluation_id: evalId, p_action_type: type, p_action_details: details, p_linked_objection_id: obj?obj.id:null });
 const r = Array.isArray(data)?data[0]:data;
 if (error || !r || !r.ok) { const m=(r&&r.message)||(error&&error.message)||'فشل'; if(!handleSessionError(m)) Toast.error(m); return; }
-Modal.close(); Toast.success('تم تسجيل الإجراء'); loadCgMyTeam();
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(true); }catch(_){} }
+Modal.close(); Toast.success('تم اعتماد التقييم');
+if (currentPage==='cg-pending-approval') loadCgPending(); else loadCgMyTeam();
 });
 }
 
@@ -3306,7 +3338,7 @@ const body = rows.map(r => `<tr>
 <td>${r.percentage != null ? Utils.gradeBadge(r.percentage) + ' <strong>' + r.percentage + '%</strong>' : '—'}</td>
 <td style="white-space:nowrap">
 <button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${r.evaluation_id})">📄</button>
-<button class="btn btn-sm btn-success" onclick="takeActionModal(${r.evaluation_id})">✅ اعتماد + إجراء</button>
+<button class="btn btn-sm btn-success" onclick="takeActionModal(${r.evaluation_id})">✅ مراجعة واعتماد</button>
 <button class="btn btn-sm btn-secondary" onclick="openRequestDetails(${r.weekly_status_id},'${Utils.escape((r.employee_name||'').replace(/'/g,''))}','${r.workflow_state}')">🕓</button>
 </td></tr>`).join('');
 host.innerHTML = `<div class="card"><div class="card-body" style="padding:0;overflow-x:auto"><table class="table"><thead><tr><th>الموظف</th><th>الفترة</th><th>الدرجة</th><th></th></tr></thead><tbody>${body}</tbody></table></div></div>`;
