@@ -2660,7 +2660,7 @@ if (!ev || ev.template_type !== 'pdf_based_weekly') return;
 const obj = await fetchObjection(id), act = await fetchAction(id);
 let html = '';
 if (obj) {
-const stB = obj.status==='accepted'?'<span class="badge badge-success">مقبول</span>':(obj.status==='rejected'?'<span class="badge badge-danger">مرفوض</span>':'<span class="badge badge-warning">قيد المراجعة</span>');
+const stB = objBadge(obj.status);
 html += `<div class="card" style="border-right:4px solid var(--warning)"><div class="card-header"><div class="card-title">⚖️ الاعتراض</div>${stB}</div><div class="card-body"><div>${Utils.escape(obj.objection_text)}</div>${obj.reviewer_response?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)"><strong>رد الجودة:</strong> ${Utils.escape(obj.reviewer_response)}</div>`:''}</div></div>`;
 }
 if (act) {
@@ -2707,7 +2707,7 @@ ${critRows ? `<div style="margin-top:12px"><div style="font-size:12px;color:var(
 let objBlock = '';
 if (ev) {
 if (obj) {
-const stB = obj.status==='accepted'?'<span class="badge badge-success">مقبول</span>':(obj.status==='rejected'?'<span class="badge badge-danger">مرفوض</span>':'<span class="badge badge-warning">قيد المراجعة</span>');
+const stB = objBadge(obj.status);
 objBlock = `<div class="card" style="margin-top:14px;border-right:4px solid var(--warning)"><div class="card-body">
 <div style="display:flex;justify-content:space-between;align-items:center"><strong>⚖️ اعتراضي</strong>${stB}</div>
 <div style="margin-top:8px">${Utils.escape(obj.objection_text)}</div>
@@ -2765,10 +2765,13 @@ if (error) { if(!handleSessionError(error.message)) host.innerHTML = `<div class
 const objs = data || [];
 const pending = objs.filter(o => o.status === 'pending');
 const history = objs.filter(o => o.status !== 'pending');
+const canReview = (currentUser.role==='quality_officer' || currentUser.role==='admin');
 const rowHtml = (o) => { const emp = DB.getUser(o.employee_id), ev = DB.getEvaluation(o.evaluation_id);
-const stB = o.status==='accepted'?'<span class="badge badge-success">مقبول</span>':(o.status==='rejected'?'<span class="badge badge-danger">مرفوض</span>':'<span class="badge badge-warning">قيد المراجعة</span>');
-const act = (o.status==='pending' && currentUser.role==='quality_officer') ? `<button class="btn btn-sm btn-primary" onclick="reviewObjectionModal(${o.id})">مراجعة</button>` : `<button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${o.evaluation_id})">📄 الملف</button>`;
-return `<tr><td>${emp?Utils.escape(emp.full_name):'-'}</td><td>${ev?Utils.formatDate(ev.evaluation_date):'-'}</td><td>${Utils.escape((o.objection_text||'').slice(0,70))}</td><td>${stB}</td><td>${act}</td></tr>`;
+const stB = objBadge(o.status);
+const act = (o.status==='pending' && canReview)
+? `<button class="btn btn-sm btn-primary" onclick="reviewObjectionModal(${o.id})">⚖️ الرد على الاعتراض</button> <button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${o.evaluation_id})">📄</button>`
+: `<button class="btn btn-sm btn-secondary" onclick="navigate('view-evaluation',{id:${o.evaluation_id}})">عرض التقييم</button> <button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${o.evaluation_id})">📄</button>`;
+return `<tr><td>${emp?Utils.escape(emp.full_name):'-'}</td><td>${ev?Utils.formatDate(ev.evaluation_date):Utils.formatDate(o.raised_at)}</td><td>${Utils.escape((o.objection_text||'').slice(0,70))}</td><td>${stB}</td><td style="white-space:nowrap">${act}</td></tr>`;
 };
 const table = (arr, empty) => arr.length ? `<div class="card"><div class="card-body" style="padding:0;overflow-x:auto"><table class="table"><thead><tr><th>الموظف</th><th>تاريخ التقييم</th><th>الاعتراض</th><th>الحالة</th><th></th></tr></thead><tbody>${arr.map(rowHtml).join('')}</tbody></table></div></div>` : `<div class="alert alert-info">${empty}</div>`;
 host.innerHTML = `
@@ -2777,27 +2780,63 @@ ${table(pending, 'لا توجد اعتراضات مفتوحة.')}
 <div class="page-header" style="margin:20px 0 8px"><div class="page-title" style="font-size:16px">📚 السجل التاريخي (${history.length})</div></div>
 ${table(history, 'لا يوجد سجل بعد.')}`;
 }
+function objBadge(s) {
+return s==='accepted' ? '<span class="badge badge-success">مقبول</span>'
+ : s==='partial' ? '<span class="badge" style="background:#dbeafe;color:#1e40af;border:1px solid #93c5fd">قبول جزئي</span>'
+ : s==='rejected' ? '<span class="badge badge-danger">مرفوض</span>'
+ : '<span class="badge badge-warning">قيد المراجعة</span>';
+}
 async function reviewObjectionModal(objId) {
+if (!(currentUser.role === 'quality_officer' || currentUser.role === 'admin')) { Toast.error('مراجعة الاعتراض للجودة أو المدير فقط'); return; }
 const { data } = await window.sb.from('creative_gene_objections').select('*').eq('id', objId).maybeSingle();
 if (!data) { Toast.error('الاعتراض غير موجود'); return; }
-const emp = DB.getUser(data.employee_id), ev = DB.getEvaluation(data.evaluation_id);
-Modal.show('مراجعة اعتراض', `
-<div style="margin-bottom:10px"><strong>الموظف:</strong> ${emp?Utils.escape(emp.full_name):'-'} — <strong>تاريخ التقييم:</strong> ${ev?Utils.formatDate(ev.evaluation_date):'-'}</div>
+if (data.status !== 'pending') { Toast.info('تمت مراجعة هذا الاعتراض مسبقاً'); return; }
+const emp = DB.getUser(data.employee_id);
+let ev = DB.getEvaluation(data.evaluation_id);
+if (!ev && window.sb) { try { const { data:e } = await window.sb.from('evaluations').select('*').eq('id', data.evaluation_id).maybeSingle(); ev = e; } catch(_){} }
+const crit = (ev && ev.template_snapshot && ev.template_snapshot.criteria) || [];
+const scores = (ev && (ev.section_scores || ev.items)) || {};
+const scoreInputs = crit.map(c => `<div class="form-group" style="margin-bottom:8px"><label class="form-label" style="font-size:13px">${Utils.escape(c.name)} <span style="color:var(--muted);font-size:11px">(0 - ${c.weight})</span></label><input type="number" min="0" max="${c.weight}" step="0.5" class="form-control ro-score" data-cid="${c.id}" data-weight="${c.weight}" value="${scores[c.id]!=null?scores[c.id]:''}"></div>`).join('');
+Modal.show('⚖️ مراجعة اعتراض', `
+<div style="margin-bottom:10px"><strong>الموظف:</strong> ${emp?Utils.escape(emp.full_name):'-'} — <strong>تاريخ التقييم:</strong> ${ev?Utils.formatDate(ev.evaluation_date):'-'} — <strong>الدرجة الحالية:</strong> ${ev?ev.percentage+'%':'-'}</div>
 ${ev?critBreakdownHTML(ev):''}
 ${ev&&ev.evaluation_notes?`<div style="margin-bottom:8px"><strong>ملاحظات المُقيّم:</strong> ${Utils.escape(ev.evaluation_notes)}</div>`:''}
 <div class="alert alert-warning"><strong>نص الاعتراض:</strong> ${Utils.escape(data.objection_text)}</div>
-<button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${data.evaluation_id})">📄 فتح ملف التقييم</button>
-<div class="form-group" style="margin-top:12px"><label class="form-label">ردّك (اختياري)</label><textarea class="form-control" id="ro-resp" rows="3"></textarea></div>`,
-`<button class="btn btn-danger" id="ro-reject">رفض</button><button class="btn btn-success" id="ro-accept">قبول</button>`);
-const submit = async (decision) => {
-const resp = (document.getElementById('ro-resp')||{}).value || '';
-const { data:d, error } = await window.sb.rpc('review_objection', { p_session_token: cgToken(), p_objection_id: objId, p_response: resp.trim(), p_decision: decision });
+<button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${data.evaluation_id})" style="margin-bottom:10px">📄 فتح ملف التقييم</button>
+<div class="form-group"><label class="form-label">قرار الرد *</label><select class="form-control" id="ro-decision"><option value="accepted">✅ قبول الاعتراض</option><option value="partial">➗ قبول جزئي</option><option value="rejected">❌ رفض الاعتراض</option></select></div>
+<div class="form-group"><label class="form-label">نص رد الجودة *</label><textarea class="form-control" id="ro-resp" rows="3" placeholder="اكتب ردّك على الاعتراض..."></textarea></div>
+<div id="ro-scores-wrap" style="border:1px dashed var(--border);border-radius:8px;padding:12px;margin-top:6px">
+<label style="display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:8px;cursor:pointer"><input type="checkbox" id="ro-edit-scores"> تعديل الدرجات <span style="font-weight:400;font-size:11px;color:var(--muted)">(يُحفظ التعديل مع بقاء النموذج الأصلي في السجل)</span></label>
+<div id="ro-scores" style="display:none">${scoreInputs || '<div style="color:var(--muted);font-size:13px">لا معايير متاحة للتعديل</div>'}
+<div style="display:flex;justify-content:space-between;padding-top:6px;border-top:1px solid var(--border);margin-top:6px"><strong>المجموع الجديد</strong><strong id="ro-new-total" style="color:var(--primary)">—</strong></div>
+</div></div>`,
+`<button class="btn btn-secondary" onclick="Modal.close()">إلغاء</button><button class="btn btn-success" id="ro-submit">📨 إرسال الرد</button>`);
+const wrap = document.getElementById('ro-scores'), chk = document.getElementById('ro-edit-scores'), totalEl = document.getElementById('ro-new-total'), decSel = document.getElementById('ro-decision');
+const recompute = () => { let sum=0, ok=true; document.querySelectorAll('.ro-score').forEach(i=>{const v=parseFloat(i.value),w=parseFloat(i.dataset.weight)||0; if(!(v>=0&&v<=w)) ok=false; else sum+=v;}); if(totalEl) totalEl.textContent = ok?(Math.round(sum*100)/100)+' / 100':'—'; };
+if (chk) chk.addEventListener('change', () => { wrap.style.display = chk.checked ? '' : 'none'; recompute(); });
+if (decSel) decSel.addEventListener('change', () => { const wrp=document.getElementById('ro-scores-wrap'); if(wrp) wrp.style.display = decSel.value==='rejected' ? 'none' : ''; });
+document.querySelectorAll('.ro-score').forEach(i=>i.addEventListener('input', recompute));
+document.getElementById('ro-submit').addEventListener('click', async () => {
+const decision = decSel.value;
+const resp = (document.getElementById('ro-resp').value||'').trim();
+if (!resp) { Toast.error('نص الرد مطلوب'); return; }
+let newScores = null;
+if (decision !== 'rejected' && chk && chk.checked) {
+newScores = {}; let ok=true;
+document.querySelectorAll('.ro-score').forEach(i=>{const v=parseFloat(i.value),w=parseFloat(i.dataset.weight)||0; if(!(v>=0&&v<=w)) ok=false; newScores[i.dataset.cid]=v;});
+if (!ok) { Toast.error('كل درجة يجب أن تكون بين 0 والحد الأقصى للمعيار'); return; }
+}
+const btn = document.getElementById('ro-submit');
+await submitWithFeedback(btn, 'جارٍ إرسال الرد...', null, async () => {
+const { data:d, error } = await window.sb.rpc('review_objection', { p_session_token: cgToken(), p_objection_id: objId, p_response: resp, p_decision: decision, p_new_scores: newScores });
 const r = Array.isArray(d)?d[0]:d;
-if (error || !r || !r.ok) { const m=(r&&r.message)||(error&&error.message)||'فشل'; if(!handleSessionError(m)) Toast.error(m); return; }
-Modal.close(); Toast.success('تم حفظ القرار'); loadCgObjections();
-};
-document.getElementById('ro-accept').addEventListener('click', () => submit('accepted'));
-document.getElementById('ro-reject').addEventListener('click', () => submit('rejected'));
+if (error || !r || !r.ok) { const m=(r&&r.message)||(error&&error.message)||'فشل حفظ الرد'; if(!handleSessionError(m)) Toast.error(m); return false; }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(true); }catch(_){} }
+Modal.close(); Toast.success(r.message||'تم حفظ القرار');
+if (currentPage==='cg-objections') loadCgObjections(); else if (currentPage==='cg-requests') loadCgRequests();
+return true;
+});
+});
 }
 
 // ---- المعايير الأدنى أداءً — Creative Gene (بديل "الأخطاء المتكررة") ----
@@ -2861,7 +2900,7 @@ if (evalIds.length) { try { const [{ data:objs },{ data:acts }] = await Promise.
 const rows = emps.map(e => { const last = lastByEmp[e.id];
 if (!last) return `<tr><td>${Utils.escape(e.full_name)}</td><td>${jobTitleCell(e)}</td><td colspan="4" style="color:var(--muted)">لا يوجد تقييم</td><td>—</td></tr>`;
 const o = objMap[last.id], a = actMap[last.id];
-const objCol = o ? (o.status==='accepted'?'<span class="badge badge-success">مقبول</span>':(o.status==='rejected'?'<span class="badge badge-danger">مرفوض</span>':'<span class="badge badge-warning">قيد المراجعة</span>')) : '<span style="color:var(--muted)">—</span>';
+const objCol = o ? (objBadge(o.status)) : '<span style="color:var(--muted)">—</span>';
 const actCol = a ? actionTypeLabel(a.action_type) : '<span style="color:var(--muted)">—</span>';
 return `<tr><td>${Utils.escape(e.full_name)}</td><td>${jobTitleCell(e)}</td><td>${last.week_start||''}</td><td><strong>${last.percentage}%</strong></td><td>${objCol}</td><td>${actCol}</td><td><button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${last.id})">📄</button> <button class="btn btn-sm btn-danger" onclick="takeActionModal(${last.id})">🎯 إجراء</button></td></tr>`;
 }).join('');
@@ -2946,7 +2985,7 @@ if (st === 'uploaded_pending') actions = `<button class="btn btn-sm btn-secondar
 else if (evaluated) actions = `<button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${r.evaluation_id})">📄 فتح</button> <span style="font-weight:700;color:var(--primary)">${r.percentage}%</span>`;
 else actions = `<button class="btn btn-sm btn-secondary" onclick="cgUploadBehalf(${r.employee_id},'${ws}')">📎 رفع نيابةً</button>`;
 const o = objMap[r.evaluation_id], a = actMap[r.evaluation_id];
-const objCol = o ? (o.status==='accepted'?'<span class="badge badge-success">مقبول</span>':(o.status==='rejected'?'<span class="badge badge-danger">مرفوض</span>':'<span class="badge badge-warning">قيد المراجعة</span>')) : '<span style="color:var(--muted)">—</span>';
+const objCol = o ? (objBadge(o.status)) : '<span style="color:var(--muted)">—</span>';
 const actCol = a ? actionTypeLabel(a.action_type) : '<span style="color:var(--muted)">—</span>';
 return `<tr><td>${Utils.escape(r.employee_name)}</td><td>${badge}</td><td>${objCol}</td><td>${actCol}</td><td>${actions}</td></tr>`;
 }).join('');
@@ -3104,7 +3143,7 @@ const body = rows.map(r => {
 const st = r.workflow_state;
 let actions = '';
 if (st === 'pending_quality') actions += `<button class="btn btn-sm btn-success" onclick="openRequestForEval(${r.weekly_status_id},${r.employee_id},'${r.week_start}')">📝 فتح للتقييم</button>`;
-else if (st === 'objection_raised' && currentUser.role === 'quality_officer' && r.has_objection) actions += `<button class="btn btn-sm btn-warning" onclick="reviewObjectionByEval(${r.evaluation_id})">⚖️ مراجعة الاعتراض</button>`;
+else if (st === 'objection_raised' && (currentUser.role === 'quality_officer' || currentUser.role === 'admin') && r.has_objection) actions += `<button class="btn btn-sm btn-warning" onclick="reviewObjectionByEval(${r.evaluation_id})">⚖️ الرد على الاعتراض</button>`;
 if (r.evaluation_id) actions += ` <button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${r.evaluation_id})">📄</button>`;
 else actions += ` <button class="btn btn-sm btn-secondary" onclick="openCgPdfByWeek(${r.employee_id},'${r.week_start}')">📄</button>`;
 actions += ` <button class="btn btn-sm btn-secondary" onclick="openRequestDetails(${r.weekly_status_id},'${Utils.escape((r.employee_name||'').replace(/'/g,''))}','${st}')">🕓</button>`;
