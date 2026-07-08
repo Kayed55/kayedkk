@@ -3061,16 +3061,17 @@ const rows = data || [];
 if (!rows.length) { host.innerHTML = '<div class="alert alert-info">لا توجد طلبات بعد. ارفع أول تقييم من الأعلى.</div>'; return; }
 const body = rows.map(r => {
 const canObject = r.workflow_state === 'approved' && r.objection_deadline && new Date() < new Date(r.objection_deadline) && !r.has_objection;
-const objBtn = canObject ? `<button class="btn btn-sm btn-warning" onclick="objectFromRequest(${r.evaluation_id})">⚖️ اعتراض</button>` : '';
+const objBtn = canObject ? `<button class="btn btn-sm btn-warning" onclick="objectFromRequest(${r.evaluation_id},'${r.objection_deadline||''}')">⚖️ اعتراض</button>` : '';
 const viewBtn = r.evaluation_id ? `<button class="btn btn-sm btn-secondary" onclick="navigate('view-evaluation',{id:${r.evaluation_id}})">التفاصيل</button>` : '';
 return `<tr><td>${periodRange(r)}</td><td>${wfBadge(r.workflow_state)}</td><td>${r.percentage != null ? '<strong>' + r.percentage + '%</strong>' : '<span style="color:var(--muted)">—</span>'}</td><td style="display:flex;gap:6px;flex-wrap:wrap">${viewBtn}${objBtn}<button class="btn btn-sm btn-secondary" onclick="openRequestDetails(${r.weekly_status_id},'${Utils.escape((r.employee_name||'').replace(/'/g,''))}','${r.workflow_state}')">🕓 السجل</button></td></tr>`;
 }).join('');
 host.innerHTML = `<div class="card"><div class="card-body" style="padding:0;overflow-x:auto"><table class="table"><thead><tr><th>الفترة</th><th>الحالة</th><th>الدرجة</th><th></th></tr></thead><tbody>${body}</tbody></table></div></div>`;
 }
-async function objectFromRequest(evalId) {
+async function objectFromRequest(evalId, deadline) {
 let ev = DB.getEvaluation(evalId);
 if (!ev && window.sb) { try { const { data } = await window.sb.from('evaluations').select('*').eq('id', evalId).maybeSingle(); ev = data; } catch (_) {} }
 if (!ev) { Toast.error('التقييم غير موجود'); return; }
+if (deadline) { try { ev = Object.assign({}, ev, { objection_deadline: deadline }); } catch (_) {} }
 raiseObjectionFlow(ev, () => loadMyRequests());
 }
 
