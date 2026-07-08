@@ -3464,9 +3464,11 @@ months.add(`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`);
 return Array.from(months).sort().reverse();
 }
 
-function getMonthlyData(monthKey) {
+function getMonthlyData(monthKey, deptId) {
 const [y, m] = monthKey.split('-').map(Number);
-const employees = DB.getUsers({ role:'employee' });
+let employees = DB.getUsers({ role:'employee' });
+if (deptId) employees = employees.filter(e => e.department_id === deptId);
+if (currentUser.role === 'supervisor') employees = employees.filter(e => e.supervisor_id === currentUser.id || e.supervisor_name === currentUser.full_name);
 return employees.map(e => {
 const evs = DB.data.evaluations.filter(ev => {
 if (ev.employee_id !== e.id) return false;
@@ -3481,6 +3483,7 @@ id: e.id,
 employee_number: e.employee_number || '-',
 name: e.full_name,
 position: e.position || '-',
+job_title: e.job_title || '',
 supervisor: e.supervisor_name || '-',
 department: e.department || '-',
 count: evs.length,
@@ -3519,12 +3522,15 @@ return { employees: evaluated, finalAvg, totalEvals, distribution, deptSummary }
 }
 
 function renderMonthlyReport() {
+if (!window._departments) loadDepartments(true).then(() => { if (currentPage === 'monthly-report') navigate('monthly-report', currentParams); });
+const deptId = currentParams.dept ? parseInt(currentParams.dept) : null;
+const deptObj = deptId ? (window._departments||[]).find(d => d.id === deptId) : null;
 const months = getMonthOptions();
 const now = new Date();
 const currentMonth = currentParams.month || `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
 const monthOpts = months.map(m => `<option value="${m}" ${m===currentMonth?'selected':''}>${arabicMonthName(m)}</option>`).join('');
 
-const data = getMonthlyData(currentMonth);
+const data = getMonthlyData(currentMonth, deptId);
 const withEvals = data.filter(d => d.count > 0);
 const totalEvals = data.reduce((s,d) => s+d.count, 0);
 const avgOverall = withEvals.length ? Math.round(withEvals.reduce((s,d)=>s+d.avg,0)/withEvals.length*10)/10 : 0;
@@ -3534,7 +3540,7 @@ const needCount = withEvals.filter(d => d.avg < 85).length;
 const rows = data.map(d => `<tr>
 <td><strong>${Utils.escape(d.employee_number)}</strong></td>
 <td><div style="display:flex;align-items:center;gap:10px"><div class="user-avatar">${Utils.getInitials(d.name)}</div>${Utils.escape(d.name)}</div></td>
-<td>${Utils.escape(d.position)}</td>
+<td>${d.job_title?Utils.escape(d.job_title):'<span style="color:var(--muted)">—</span>'}</td>
 <td>${Utils.escape(d.supervisor)}</td>
 <td style="text-align:center">${d.count}</td>
 <td style="text-align:center">${d.count>0?'<strong>'+d.avg+'%</strong>':'<span class="badge badge-info">لا يوجد</span>'}</td>
@@ -3545,7 +3551,7 @@ const rows = data.map(d => `<tr>
 
 return `
 <div class="page-header">
-<div><div class="page-title">📅 التقرير الشهري</div><div class="page-subtitle">عرض النتائج النهائية للموظفين خلال الشهر</div></div>
+<div><div class="page-title">📅 التقرير الشهري${deptObj?' — '+Utils.escape(deptObj.name):''}</div><div class="page-subtitle">${deptObj?'قسم '+Utils.escape(deptObj.name)+' — ':''}عرض النتائج النهائية للموظفين خلال الشهر</div></div>
 <div style="display:flex;gap:8px">
 <button class="btn btn-success" id="mr-export-xlsx">📊 تصدير Excel</button>
 <button class="btn btn-danger" id="mr-export-pdf">📄 تصدير PDF</button>
@@ -3648,10 +3654,11 @@ function renderMonthlyReportCharts() { /* placeholder */ }
 function exportMonthlyReportXLSX() {
 const now = new Date();
 const monthKey = currentParams.month || `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-const data = getMonthlyData(monthKey);
+const data = getMonthlyData(monthKey, currentParams.dept ? parseInt(currentParams.dept) : null);
 const rows = data.map(d => ({
 'الرقم الوظيفي': d.employee_number,
 'اسم الموظف': d.name,
+'المسمى الوظيفي': d.job_title || '-',
 'المسمى الوظيفي': d.position,
 'اسم المشرف': d.supervisor,
 'عدد التقييمات': d.count,
@@ -3671,7 +3678,7 @@ Toast.success('تم تصدير ملف Excel');
 async function exportMonthlyReportPDF() {
 const now = new Date();
 const monthKey = currentParams.month || `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-const data = getMonthlyData(monthKey);
+const data = getMonthlyData(monthKey, currentParams.dept ? parseInt(currentParams.dept) : null);
 const withEvals = data.filter(d => d.count>0);
 const avg = withEvals.length ? Math.round(withEvals.reduce((s,d)=>s+d.avg,0)/withEvals.length*10)/10 : 0;
 const totalEvals = data.reduce((s,d) => s+d.count, 0);
@@ -6157,7 +6164,7 @@ tr.style.display = (okName && okNum && okSup) ? '' : 'none';
 };
 document.querySelectorAll('.mr-filter').forEach(inp => inp.addEventListener('input', filterMR));
 const monthSel = document.getElementById('mr-month');
-if (monthSel) monthSel.addEventListener('change', () => navigate('monthly-report', { month: monthSel.value }));
+if (monthSel) monthSel.addEventListener('change', () => { const p = { month: monthSel.value }; if (currentParams.dept) p.dept = currentParams.dept; navigate('monthly-report', p); });
 const xlsBtn = document.getElementById('mr-export-xlsx');
 if (xlsBtn) xlsBtn.addEventListener('click', exportMonthlyReportXLSX);
 const pdfBtn = document.getElementById('mr-export-pdf');
