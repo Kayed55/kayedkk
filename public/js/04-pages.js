@@ -985,7 +985,6 @@ const quickAction = dashQuickAction();
 return `
 ${welcomeBanner}
 ${quickAction}
-${isEmp ? '<div id="emp-cg-week"></div>' : ''}
 ${currentUser.role === 'admin' ? cgNoSupervisorCardHTML() : ''}
 <div id="dash-body"><div class="card"><div class="card-body" style="text-align:center;padding:44px"><div class="spinner"></div><div style="margin-top:12px;color:var(--muted)">جارٍ تحميل الإحصائيات…</div></div></div></div>`;
 }
@@ -996,7 +995,7 @@ const role = currentUser.role;
 let target, label, icon, color;
 if (role === 'quality_officer') { target = 'cg-requests'; label = 'الطلبات المفتوحة'; icon = '📥'; color = '#7b1fa2'; }
 else if (role === 'supervisor') { target = 'cg-pending-approval'; label = 'بانتظار الاعتماد'; icon = '✅'; color = '#f59e0b'; }
-else if (role === 'employee') { if (!isCreativeGeneDept(currentUser.department_id)) return ''; target = 'cg-upload'; label = 'رفع تقييم جديد'; icon = '📤'; color = '#7b1fa2'; }
+else if (role === 'employee') { return ''; }
 else { target = 'cg-requests'; label = 'طلبات التقييم'; icon = '📥'; color = '#06579F'; }
 return `<div style="margin-bottom:20px"><button class="btn" style="background:${color};color:#fff;padding:12px 22px;font-size:15px;box-shadow:0 4px 14px ${color}44" data-nav="${target}">${icon} ${label} ←</button></div>`;
 }
@@ -2842,79 +2841,8 @@ html += `<div class="card" style="border-right:4px solid var(--danger)"><div cla
 host.innerHTML = html;
 }
 
-// ---- بطاقة أسبوع الموظف في لوحة التحكم ----
-async function loadEmployeeWeekCard() {
-const host = document.getElementById('emp-cg-week');
-if (!host) return;
-await loadDepartments();
-const me = DB.getUser(currentUser.id) || currentUser;
-if (!isCreativeGeneDept(me.department_id)) { host.innerHTML = ''; return; }
-const ws = weekStartSaturdayJS();
-const row = await fetchCgStatusRow(currentUser.id, ws);
-const ev = (row && row.evaluation_id) ? DB.getEvaluation(row.evaluation_id) : null;
-let obj = null, act = null;
-if (ev) { obj = await fetchObjection(ev.id); act = await fetchAction(ev.id); }
-host.innerHTML = employeeWeekCardHTML(ws, row, ev, obj, act);
-const up = document.getElementById('emp-cg-upload');
-if (up) up.addEventListener('click', () => navigate('cg-upload'));
-const openb = document.getElementById('emp-cg-open');
-if (openb) openb.addEventListener('click', () => { if (ev) openCgPdfByEval(ev.id); else openCgPdfByWeek(currentUser.id, ws); });
-const objb = document.getElementById('emp-cg-object');
-if (objb && ev) objb.addEventListener('click', () => raiseObjectionFlow(ev, () => loadEmployeeWeekCard()));
-}
-function employeeWeekCardHTML(ws, row, ev, obj, act) {
-const st = row ? row.status : 'not_uploaded';
-const badge = (st==='not_uploaded') ? '<span class="badge badge-danger">🔴 لم يتم الرفع</span>' : (st==='uploaded_pending' ? '<span class="badge badge-warning">🟡 بانتظار التقييم</span>' : '<span class="badge badge-success">🟢 تم التقييم</span>');
-let evalBlock = '';
-if (ev) {
-const crit = (ev.template_snapshot && ev.template_snapshot.criteria) || [];
-const scores = ev.section_scores || ev.items || {};
-const critRows = crit.filter(c => scores[c.id] != null).map(c => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed var(--border)"><span>${Utils.escape(c.name)} <span style="color:var(--muted);font-size:11px">(${c.weight}%)</span></span><strong>${scores[c.id]}</strong></div>`).join('');
-evalBlock = `<div style="margin-top:12px;display:flex;gap:24px;flex-wrap:wrap;align-items:center">
-<div><div style="font-size:12px;color:var(--muted)">درجتك</div><div style="font-size:26px;font-weight:800;color:var(--primary)">${ev.percentage}%</div>${passFailBadge(ev.percentage, cgDeptId())}</div>
-${ev.evaluation_notes ? `<div style="flex:1;min-width:200px"><div style="font-size:12px;color:var(--muted)">ملاحظات المُقيّم</div><div>${Utils.escape(ev.evaluation_notes)}</div></div>` : ''}
-</div>
-${critRows ? `<div style="margin-top:12px"><div style="font-size:12px;color:var(--muted);margin-bottom:4px">المعايير التفصيلية</div>${critRows}</div>` : ''}`;
-}
-let objBlock = '';
-if (ev) {
-if (obj) {
-const stB = objBadge(obj.status);
-objBlock = `<div class="card" style="margin-top:14px;border-right:4px solid var(--warning)"><div class="card-body">
-<div style="display:flex;justify-content:space-between;align-items:center"><strong>⚖️ اعتراضي</strong>${stB}</div>
-<div style="margin-top:8px">${Utils.escape(obj.objection_text)}</div>
-${obj.reviewer_response ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)"><div style="font-size:12px;color:var(--muted)">رد موظفة الجودة</div>${Utils.escape(obj.reviewer_response)}</div>` : ''}
-</div></div>`;
-} else if (objectionWindowOpen(ev)) {
-objBlock = `<div style="margin-top:14px"><button class="btn btn-warning" id="emp-cg-object">⚖️ تقديم اعتراض</button> <span style="font-size:12px;color:var(--muted)">المهلة حتى ${objectionDeadline(ev).toLocaleString('ar-SA')}</span></div>`;
-} else {
-objBlock = `<div style="margin-top:14px;font-size:13px;color:var(--muted)">⏳ انتهت مهلة الاعتراض</div>`;
-}
-}
-let actBlock = '';
-if (act) {
-const sup = DB.getUser(act.supervisor_id);
-actBlock = `<div class="card" style="margin-top:14px;border-right:4px solid var(--danger)"><div class="card-body">
-<strong>🎯 الإجراء المتخذ</strong>
-<div style="margin-top:8px;display:flex;gap:20px;flex-wrap:wrap">
-<div><div style="font-size:12px;color:var(--muted)">النوع</div>${actionTypeLabel(act.action_type)}</div>
-<div><div style="font-size:12px;color:var(--muted)">المشرف</div>${sup?Utils.escape(sup.full_name):'—'}</div>
-<div><div style="font-size:12px;color:var(--muted)">التاريخ</div>${Utils.formatDate(act.taken_at)}</div>
-</div>
-<div style="margin-top:8px">${Utils.escape(act.action_details)}</div>
-</div></div>`;
-}
-const canUpload = (st === 'not_uploaded' || st === 'uploaded_pending');
-const canOpen = row && st !== 'not_uploaded';
-return `<div class="card" style="border:2px solid var(--primary);margin-bottom:24px"><div class="card-header" style="background:linear-gradient(to left,#e0edff,transparent)"><div class="card-title">📄 تقييم هذا الأسبوع (${ws} ← ${weekEndStr(ws)})</div>${badge}</div>
-<div class="card-body">
-<div style="display:flex;gap:10px;flex-wrap:wrap">
-${canUpload ? `<button class="btn btn-primary" id="emp-cg-upload">📎 ${st==='uploaded_pending'?'استبدال الملف':'رفع ملف PDF'}</button>` : ''}
-${canOpen ? `<button class="btn btn-secondary" id="emp-cg-open">📄 فتح ملفي</button>` : ''}
-</div>
-${evalBlock}${objBlock}${actBlock}
-</div></div>`;
-}
+// ملاحظة (م10): حُذفت بطاقة "تقييم هذا الأسبوع" من لوحة موظف Creative Gene —
+// الرفع صار حصراً عبر خيار "رفع التقييم" في القائمة الجانبية (شاشة cg-upload).
 
 // ---- شاشة "اعتراضات Creative Gene" (admin/quality) ----
 function renderCgObjections() {
@@ -6604,7 +6532,6 @@ el.addEventListener('click', e => { e.stopPropagation(); navigate('new-objection
 
 if (page === 'dashboard') {
 loadDashboard();
-if (currentUser.role === 'employee') loadEmployeeWeekCard();
 clearInterval(window._dashTimer);
 window._dashTimer = setInterval(() => { if (currentPage === 'dashboard') loadDashboard(true); else { clearInterval(window._dashTimer); } }, 60000);
 }
