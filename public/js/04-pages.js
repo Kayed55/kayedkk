@@ -24,7 +24,7 @@ let _navToken = 0;
 let _navDebounce = null;
 const _FORM_PAGES = ['new-evaluation', 'edit-evaluation'];
 // عناوين الأقسام — تُستخدم في الشريط العلوي وفي عنوان تبويب المتصفّح
-const PAGE_TITLES = {dashboard:'لوحة التحكم', employees:'إدارة الموظفين', 'view-employee':'بيانات الموظف', evaluations:'التقييمات', 'new-evaluation':'تقييم جديد', 'cg-week':'أسبوع Creative Gene', 'cg-objections':'اعتراضات Creative Gene', 'cg-my-team':'موظفوني — Creative Gene', 'view-evaluation':'تفاصيل التقييم', 'edit-evaluation':'تعديل التقييم', reports:'التقارير', 'monthly-report':'التقرير الشهري', 'actions-report':'تقرير الإجراءات المتخذة', 'errors-report':'الأخطاء المتكررة الشهرية', objections:'الاعتراضات', 'view-objection':'تفاصيل الاعتراض', 'new-objection':'تقديم اعتراض', 'audit-log':'سجل العمليات', users:'إدارة المستخدمين', profile:'الملف الشخصي', notifications:'الإشعارات', settings:'الإعدادات', login:'تسجيل الدخول'};
+const PAGE_TITLES = {dashboard:'لوحة التحكم', employees:'إدارة الموظفين', 'view-employee':'بيانات الموظف', evaluations:'التقييمات', 'new-evaluation':'تقييم جديد', 'cg-week':'أسبوع Creative Gene', 'cg-objections':'اعتراضات Creative Gene', 'cg-my-team':'موظفوني — Creative Gene', 'cg-frequent-errors':'المعايير الأدنى أداءً — Creative Gene', 'cg-actions-report':'تقرير الإجراءات — Creative Gene', 'view-evaluation':'تفاصيل التقييم', 'edit-evaluation':'تعديل التقييم', reports:'التقارير', 'monthly-report':'التقرير الشهري', 'actions-report':'تقرير الإجراءات المتخذة', 'errors-report':'الأخطاء المتكررة الشهرية', objections:'الاعتراضات', 'view-objection':'تفاصيل الاعتراض', 'new-objection':'تقديم اعتراض', 'audit-log':'سجل العمليات', users:'إدارة المستخدمين', profile:'الملف الشخصي', notifications:'الإشعارات', settings:'الإعدادات', login:'تسجيل الدخول'};
 
 function destroyCharts() {
 charts.forEach(c => { try { c.destroy(); } catch(e){} });
@@ -52,6 +52,8 @@ const pages = {
 'cg-week': () => renderCgWeek(params.week),
 'cg-objections': renderCgObjections,
 'cg-my-team': renderCgMyTeam,
+'cg-frequent-errors': renderCgFrequentErrors,
+'cg-actions-report': renderCgActionsReport,
 'view-evaluation': () => renderViewEvaluation(params.id),
 'edit-evaluation': () => renderEditEvaluation(params.id),
 'reports': renderReports,
@@ -678,37 +680,61 @@ btn.dataset.busy = '0';
 // ============================================
 // Layout (Sidebar + Topbar)
 // ============================================
-function renderLayout(content) {
-const menu = [
-{ key:'dashboard', icon:'📊', label:'لوحة التحكم', roles:['admin','quality_officer','supervisor','employee'] },
-{ key:'evaluations', icon:'📝', label:'التقييمات', roles:['admin','quality_officer','supervisor','employee'] },
-{ key:'new-evaluation', icon:'➕', label:'تقييم جديد', roles:['admin','quality_officer'] },
-{ key:'cg-week', icon:'📄', label:'أسبوع Creative Gene', roles:['admin','quality_officer'] },
-{ key:'cg-objections', icon:'⚖️', label:'اعتراضات Creative Gene', roles:['admin','quality_officer'] },
-{ key:'cg-my-team', icon:'👥', label:'موظفوني — Creative Gene', roles:['admin','supervisor'] },
-{ key:'employees', icon:'👥', label:'الموظفون', roles:['admin','quality_officer','supervisor'] },
-{ key:'objections', icon:'⚖️', label:'الاعتراضات', roles:['admin','quality_officer','supervisor','employee'] },
-{ key:'reports', icon:'📈', label:'التقارير', roles:['admin','quality_officer','supervisor'] },
-{ key:'monthly-report', icon:'📅', label:'التقرير الشهري', roles:['admin','quality_officer','supervisor'] },
-{ key:'actions-report', icon:'⚖️', label:'تقرير الإجراءات', roles:['admin','quality_officer','supervisor'] },
-{ key:'errors-report', icon:'❌', label:'الأخطاء المتكررة', roles:['admin','quality_officer','supervisor'] },
-{ key:'audit-log', icon:'📜', label:'سجل العمليات', roles:['admin','quality_officer'] },
-{ key:'users', icon:'🛡️', label:'إدارة المستخدمين', roles:['admin'] },
-{ key:'departments', icon:'🗂️', label:'الأقسام والنماذج', roles:['admin','quality_officer'] },
-{ key:'settings', icon:'⚙️', label:'الإعدادات', roles:['admin','quality_officer'] },
-{ key:'profile', icon:'👤', label:'الملف الشخصي', roles:['admin','quality_officer','supervisor','employee'] }
-];
-
-const menuHTML = menu.filter(m => m.roles.includes(currentUser.role)).filter(m => {
-// بند "موظفوني — Creative Gene": يظهر للمشرف فقط إن كان لديه موظفو CG فعلاً (عزل عن مشرفي محزم)
-if (m.key === 'cg-my-team' && currentUser.role === 'supervisor') {
-return (DB.getUsers({ role:'employee' }) || []).some(e => e.supervisor_id === currentUser.id && isCreativeGeneDept(e.department_id));
+window._openSections = window._openSections || {};
+function buildSidebarMenu() {
+const role = currentUser.role;
+const mId = mahzamDeptId(), cId = cgDeptId();
+// قائمة مبسّطة للموظف
+if (role === 'employee') {
+const it = (page,icon,label) => `<div class="menu-item ${currentPage===page?'active':''}" data-nav="${page}"><span>${icon}</span><span>${label}</span></div>`;
+return it('dashboard','🏠','الرئيسية') + it('evaluations','📋','تقييماتي') + it('objections','⚖️','اعتراضاتي') + it('profile','👤','حسابي');
 }
+const sections = [
+{ key:'mahzam', label:'محزم', icon:'📊', color:'#1976d2', dept:mId, items:[
+{icon:'📋', label:'التقييمات', nav:'evaluations', params:{dept:mId}},
+{icon:'⚖️', label:'الاعتراضات', nav:'objections', params:{}},
+{icon:'⚠️', label:'الأخطاء المتكررة', nav:'errors-report', params:{}},
+{icon:'📝', label:'تقرير الإجراءات', nav:'actions-report', params:{}},
+{icon:'📈', label:'التقارير', nav:'reports', params:{reportTab:'mahzam'}},
+{icon:'📅', label:'التقرير الشهري', nav:'monthly-report', params:{dept:mId}} ]},
+{ key:'cg', label:'Creative Gene', icon:'🎨', color:'#7b1fa2', dept:cId, items:[
+{icon:'📋', label:'التقييمات', nav:'evaluations', params:{dept:cId}},
+{icon:'⚖️', label:'الاعتراضات', nav:'cg-objections', params:{}},
+{icon:'⚠️', label:'المعايير الأدنى أداءً', nav:'cg-frequent-errors', params:{}},
+{icon:'📝', label:'تقرير الإجراءات', nav:'cg-actions-report', params:{}},
+{icon:'📈', label:'التقارير', nav:'reports', params:{reportTab:'cg'}},
+{icon:'📅', label:'التقرير الشهري', nav:'monthly-report', params:{dept:cId}} ]}
+];
+const itemActive = (it) => {
+if (currentPage !== it.nav) return false;
+if (it.params.dept != null) return String(currentParams.dept) === String(it.params.dept);
+if (it.params.reportTab) return (currentParams.reportTab||'mahzam') === it.params.reportTab;
 return true;
-}).map(m => `
-<div class="menu-item ${currentPage === m.key ? 'active' : ''}" data-nav="${m.key}">
-<span>${m.icon}</span><span>${m.label}</span>
-</div>`).join('');
+};
+let supDepts = null;
+if (role === 'supervisor') supDepts = new Set(DB.getUsers({role:'employee'}).filter(e => e.supervisor_id===currentUser.id || e.supervisor_name===currentUser.full_name).map(e => e.department_id));
+let html = `<div class="menu-item ${currentPage==='dashboard'?'active':''}" data-nav="dashboard"><span>🏠</span><span>الرئيسية</span></div>`;
+sections.forEach(sec => {
+if (role === 'supervisor' && supDepts && !supDepts.has(sec.dept)) return;
+const isOpen = sec.items.some(itemActive) || window._openSections[sec.key];
+const itemsHTML = sec.items.map(it => `<div class="menu-item ${itemActive(it)?'active':''}" data-nav="${it.nav}" data-navparams='${JSON.stringify(it.params)}' style="padding-right:38px;font-size:13px;${itemActive(it)?'background:'+sec.color+'22;border-right:3px solid '+sec.color:''}"><span>${it.icon}</span><span>${it.label}</span></div>`).join('');
+html += `<div class="menu-section" data-section="${sec.key}">
+<div class="menu-item" data-section-toggle="${sec.key}" style="font-weight:700;border-right:3px solid ${sec.color};cursor:pointer"><span>${sec.icon}</span><span style="flex:1">${sec.label}</span><span class="sec-caret" style="display:inline-block;transition:.2s;${isOpen?'':'transform:rotate(-90deg)'}">▾</span></div>
+<div class="section-items" style="${isOpen?'':'display:none'}">${itemsHTML}</div>
+</div>`;
+});
+const bottom = [];
+if (role==='admin' || role==='quality_officer') bottom.push(['departments','⚙️','الأقسام والنماذج']);
+bottom.push(['employees','👥','إدارة الموظفين']);
+if (role==='admin') bottom.push(['users','🛡️','إدارة المستخدمين']);
+if (role==='admin' || role==='quality_officer') bottom.push(['audit-log','📜','سجل العمليات']);
+bottom.push(['profile','👤','حسابي']);
+html += `<div style="margin:12px;border-top:1px solid rgba(255,255,255,0.12)"></div>`;
+html += bottom.map(([k,ic,lb]) => `<div class="menu-item ${currentPage===k?'active':''}" data-nav="${k}"><span>${ic}</span><span>${lb}</span></div>`).join('');
+return html;
+}
+function renderLayout(content) {
+const menuHTML = buildSidebarMenu();
 
 const unread = DB.getNotifications(currentUser.id).filter(n => !n.is_read).length;
 
@@ -763,7 +789,22 @@ function attachLayoutHandlers() {
 document.querySelectorAll('[data-nav]').forEach(el => {
 if (el.dataset.bound === '1') return;
 el.dataset.bound = '1';
-el.addEventListener('click', () => navigateToSection(el.dataset.nav));
+el.addEventListener('click', () => { let p; try { p = el.dataset.navparams ? JSON.parse(el.dataset.navparams) : undefined; } catch(_){} navigateToSection(el.dataset.nav, p); });
+});
+// طيّ/فتح الأقسام الرئيسية (محزم / Creative Gene)
+document.querySelectorAll('[data-section-toggle]').forEach(el => {
+if (el.dataset.bound === '1') return;
+el.dataset.bound = '1';
+el.addEventListener('click', () => {
+const key = el.dataset.sectionToggle;
+const wrap = el.closest('.menu-section');
+const items = wrap ? wrap.querySelector('.section-items') : null;
+const caret = el.querySelector('.sec-caret');
+const nowOpen = items && items.style.display === 'none';
+if (items) items.style.display = nowOpen ? '' : 'none';
+if (caret) caret.style.transform = nowOpen ? '' : 'rotate(-90deg)';
+window._openSections[key] = nowOpen;
+});
 });
 const lo = document.getElementById('logout-btn');
 if (lo && lo.dataset.bound !== '1') {
@@ -2723,6 +2764,15 @@ document.getElementById('ro-accept').addEventListener('click', () => submit('acc
 document.getElementById('ro-reject').addEventListener('click', () => submit('rejected'));
 }
 
+// ---- placeholders (تُنفَّذ في م7-ب) ----
+function renderCgFrequentErrors() {
+if (!(currentUser.role === 'admin' || currentUser.role === 'quality_officer' || currentUser.role === 'supervisor')) return '<div class="alert alert-danger">غير مصرح</div>';
+return `<div class="page-header"><div><div class="page-title">⚠️ المعايير الأدنى أداءً — Creative Gene</div><div class="page-subtitle">قسم Creative Gene</div></div></div><div class="alert alert-info">🚧 قيد الإنشاء — سيُعرض في المرحلة م7-ب.</div>`;
+}
+function renderCgActionsReport() {
+if (!(currentUser.role === 'admin' || currentUser.role === 'quality_officer' || currentUser.role === 'supervisor')) return '<div class="alert alert-danger">غير مصرح</div>';
+return `<div class="page-header"><div><div class="page-title">📝 تقرير الإجراءات — Creative Gene</div><div class="page-subtitle">قسم Creative Gene</div></div></div><div class="alert alert-info">🚧 قيد الإنشاء — سيُعرض في المرحلة م7-ب.</div>`;
+}
 // ---- شاشة المشرف "موظفوني — Creative Gene" ----
 function renderCgMyTeam() {
 if (!(currentUser.role === 'supervisor' || currentUser.role === 'admin')) return '<div class="alert alert-danger">غير مصرح</div>';
