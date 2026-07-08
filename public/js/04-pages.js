@@ -6171,28 +6171,190 @@ async function loadTemplatesTree() {
 const host = document.getElementById('tmpl-tree'); if (!host) return;
 await loadDepartments();
 let tmpls = [];
-try { const { data } = await window.sb.from('evaluation_templates').select('id,department_id,job_role,template_type,version,is_active').eq('is_active', true); tmpls = data || []; } catch(_){}
+try { const { data } = await window.sb.from('evaluation_templates').select('id,department_id,job_role,template_type,version,is_active,template_jsonb'); tmpls = data || []; } catch(_){}
 const byDept = {}; tmpls.forEach(t => { (byDept[t.department_id] = byDept[t.department_id]||[]).push(t); });
-const isAdmin = currentUser.role === 'admin';
 let html = '';
 (window._departments||[]).forEach(d => {
 const isCg = d.template_type === 'pdf_based_weekly';
 const list = (byDept[d.id]||[]).sort((a,b) => (a.job_role?1:0)-(b.job_role?1:0) || String(a.job_role||'').localeCompare(String(b.job_role||'')));
-const editTarget = isCg ? "navigate('settings',{tab:'cg'})" : "navigate('settings',{tab:'form'})";
-const items = list.map(t => {
-const delBtn = (isCg && t.job_role) ? ` <button class="btn btn-sm btn-danger" onclick="deleteCgRoleTemplate('${t.job_role}')">حذف</button>` : '';
-const editBtn = isCg ? `navigate('settings',{tab:'cg',role:'${t.job_role||''}'})` : editTarget;
-return `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
-<div>📄 <strong>${t.job_role?'نموذج '+Utils.escape(cgRoleArabic(t.job_role)):'النموذج الافتراضي'}</strong> <span style="color:var(--muted);font-size:12px">${t.job_role?'('+Utils.escape(t.job_role)+') · ':''}v${t.version}</span></div>
-<div><button class="btn btn-sm btn-warning" onclick="${editBtn}">تعديل</button>${delBtn}</div>
-</div>`; }).join('') || '<div style="padding:14px;color:var(--muted)">لا نماذج</div>';
-html += `<div class="card" style="margin-bottom:16px;border-top:4px solid ${isCg?'#7b1fa2':'#1976d2'}">
-<div class="card-header"><div class="card-title">${isCg?'🎨':'📊'} ${Utils.escape(d.name)} <span style="font-size:12px;color:var(--muted);font-weight:400">${tmplTypeLabel(d.template_type)} · ${list.length} نموذج</span></div></div>
-<div class="card-body" style="padding:0">${items}</div>
-${isCg ? `<div style="padding:12px 14px;border-top:1px solid var(--border)"><button class="btn btn-secondary btn-sm" onclick="navigate('settings',{tab:'cg'})">➕ إضافة/تعديل نموذج لمسمى</button></div>` : ''}
-</div>`;
+if (isCg) { html += cgTemplatesCardHTML(d, list); return; }
+// محزم/أخرى: عرض بسيط (النماذج الفعّالة) يقود لإعدادات النموذج
+const items = list.filter(t=>t.is_active).map(t => `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border)">
+<div>📄 <strong>${t.job_role?'نموذج '+Utils.escape(cgRoleArabic(t.job_role)):'النموذج الافتراضي'}</strong> <span style="color:var(--muted);font-size:12px">v${t.version}</span></div>
+<div>${cgTemplateCanManage()?`<button class="btn btn-sm btn-warning" onclick="navigate('settings',{tab:'form'})">تعديل</button>`:'<span style="color:var(--muted)">عرض فقط</span>'}</div>
+</div>`).join('') || '<div style="padding:14px;color:var(--muted)">لا نماذج</div>';
+html += `<div class="card" style="margin-bottom:16px;border-top:4px solid #1976d2"><div class="card-header"><div class="card-title">📊 ${Utils.escape(d.name)} <span style="font-size:12px;color:var(--muted);font-weight:400">${tmplTypeLabel(d.template_type)} · ${list.filter(t=>t.is_active).length} نموذج</span></div></div><div class="card-body" style="padding:0">${items}</div></div>`;
 });
 host.innerHTML = html || '<div class="alert alert-info">لا توجد أقسام.</div>';
+}
+
+// ===== مدير نماذج Creative Gene (جدول + Wizard) =====
+function cgTemplateCanManage() { return currentUser.role === 'admin' || currentUser.role === 'quality_officer'; }
+function tplJsonb(t) { return (t && t.template_jsonb) || {}; }
+function tplName(t) { return tplJsonb(t).name || (t.job_role ? 'نموذج '+cgRoleArabic(t.job_role) : 'النموذج الافتراضي'); }
+function tplJobTitle(t) { return tplJsonb(t).job_title || (t.job_role ? cgRoleArabic(t.job_role) : '—'); }
+function tplCriteria(t) { const c = tplJsonb(t).criteria; return Array.isArray(c) ? c : []; }
+function tplWeightSum(t) { return tplCriteria(t).reduce((s,c)=>s+(parseFloat(c.weight)||0),0); }
+function cgTemplatesCardHTML(d, list) {
+const manage = cgTemplateCanManage();
+const rows = list.map(t => {
+const crit = tplCriteria(t), sum = Math.round(tplWeightSum(t)*100)/100;
+const sumBadge = Math.round(sum)===100 ? `<span class="badge badge-success">${sum}</span>` : `<span class="badge badge-danger">${sum}</span>`;
+const statusBadge = t.is_active ? '<span class="badge badge-success">مفعّل</span>' : '<span class="badge badge-secondary">معطّل</span>';
+const isDefault = !t.job_role;
+const jr = t.job_role ? `<code dir="ltr">${Utils.escape(t.job_role)}</code>` : '<span style="color:var(--muted)">— (افتراضي)</span>';
+let actions = '';
+if (manage) {
+actions += `<button class="btn btn-sm btn-warning" onclick="openCgWizard('edit','${t.job_role||''}')">✏️ تعديل</button>`;
+actions += ` <button class="btn btn-sm btn-secondary" onclick="openCgWizard('duplicate','${t.job_role||''}')">⧉ نسخ</button>`;
+if (!isDefault) {
+actions += ` <button class="btn btn-sm ${t.is_active?'btn-secondary':'btn-success'}" onclick="cgTemplateToggle('${t.job_role}',${!t.is_active})">${t.is_active?'⏸ تعطيل':'▶ تفعيل'}</button>`;
+actions += ` <button class="btn btn-sm btn-danger" onclick="cgTemplateDelete('${t.job_role}','${Utils.escape(tplJobTitle(t)).replace(/'/g,'')}')">🗑 حذف</button>`;
+}
+} else actions = '<span style="color:var(--muted)">عرض فقط</span>';
+return `<tr><td><strong>${Utils.escape(tplName(t))}</strong></td><td>${Utils.escape(tplJobTitle(t))}</td><td>${jr}</td><td style="text-align:center">${crit.length}</td><td style="text-align:center">${sumBadge}</td><td>${statusBadge}</td><td style="white-space:nowrap">${actions}</td></tr>`;
+}).join('') || '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--muted)">لا نماذج</td></tr>';
+const addBtn = manage ? `<button class="btn btn-primary" onclick="openCgWizard('new',null)">➕ إضافة نموذج جديد</button>` : '';
+return `<div class="card" style="margin-bottom:16px;border-top:4px solid #7b1fa2">
+<div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px"><div class="card-title">🎨 ${Utils.escape(d.name)} <span style="font-size:12px;color:var(--muted);font-weight:400">نماذج PDF · ${list.length}</span></div>${addBtn}</div>
+<div style="overflow-x:auto"><table class="table"><thead><tr><th>اسم النموذج</th><th>المسمى الوظيفي</th><th>job_role</th><th style="text-align:center">المعايير</th><th style="text-align:center">مجموع الأوزان</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody>${rows}</tbody></table></div>
+</div>`;
+}
+const CG_DEFAULT_CRIT = [{name:'الجودة',weight:30},{name:'الإبداع',weight:25},{name:'الالتزام بالبريف',weight:20},{name:'العرض والتقديم',weight:15},{name:'التسليم في الوقت',weight:10}];
+async function openCgWizard(mode, jobRole) {
+if (!cgTemplateCanManage()) { Toast.error('غير مصرح'); return; }
+let tpl = { name:'', job_title:'', job_role:'', criteria:[], allowed_action_types:['warning','training','praise','other'], objection_window_hours:48, pdf_max_size_mb:20 };
+if (mode === 'new') {
+tpl.criteria = CG_DEFAULT_CRIT.map((c,i)=>({ id:'c'+(i+1), name:c.name, weight:c.weight, type:'score', min:0, max:100 }));
+} else {
+const src = await fetchCgRoleTemplate(jobRole || null);
+if (!src) { Toast.error('النموذج غير موجود'); return; }
+const tj = src.template_jsonb || {};
+tpl.name = tj.name || (jobRole ? 'نموذج '+cgRoleArabic(jobRole) : 'النموذج الافتراضي');
+tpl.job_title = tj.job_title || (jobRole ? cgRoleArabic(jobRole) : '');
+tpl.job_role = jobRole || '';
+tpl.criteria = (Array.isArray(tj.criteria)?tj.criteria:[]).map((c,i)=>({ id:c.id||('c'+(i+1)), name:c.name||'', weight:parseFloat(c.weight)||0, type:c.type||'score', min:c.min!=null?c.min:0, max:c.max!=null?c.max:100 }));
+tpl.allowed_action_types = Array.isArray(tj.allowed_action_types)?tj.allowed_action_types:tpl.allowed_action_types;
+tpl.objection_window_hours = tj.objection_window_hours||48;
+tpl.pdf_max_size_mb = tj.pdf_max_size_mb||20;
+if (mode === 'duplicate') { tpl.name = tpl.name+' (نسخة)'; tpl.job_role=''; tpl.job_title=''; }
+}
+window._cgWiz = { mode, origRole: (mode==='edit'?(jobRole||''):null), step:1, tpl };
+cgWizShow();
+}
+function cgWizShow() {
+const w = window._cgWiz; if (!w) return;
+const titles = { new:'➕ نموذج Creative Gene جديد', edit:'✏️ تعديل نموذج', duplicate:'⧉ نسخ نموذج' };
+const stepLabel = ['1. البيانات الأساسية','2. المعايير والأوزان','3. المعاينة والحفظ'][w.step-1];
+let body = `<div style="display:flex;gap:6px;margin-bottom:12px">${[1,2,3].map(s=>`<div style="flex:1;height:6px;border-radius:3px;background:${s<=w.step?'#7b1fa2':'#e2e8f0'}"></div>`).join('')}</div><div style="font-weight:700;margin-bottom:12px;color:#7b1fa2">${stepLabel}</div>`;
+body += w.step===1 ? cgWizStep1HTML() : w.step===2 ? cgWizStep2HTML() : cgWizStep3HTML();
+let footer = '';
+if (w.step>1) footer += `<button class="btn btn-secondary" id="wiz-back">→ السابق</button>`;
+footer += `<button class="btn btn-secondary" onclick="Modal.close()">إلغاء</button>`;
+footer += w.step<3 ? `<button class="btn btn-primary" id="wiz-next">التالي ←</button>` : `<button class="btn btn-success" id="wiz-save">💾 حفظ النموذج</button>`;
+Modal.show(titles[w.mode], body, footer);
+cgWizAttach();
+}
+function cgWizStep1HTML() {
+const w = window._cgWiz, t = w.tpl, locked = (w.mode==='edit');
+return `<div class="form-group"><label class="form-label">اسم النموذج *</label><input class="form-control" id="wiz-name" value="${Utils.escape(t.name||'')}" placeholder="مثال: نموذج مصوّر فيديو"></div>
+<div class="form-group"><label class="form-label">المسمى الوظيفي (بالعربي) *</label><input class="form-control" id="wiz-jtitle" value="${Utils.escape(t.job_title||'')}" placeholder="مثال: مصوّر فيديو"></div>
+<div class="form-group"><label class="form-label">المعرّف التقني (job_role) * <span title="معرّف إنجليزي فريد بأحرف صغيرة وأرقام و_ فقط — يربط الموظف بالنموذج ولا يظهر للموظفين" style="cursor:help;color:#7b1fa2">ⓘ</span></label>
+<input class="form-control" id="wiz-jrole" dir="ltr" value="${Utils.escape(t.job_role||'')}" placeholder="videographer" ${locked?'disabled style="background:#f1f5f9;color:#64748b"':''}>
+${locked?'<div style="font-size:12px;color:var(--muted);margin-top:4px">🔒 لا يمكن تغيير المعرّف التقني لنموذج موجود (يحافظ على ربط التقييمات)</div>':'<button type="button" class="btn btn-sm btn-secondary" id="wiz-gen" style="margin-top:6px">توليد من الاسم</button>'}</div>`;
+}
+function cgWizStep2HTML() {
+const w = window._cgWiz, crit = w.tpl.criteria;
+const sum = Math.round(crit.reduce((s,c)=>s+(parseFloat(c.weight)||0),0)*100)/100, ok = Math.round(sum)===100;
+const rows = crit.map((c,i)=>`<tr><td><input class="form-control wiz-cname" data-i="${i}" value="${Utils.escape(c.name||'')}" placeholder="اسم المعيار"></td><td style="width:120px"><input type="number" min="0" max="100" step="0.5" class="form-control wiz-cw" data-i="${i}" value="${c.weight}"></td><td style="width:52px"><button class="btn btn-sm btn-danger wiz-cdel" data-i="${i}">🗑</button></td></tr>`).join('');
+return `<div style="overflow-x:auto"><table class="table"><thead><tr><th>اسم المعيار</th><th>الوزن</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+<button type="button" class="btn btn-secondary btn-sm" id="wiz-addcrit">➕ إضافة معيار</button>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding:12px;border-radius:8px;background:${ok?'#f0fdf4':'#fef2f2'}"><strong>مجموع الأوزان</strong><strong id="wiz-sum" style="font-size:22px;color:${ok?'#16a34a':'#dc2626'}">${sum} / 100</strong></div>
+<div id="wiz-sum-note" style="font-size:12px;margin-top:4px;color:${ok?'#16a34a':'#dc2626'}">${ok?'✓ المجموع صحيح':'⚠️ يجب أن يساوي المجموع 100 قبل الحفظ'}</div>`;
+}
+function cgWizStep3HTML() {
+const w = window._cgWiz, t = w.tpl;
+const sum = Math.round(t.criteria.reduce((s,c)=>s+(parseFloat(c.weight)||0),0)*100)/100;
+const rows = t.criteria.map(c=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--border)"><span>${Utils.escape(c.name||'—')}</span><strong>0 - ${c.weight}</strong></div>`).join('');
+const warn = (w.mode!=='new') ? '<div class="alert alert-info" style="margin-top:12px;font-size:13px">ℹ️ التعديلات ستُطبَّق على التقييمات الجديدة فقط، والتقييمات السابقة تحتفظ بالنموذج القديم (snapshot).</div>' : '';
+return `<div class="card"><div class="card-header"><div class="card-title">📄 ${Utils.escape(t.name||'—')} <span style="font-size:12px;color:var(--muted);font-weight:400">(كما سيراها موظف الجودة)</span></div></div><div class="card-body">
+<div style="margin-bottom:10px;font-size:13px">المسمى الوظيفي: <strong>${Utils.escape(t.job_title||'—')}</strong> · المعرّف: <code dir="ltr">${Utils.escape(t.job_role||'—')}</code></div>
+<div style="font-weight:700;margin-bottom:6px">المعايير (${t.criteria.length}) — الدرجة القصوى لكل معيار:</div>${rows}
+<div style="display:flex;justify-content:space-between;padding-top:8px;margin-top:6px;border-top:2px solid var(--border)"><strong>المجموع</strong><strong style="color:var(--primary)">${sum} / 100</strong></div>
+</div></div>${warn}`;
+}
+function cgWizSyncStep1() { const w=window._cgWiz;
+const n=document.getElementById('wiz-name'), jt=document.getElementById('wiz-jtitle'), jr=document.getElementById('wiz-jrole');
+if(n) w.tpl.name=n.value.trim(); if(jt) w.tpl.job_title=jt.value.trim();
+if(jr && !jr.disabled) w.tpl.job_role=jr.value.trim().toLowerCase();
+}
+function cgWizSyncStep2() { const w=window._cgWiz;
+document.querySelectorAll('.wiz-cname').forEach(i=>{const k=+i.dataset.i; if(w.tpl.criteria[k]) w.tpl.criteria[k].name=i.value;});
+document.querySelectorAll('.wiz-cw').forEach(i=>{const k=+i.dataset.i; if(w.tpl.criteria[k]) w.tpl.criteria[k].weight=parseFloat(i.value)||0;});
+}
+function cgWizAttach() {
+const w = window._cgWiz;
+const back=document.getElementById('wiz-back'); if(back) back.addEventListener('click',()=>{ if(w.step===2)cgWizSyncStep2(); if(w.step===1)cgWizSyncStep1(); w.step--; cgWizShow(); });
+const next=document.getElementById('wiz-next'); if(next) next.addEventListener('click',cgWizNext);
+const save=document.getElementById('wiz-save'); if(save) save.addEventListener('click',cgWizSave);
+if(w.step===1){ const gen=document.getElementById('wiz-gen'); if(gen) gen.addEventListener('click',()=>{ const src=(document.getElementById('wiz-jtitle').value||document.getElementById('wiz-name').value||''); document.getElementById('wiz-jrole').value = src.trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,''); }); }
+if(w.step===2){
+const add=document.getElementById('wiz-addcrit'); if(add) add.addEventListener('click',()=>{ cgWizSyncStep2(); w.tpl.criteria.push({id:'c_'+Date.now(),name:'',weight:0,type:'score',min:0,max:100}); cgWizShow(); });
+document.querySelectorAll('.wiz-cdel').forEach(b=>b.addEventListener('click',()=>{ cgWizSyncStep2(); w.tpl.criteria.splice(+b.dataset.i,1); cgWizShow(); }));
+const recompute=()=>{ cgWizSyncStep2(); const sum=Math.round(w.tpl.criteria.reduce((s,c)=>s+(parseFloat(c.weight)||0),0)*100)/100, ok=Math.round(sum)===100; const el=document.getElementById('wiz-sum'), note=document.getElementById('wiz-sum-note'); if(el){el.textContent=sum+' / 100'; el.style.color=ok?'#16a34a':'#dc2626';} if(note){note.textContent=ok?'✓ المجموع صحيح':'⚠️ يجب أن يساوي المجموع 100 قبل الحفظ'; note.style.color=ok?'#16a34a':'#dc2626';} };
+document.querySelectorAll('.wiz-cw').forEach(i=>i.addEventListener('input',recompute));
+}
+}
+function cgWizNext() {
+const w = window._cgWiz;
+if(w.step===1){ cgWizSyncStep1();
+if(!w.tpl.name){ Toast.error('اسم النموذج مطلوب'); return; }
+if(!w.tpl.job_title){ Toast.error('المسمى الوظيفي مطلوب'); return; }
+if(w.mode!=='edit'){ if(!w.tpl.job_role){ Toast.error('المعرّف التقني (job_role) مطلوب'); return; } if(!/^[a-z0-9_]+$/.test(w.tpl.job_role)){ Toast.error('المعرّف التقني: أحرف إنجليزية صغيرة وأرقام و_ فقط'); return; } }
+w.step=2; cgWizShow(); return;
+}
+if(w.step===2){ cgWizSyncStep2();
+if(!w.tpl.criteria.length){ Toast.error('أضف معياراً واحداً على الأقل'); return; }
+if(w.tpl.criteria.some(c=>!c.name||!c.name.trim())){ Toast.error('كل معيار يحتاج اسماً'); return; }
+const sum=Math.round(w.tpl.criteria.reduce((s,c)=>s+(parseFloat(c.weight)||0),0));
+if(sum!==100){ Toast.error(`مجموع الأوزان = ${sum} — يجب أن يساوي 100`); return; }
+w.step=3; cgWizShow(); return;
+}
+}
+async function cgWizSave() {
+const w = window._cgWiz, t = w.tpl;
+const sum = Math.round(t.criteria.reduce((s,c)=>s+(parseFloat(c.weight)||0),0));
+if(!t.name||!t.job_title){ w.step=1; cgWizShow(); Toast.error('أكمل البيانات الأساسية'); return; }
+if(sum!==100){ w.step=2; cgWizShow(); Toast.error('مجموع الأوزان يجب أن يساوي 100'); return; }
+const payload = { name:t.name, job_title:t.job_title, job_role:(w.mode==='edit'?(w.origRole||null):(t.job_role||null)), criteria:t.criteria, allowed_action_types:t.allowed_action_types, objection_window_hours:t.objection_window_hours||48, pdf_max_size_mb:t.pdf_max_size_mb||20 };
+const btn = document.getElementById('wiz-save');
+await submitWithFeedback(btn, 'جارٍ الحفظ...', null, async () => {
+let data, error;
+if(w.mode==='edit'){ ({data,error} = await window.sb.rpc('upsert_evaluation_template',{ p_session_token:cgToken(), p_department_id:cgDeptId(), p_template:payload, p_template_type:'pdf_based_weekly', p_job_role:(w.origRole||null) })); }
+else { ({data,error} = await window.sb.rpc('create_cg_template',{ p_session_token:cgToken(), p_department_id:cgDeptId(), p_job_role:t.job_role, p_template:payload })); }
+const r = Array.isArray(data)?data[0]:data;
+if(error || !r || !r.ok){ const m=(r&&r.message)||(error&&error.message)||'تعذّر الحفظ'; if(!handleSessionError(m)) Toast.error(m); return false; }
+if(window._templates) delete window._templates[cgDeptId()];
+Modal.close(); Toast.success(w.mode==='edit'?'تم تحديث النموذج (يُطبَّق على التقييمات الجديدة فقط)':'تم إنشاء النموذج بنجاح'); loadTemplatesTree(); return true;
+});
+}
+function cgTemplateToggle(jobRole, active) {
+if(!confirm(active?`تفعيل نموذج «${jobRole}»؟`:`تعطيل نموذج «${jobRole}»؟\n\nلن يُستخدم في التقييمات الجديدة (يعود الموظفون للنموذج الافتراضي).`)) return;
+window.sb.rpc('set_cg_template_active',{ p_session_token:cgToken(), p_department_id:cgDeptId(), p_job_role:jobRole, p_active:active }).then(({data,error})=>{
+const r=Array.isArray(data)?data[0]:data;
+if(error||!r||!r.ok){ const m=(r&&r.message)||(error&&error.message)||'خطأ'; if(!handleSessionError(m)) Toast.error(m); return; }
+if(window._templates) delete window._templates[cgDeptId()];
+Toast.success('تم'); loadTemplatesTree();
+}).catch(e=>Toast.error(e.message));
+}
+async function cgTemplateDelete(jobRole, jobTitle) {
+const ok = await confirmDanger(`حذف نموذج «${Utils.escape(jobTitle||jobRole)}» نهائياً؟<br>إن كان مستخدماً في تقييمات سابقة فسيُمنع الحذف — عندها استخدم <b>التعطيل</b> بدلاً منه.`, '🗑️ حذف النموذج');
+if(!ok) return;
+const { data, error } = await window.sb.rpc('delete_evaluation_template',{ p_session_token:cgToken(), p_department_id:cgDeptId(), p_job_role:jobRole });
+const r = Array.isArray(data)?data[0]:data;
+if(error||!r||!r.ok){ const m=(r&&r.message)||(error&&error.message)||'تعذّر الحذف'; if(!handleSessionError(m)) Toast.error(m); return; }
+if(window._templates) delete window._templates[cgDeptId()];
+Toast.success('تم حذف النموذج'); loadTemplatesTree();
 }
 async function deleteCgRoleTemplate(jobRole) {
 if (!confirm(`حذف نموذج «${cgRoleArabic(jobRole)}»؟\n\nالتقييمات السابقة محفوظة بـ snapshot ولن تتأثّر. التقييمات الجديدة لهذا المسمى ستستخدم النموذج الافتراضي.`)) return;
