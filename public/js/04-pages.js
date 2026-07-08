@@ -740,7 +740,7 @@ const bottom = [];
 if (role==='admin' || role==='quality_officer') bottom.push(['quality-report','📊','تقرير الجودة']);
 if (role==='admin' || role==='quality_officer') bottom.push(['departments','⚙️','الأقسام والنماذج']);
 bottom.push(['employees','👥','إدارة الموظفين']);
-if (role==='admin') bottom.push(['users','🛡️','إدارة المستخدمين']);
+if (role==='admin' || role==='quality_officer') bottom.push(['users','🛡️','إدارة المستخدمين']);
 if (role==='admin' || role==='quality_officer') bottom.push(['audit-log','📜','سجل العمليات']);
 bottom.push(['profile','👤','حسابي']);
 html += `<div style="margin:12px;border-top:1px solid rgba(255,255,255,0.12)"></div>`;
@@ -1588,7 +1588,10 @@ return true;
 function renderUsersAdmin() {
 if (!Perms.can('manage_users') && currentUser.role !== 'quality_officer') return '<div class="alert alert-danger">غير مصرح</div>';
 const users = DB.data.users.filter(u => u.role !== 'employee');
-const rows = users.map(u => `<tr>
+const isQuality = currentUser.role === 'quality_officer';
+const rows = users.map(u => { const lock = isQuality && u.role === 'admin';
+const dis = lock ? `disabled title="لا يمكن تعديل حسابات الأدمن" style="opacity:.5;cursor:not-allowed"` : '';
+return `<tr>
 <td>${u.id}</td>
 <td><div style="display:flex;align-items:center;gap:10px"><div class="user-avatar">${Utils.getInitials(u.full_name)}</div>${Utils.escape(u.full_name)}</div></td>
 <td>${Utils.escape(u.email||'-')}</td>
@@ -1597,11 +1600,11 @@ const rows = users.map(u => `<tr>
 <td>${u.is_active ? '<span class="badge badge-success">نشط</span>' : '<span class="badge badge-danger">معطّل</span>'}</td>
 <td>${Utils.formatDate(u.created_at)}</td>
 <td>
-<button class="btn btn-sm btn-warning" data-edit-user="${u.id}">تعديل</button>
-<button class="btn btn-sm btn-info" data-reset-pw="${u.id}" title="إعادة تعيين كلمة المرور">🔑</button>
-${u.is_active ? `<button class="btn btn-sm btn-danger" data-deact-user="${u.id}">تعطيل</button>` : ''}
+<button class="btn btn-sm btn-warning" ${lock?dis:`data-edit-user="${u.id}"`}>تعديل</button>
+<button class="btn btn-sm btn-info" ${lock?dis:`data-reset-pw="${u.id}" title="إعادة تعيين كلمة المرور"`}>🔑</button>
+${u.is_active ? `<button class="btn btn-sm btn-danger" ${lock?dis:`data-deact-user="${u.id}"`}>تعطيل</button>` : ''}
 </td>
-</tr>`).join('');
+</tr>`; }).join('');
 
 const counts = {
 admin: users.filter(u => u.role === 'admin').length,
@@ -1643,6 +1646,7 @@ if (!isCg) { const jr = document.getElementById('usr-jobrole'); if (jr) jr.value
 }
 async function showUserModal(editId=null) {
 const ed = editId ? DB.getUser(editId) : null;
+if (currentUser.role==='quality_officer' && ed && ed.role==='admin') { Toast.error('لا يمكن لموظف الجودة تعديل حسابات الأدمن'); return; }
 const depts = (await loadDepartments()).filter(d => d.is_active);
 const deptOptsU = depts.map(d => `<option value="${d.id}" ${ed && ed.department_id === d.id ? 'selected' : ''}>${Utils.escape(d.name)}</option>`).join('');
 const cgJobOptsU = JOB_ROLES.filter(([v]) => v !== 'quality_agent').map(([v,l]) => `<option value="${v}" ${ed && ed.job_role === v ? 'selected' : ''}>${l}</option>`).join('');
@@ -1666,8 +1670,8 @@ const body = `<form id="usr-form">
 <option value="employee" ${ed&&ed.role==='employee'?'selected':''}>👤 موظف</option>
 <option value="supervisor" ${ed&&ed.role==='supervisor'?'selected':''}>👨‍💼 مشرف</option>
 <option value="quality_officer" ${ed&&ed.role==='quality_officer'?'selected':''}>⚖️ موظف الجودة</option>
-<option value="admin" ${ed&&ed.role==='admin'?'selected':''}>👑 مدير النظام</option>
-</select></div>
+${currentUser.role==='admin' ? `<option value="admin" ${ed&&ed.role==='admin'?'selected':''}>👑 مدير النظام</option>` : ''}
+</select>${currentUser.role==='quality_officer'?'<div style="font-size:11px;color:var(--muted);margin-top:4px">موظف الجودة لا يمكنه إنشاء حساب مدير</div>':''}</div>
 <div class="form-group" id="usr-num-wrap" style="${(ed && ed.role==='employee') || !ed ? '' : 'display:none'}">
 <label class="form-label">الرقم الوظيفي ${(!ed)?'(للموظف)':''}</label>
 <input class="form-control" id="usr-num" value="${ed?Utils.escape(ed.employee_number||''):''}" placeholder="EMP001">
