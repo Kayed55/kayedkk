@@ -538,7 +538,7 @@ return;
 
 // نجاح
 const u = result.user_data || {};
-currentUser = { id:u.id, username:u.username, full_name:u.full_name, role:u.role, email:u.email };
+currentUser = { id:u.id, username:u.username, full_name:u.full_name, role:u.role, email:u.email, department_id:(u.department_id!=null?u.department_id:null), job_role:(u.job_role||null), supervisor_id:(u.supervisor_id!=null?u.supervisor_id:null) };
 localStorage.setItem('qe_current_user', JSON.stringify(currentUser));
 // المرحلة 1 (أمان): حفظ رمز الجلسة من الخادم — يُستخدم للتفويض في المرحلة 2.
 if (result.session_token) {
@@ -687,10 +687,16 @@ window._openSections = window._openSections || {};
 function buildSidebarMenu() {
 const role = currentUser.role;
 const mId = mahzamDeptId(), cId = cgDeptId();
+// مصدر القسم الموثوق: سجل المستخدم المُزامَن (users) ثم currentUser — لأن currentUser قد يُستعاد بلا department_id
+const _me = (typeof DB !== 'undefined' && DB.getUser) ? DB.getUser(currentUser.id) : null;
+const myDeptId = (_me && _me.department_id != null) ? _me.department_id : (currentUser.department_id != null ? currentUser.department_id : null);
+if (myDeptId != null) currentUser.department_id = myDeptId; // ثبّته لبقية الجلسة (بطاقة الأسبوع...)
 // قائمة مبسّطة للموظف
 if (role === 'employee') {
 const it = (page,icon,label) => `<div class="menu-item ${currentPage===page?'active':''}" data-nav="${page}"><span>${icon}</span><span>${label}</span></div>`;
-const cgUp = isCreativeGeneDept(currentUser.department_id) ? it('cg-upload','📤','رفع تقييم') : '';
+// "رفع التقييم" لموظفي Creative Gene فقط (على أساس department_id لا الاسم)
+const isCgEmp = (myDeptId != null) && (myDeptId === cId || isCreativeGeneDept(myDeptId));
+const cgUp = isCgEmp ? it('cg-upload','📤','رفع تقييم') : '';
 return it('dashboard','🏠','الرئيسية') + cgUp + it('evaluations','📋','تقييماتي') + it('objections','⚖️','اعتراضاتي') + it('profile','👤','حسابي');
 }
 const sections = [
