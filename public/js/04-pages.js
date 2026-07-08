@@ -979,27 +979,115 @@ const quickActions = !isEmp ? `
 </div>
 </div>` : '';
 
+const quickAction = dashQuickAction();
 return `
 ${welcomeBanner}
+${quickAction}
 ${isEmp ? '<div id="emp-cg-week"></div>' : ''}
 ${currentUser.role === 'admin' ? cgNoSupervisorCardHTML() : ''}
-${cards}
-${quickActions}
-${!isEmp ? renderQualityKPIs() : ''}
-<div class="grid grid-2">
-<div class="card"><div class="card-header"><div class="card-title">📈 الأداء الشهري (آخر 6 أشهر)</div></div><div class="card-body"><div class="chart-container"><canvas id="trend-chart"></canvas></div></div></div>
-<div class="card"><div class="card-header"><div class="card-title">🎯 توزيع التقديرات</div></div><div class="card-body"><div class="chart-container"><canvas id="grades-chart"></canvas></div></div></div>
-</div>
-${performers}
-<div class="card" style="margin-top:20px">
-<div class="card-header"><div class="card-title">📋 آخر التقييمات</div></div>
-<div class="card-body" style="padding:0">
-<table class="table">
-<thead><tr><th>الموظف</th><th>المقيِّم</th><th>التاريخ</th><th>النتيجة</th></tr></thead>
-<tbody>${recentRows}</tbody>
-</table>
-</div>
+<div id="dash-body"><div class="card"><div class="card-body" style="text-align:center;padding:44px"><div class="spinner"></div><div style="margin-top:12px;color:var(--muted)">جارٍ تحميل الإحصائيات…</div></div></div></div>`;
+}
+
+// زر سريع لأهم شاشة حسب الدور
+function dashQuickAction() {
+const role = currentUser.role;
+let target, label, icon, color;
+if (role === 'quality_officer') { target = 'cg-requests'; label = 'الطلبات المفتوحة'; icon = '📥'; color = '#7b1fa2'; }
+else if (role === 'supervisor') { target = 'cg-pending-approval'; label = 'بانتظار الاعتماد'; icon = '✅'; color = '#f59e0b'; }
+else if (role === 'employee') { if (!isCreativeGeneDept(currentUser.department_id)) return ''; target = 'cg-upload'; label = 'رفع تقييم جديد'; icon = '📤'; color = '#7b1fa2'; }
+else { target = 'cg-requests'; label = 'طلبات التقييم'; icon = '📥'; color = '#06579F'; }
+return `<div style="margin-bottom:20px"><button class="btn" style="background:${color};color:#fff;padding:12px 22px;font-size:15px;box-shadow:0 4px 14px ${color}44" data-nav="${target}">${icon} ${label} ←</button></div>`;
+}
+
+// ألوان القسمين
+const DASH_SECTIONS = { mahzam: { name:'محزم', icon:'📊', color:'#1976d2', soft:'#e3f2fd' }, cg: { name:'Creative Gene', icon:'🎨', color:'#7b1fa2', soft:'#f3e5f5' } };
+function timeAgo(iso) {
+try { const d = new Date(iso), now = new Date(), sec = Math.floor((now - d)/1000);
+if (sec < 60) return 'الآن'; const min = Math.floor(sec/60); if (min < 60) return `قبل ${min} دقيقة`;
+const hr = Math.floor(min/60); if (hr < 24) return `قبل ${hr} ساعة`; const day = Math.floor(hr/24);
+if (day === 1) return 'أمس'; if (day < 7) return `قبل ${day} أيام`; return d.toLocaleDateString('ar-SA'); } catch(_) { return ''; }
+}
+function activityIcon(action) {
+const a = action || '';
+if (a.indexOf('create_eval') !== -1 || a === 'create_evaluation') return ['📝','#3b82f6'];
+if (a.indexOf('objection') !== -1) return ['⚖️','#f59e0b'];
+if (a.indexOf('take_action') !== -1 || a.indexOf('approve') !== -1) return ['✅','#22c55e'];
+if (a.indexOf('delete') !== -1) return ['🗑️','#ef4444'];
+if (a.indexOf('template') !== -1) return ['📋','#8b5cf6'];
+if (a.indexOf('upload') !== -1) return ['📤','#0ea5e9'];
+if (a.indexOf('login') !== -1) return ['🔑','#64748b'];
+return ['•','#94a3b8'];
+}
+function statCard(icon, value, label, color, sub, navTo) {
+return `<div class="card" ${navTo?`data-nav="${navTo}" style="cursor:pointer;border-top:3px solid ${color}"`:`style="border-top:3px solid ${color}"`}>
+<div class="card-body" style="padding:16px">
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><div style="font-size:22px">${icon}</div><div style="font-size:13px;color:var(--muted);font-weight:600">${label}</div></div>
+<div style="font-size:30px;font-weight:800;color:${color};line-height:1.1">${value}</div>
+${sub?`<div style="font-size:12px;color:var(--muted);margin-top:4px">${sub}</div>`:''}
+</div></div>`;
+}
+function sectionBlockHTML(key, s) {
+const cfg = DASH_SECTIONS[key];
+const passPct = s.total ? Math.round(s.pass/s.total*100) : 0;
+const failPct = s.total ? Math.round(s.fail/s.total*100) : 0;
+const cards = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
+${statCard('📋', s.total, 'إجمالي التقييمات', cfg.color, `هذا الشهر: ${s.month}`)}
+${statCard('✅', s.pass, 'ناجح', '#16a34a', `${passPct}% من الإجمالي`)}
+${statCard('❌', s.fail, 'راسب', '#dc2626', `${failPct}% من الإجمالي`)}
+${statCard('⭐', s.avg + '%', 'متوسط الدرجات', '#0ea5e9', '')}
+${statCard('⚖️', s.objections_open + ' / ' + s.objections_closed, 'اعتراضات (مفتوح/مغلق)', '#f59e0b', '')}
+${statCard('👥', s.active_employees, 'الموظفون النشطون', '#8b5cf6', '')}
+${key==='cg' ? statCard('⏳', s.pending, 'قيد الانتظار', '#eab308', 'بانتظار التقييم/الاعتماد', 'cg-requests') : ''}
 </div>`;
+const notes = (s.notes && s.notes.length) ? s.notes.map((n,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;${i<s.notes.length-1?'border-bottom:1px dashed var(--border)':''}"><span style="font-size:13px">${i+1}. ${Utils.escape(n.note||'—')}</span><span class="badge" style="background:${cfg.soft};color:${cfg.color}">${n.count}×</span></div>`).join('') : '<div style="color:var(--muted);font-size:13px;padding:10px 0">لا توجد ملاحظات كافية حالياً.</div>';
+return `<div class="card" style="border-top:4px solid ${cfg.color};margin-bottom:20px">
+<div class="card-header" style="background:linear-gradient(to left,${cfg.soft},transparent)"><div class="card-title" style="font-size:18px">${cfg.icon} إحصائيات ${cfg.name}</div></div>
+<div class="card-body">
+${cards}
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:18px">
+<div><div style="font-weight:700;font-size:13px;margin-bottom:6px;color:var(--muted)">📈 متوسط الدرجات (آخر 6 أسابيع)</div><div style="height:200px"><canvas id="chart-trend-${key}"></canvas></div></div>
+<div><div style="font-weight:700;font-size:13px;margin-bottom:6px;color:var(--muted)">🎯 الناجحون مقابل الراسبين</div><div style="height:200px"><canvas id="chart-donut-${key}"></canvas></div></div>
+<div><div style="font-weight:700;font-size:13px;margin-bottom:6px;color:var(--muted)">🏆 أعلى 5 موظفين (عدد التقييمات)</div><div style="height:200px"><canvas id="chart-bar-${key}"></canvas></div></div>
+</div>
+<div style="margin-top:18px"><div style="font-weight:700;font-size:14px;margin-bottom:8px">⚠️ أبرز الملاحظات المتكررة</div>${notes}</div>
+</div></div>`;
+}
+function buildSectionCharts(key, s) {
+const cfg = DASH_SECTIONS[key];
+const tc = document.getElementById('chart-trend-'+key);
+if (tc) charts.push(new Chart(tc, { type:'line', data:{ labels:(s.trend||[]).map(t=>t.week), datasets:[{ label:'المتوسط', data:(s.trend||[]).map(t=>t.avg), borderColor:cfg.color, backgroundColor:cfg.color+'22', tension:0.35, fill:true }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true, max:100 } } } }));
+const dc = document.getElementById('chart-donut-'+key);
+if (dc) charts.push(new Chart(dc, { type:'doughnut', data:{ labels:['ناجح','راسب'], datasets:[{ data:[s.pass, s.fail], backgroundColor:['#16a34a','#dc2626'] }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}} } }));
+const bc = document.getElementById('chart-bar-'+key);
+if (bc) charts.push(new Chart(bc, { type:'bar', data:{ labels:(s.top||[]).map(t=>t.name), datasets:[{ label:'تقييمات', data:(s.top||[]).map(t=>t.count), backgroundColor:cfg.color+'cc' }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true, ticks:{ precision:0 } } } } }));
+}
+let _dashCache = null, _dashCacheAt = 0;
+async function loadDashboard(force) {
+const host = document.getElementById('dash-body');
+if (!host) return;
+let j = null;
+if (!force && _dashCache && (Date.now() - _dashCacheAt < 60000)) j = _dashCache;
+if (!j) {
+try {
+const { data, error } = await window.sb.rpc('get_dashboard_stats', { p_session_token: cgToken() });
+j = Array.isArray(data) ? data[0] : data;
+if (error || !j || !j.ok) { const m=(j&&j.message)||(error&&error.message)||'تعذّر تحميل الإحصائيات'; if(!handleSessionError(m)) host.innerHTML = `<div class="alert alert-danger">${Utils.escape(m)}</div>`; return; }
+_dashCache = j; _dashCacheAt = Date.now();
+} catch (e) { host.innerHTML = `<div class="alert alert-danger">${Utils.escape(e.message||'خطأ')}</div>`; return; }
+}
+const sections = j.sections || {};
+const order = ['mahzam','cg'].filter(k => sections[k]);
+let html = order.map(k => sectionBlockHTML(k, sections[k])).join('');
+if (!order.length) html += '<div class="alert alert-info">لا توجد إحصائيات متاحة لعرضها.</div>';
+// آخر النشاطات
+const rec = j.recent || [];
+const recHtml = rec.length ? rec.map(a => { const [ic,col] = activityIcon(a.action); return `<div style="display:flex;gap:12px;padding:10px 0;border-bottom:1px dashed var(--border)">
+<div style="width:34px;height:34px;border-radius:50%;background:${col}22;color:${col};display:flex;align-items:center;justify-content:center;flex-shrink:0">${ic}</div>
+<div style="flex:1;min-width:0"><div style="font-size:13px">${Utils.escape((a.details||a.action||'').slice(0,90))}</div><div style="font-size:11px;color:var(--muted)">${Utils.escape(a.user_name||'')} · ${timeAgo(a.at)}</div></div>
+</div>`; }).join('') : '<div style="color:var(--muted);padding:12px">لا نشاطات بعد.</div>';
+html += `<div class="card"><div class="card-header"><div class="card-title">🕒 آخر النشاطات</div></div><div class="card-body">${recHtml}</div></div>`;
+host.innerHTML = html;
+order.forEach(k => buildSectionCharts(k, sections[k]));
 }
 
 // ============================================
@@ -6407,7 +6495,12 @@ document.querySelectorAll('[data-nav-newobj]').forEach(el => {
 el.addEventListener('click', e => { e.stopPropagation(); navigate('new-objection', { evaluation_id: parseInt(el.dataset.navNewobj) }); });
 });
 
-if (page === 'dashboard') { renderDashboardCharts(); if (currentUser.role === 'employee') loadEmployeeWeekCard(); }
+if (page === 'dashboard') {
+loadDashboard();
+if (currentUser.role === 'employee') loadEmployeeWeekCard();
+clearInterval(window._dashTimer);
+window._dashTimer = setInterval(() => { if (currentPage === 'dashboard') loadDashboard(true); else { clearInterval(window._dashTimer); } }, 60000);
+}
 if (page === 'reports') renderReportsCharts();
 if (page === 'departments' && (currentParams.tab || 'depts') === 'templates') loadTemplatesTree();
 if (page === 'cg-week') {
