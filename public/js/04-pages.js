@@ -1451,10 +1451,21 @@ return `
 </div>`;
 }
 
-function showUserModal(editId=null) {
+function onUserDeptChange() {
+const dv = parseInt((document.getElementById('usr-deptid')||{}).value);
+const wrap = document.getElementById('usr-jobrole-wrap');
+const isCg = dv === cgDeptId();
+if (wrap) wrap.style.display = isCg ? '' : 'none';
+if (!isCg) { const jr = document.getElementById('usr-jobrole'); if (jr) jr.value = ''; }
+}
+async function showUserModal(editId=null) {
 const ed = editId ? DB.getUser(editId) : null;
-const supervisors = DB.getSupervisors();
-const supOpts = supervisors.map(s => `<option value="${Utils.escape(s.full_name)}" ${ed && ed.supervisor_name===s.full_name?'selected':''}>${Utils.escape(s.full_name)} (${Utils.escape(s.email||'-')})</option>`).join('');
+const depts = (await loadDepartments()).filter(d => d.is_active);
+const deptOptsU = depts.map(d => `<option value="${d.id}" ${ed && ed.department_id === d.id ? 'selected' : ''}>${Utils.escape(d.name)}</option>`).join('');
+const cgJobOptsU = JOB_ROLES.filter(([v]) => v !== 'quality_agent').map(([v,l]) => `<option value="${v}" ${ed && ed.job_role === v ? 'selected' : ''}>${l}</option>`).join('');
+const _cgIdU = cgDeptId();
+const supervisors = DB.data.users.filter(u => ['supervisor','admin'].includes(u.role) && u.is_active !== false);
+const supOpts = supervisors.map(s => `<option value="${Utils.escape(s.full_name)}" ${ed && ed.supervisor_name===s.full_name?'selected':''}>${Utils.escape(s.full_name)} (${Utils.escape(s.role==='admin'?'مدير':'مشرف')})</option>`).join('');
 
 const body = `<form id="usr-form">
 <div class="alert alert-info" style="margin-bottom:14px;font-size:13px">
@@ -1464,10 +1475,11 @@ const body = `<form id="usr-form">
 <div class="form-group"><label class="form-label">الاسم الكامل *</label><input class="form-control" id="usr-name" required value="${ed?Utils.escape(ed.full_name):''}"></div>
 <div class="form-group"><label class="form-label">📧 البريد الإلكتروني *</label><input type="email" class="form-control" id="usr-email" required value="${ed?Utils.escape(ed.email||''):''}"></div>
 <div class="form-group"><label class="form-label">📱 رقم الجوال</label><input class="form-control" id="usr-phone" value="${ed?Utils.escape(ed.phone||''):''}"></div>
-<div class="form-group"><label class="form-label">القسم/الإدارة</label><input class="form-control" id="usr-dept" value="${ed?Utils.escape(ed.department||''):'قسم الجودة'}"></div>
-<div class="form-group"><label class="form-label">المسمى الوظيفي</label><input class="form-control" id="usr-pos" value="${ed?Utils.escape(ed.position||''):''}"></div>
+<div class="form-group"><label class="form-label">القسم <span style="font-size:11px;color:var(--muted)">(إلزامي لغير المدير/الجودة)</span></label><select class="form-control" id="usr-deptid" onchange="onUserDeptChange()"><option value="">-- بلا قسم --</option>${deptOptsU}</select></div>
+<div class="form-group" id="usr-jobrole-wrap" style="${ed && ed.department_id === _cgIdU ? '' : 'display:none'}"><label class="form-label">المسمى الوظيفي التقني (الدور) *</label><select class="form-control" id="usr-jobrole"><option value="">-- اختر --</option>${cgJobOptsU}</select></div>
+<div class="form-group"><label class="form-label">الوصف الوظيفي</label><input class="form-control" id="usr-pos" value="${ed?Utils.escape(ed.position||''):''}"></div>
 <div class="form-group"><label class="form-label">نوع الحساب *</label>
-<select class="form-control" id="usr-role" ${ed?'disabled':''} onchange="document.getElementById('usr-sup-wrap').style.display = this.value==='employee'?'block':'none'; document.getElementById('usr-num-wrap').style.display = this.value==='employee'?'block':'none'">
+<select class="form-control" id="usr-role" ${ed?'disabled':''} onchange="onUserDeptChange(); document.getElementById('usr-sup-wrap').style.display = this.value==='employee'?'block':'none'; document.getElementById('usr-num-wrap').style.display = this.value==='employee'?'block':'none'">
 <option value="employee" ${ed&&ed.role==='employee'?'selected':''}>👤 موظف</option>
 <option value="supervisor" ${ed&&ed.role==='supervisor'?'selected':''}>👨‍💼 مشرف</option>
 <option value="quality_officer" ${ed&&ed.role==='quality_officer'?'selected':''}>⚖️ موظف الجودة</option>
@@ -1498,16 +1510,22 @@ await submitWithFeedback(btn, 'جاري الحفظ...', null, async () => {
 const full_name = document.getElementById('usr-name').value.trim();
 const email = document.getElementById('usr-email').value.trim();
 const phone = document.getElementById('usr-phone').value.trim();
-const department = document.getElementById('usr-dept').value.trim();
 const position = document.getElementById('usr-pos').value.trim();
-const role = document.getElementById('usr-role').value;
+const role = ed ? ed.role : document.getElementById('usr-role').value;
+const department_id = document.getElementById('usr-deptid').value ? parseInt(document.getElementById('usr-deptid').value) : null;
+const _deptObjU = (window._departments||[]).find(d => d.id === department_id);
+const department = _deptObjU ? _deptObjU.name : '';
+const _isCgU = isCreativeGeneDept(department_id);
+const job_role = _isCgU ? (document.getElementById('usr-jobrole').value || null) : null;
 const employee_number = (document.getElementById('usr-num')||{}).value || '';
 const supervisor_name = (document.getElementById('usr-sup')||{}).value || '';
-const supObj = supervisor_name ? DB.getSupervisors().find(s => s.full_name === supervisor_name) : null;
+const supObj = supervisor_name ? DB.data.users.find(s => s.full_name === supervisor_name && ['supervisor','admin'].includes(s.role)) : null;
 const supervisor_id = supObj ? supObj.id : null;
 if (!full_name || !email) { Toast.error('يرجى تعبئة الحقول المطلوبة'); return false; }
 if (!Utils.validateEmail(email)) { Toast.error('بريد إلكتروني غير صالح'); return false; }
-if (role === 'employee' && !supervisor_name) { Toast.error('يجب اختيار المشرف للموظف'); return false; }
+if (['supervisor','manager','employee'].includes(role) && !department_id) { Toast.error('القسم إلزامي لدور المشرف/الموظف'); return false; }
+if (_isCgU && !job_role) { Toast.error('المسمى الوظيفي إلزامي لموظفي Creative Gene'); return false; }
+if (role === 'employee' && !supervisor_name && !_isCgU) { Toast.error('يجب اختيار المشرف للموظف'); return false; }
 
 const token = (window.getSessionToken ? window.getSessionToken() : null);
 if (ed) {
@@ -1517,7 +1535,8 @@ const { data, error } = await window.sb.rpc('admin_update_user', {
 p_session_token: token, p_user_id: editId,
 p_full_name: full_name, p_email: email, p_phone: phone, p_department: department, p_position: position,
 p_employee_number: ed.role === 'employee' ? employee_number : null,
-p_supervisor_id: ed.role === 'employee' ? supervisor_id : null
+p_supervisor_id: supervisor_id,
+p_department_id: department_id, p_job_role: job_role
 });
 const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر الحفظ'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
@@ -1540,7 +1559,8 @@ const { data, error } = await window.sb.rpc('admin_create_user', {
 p_session_token: token, p_full_name: full_name, p_email: email, p_username: username, p_role: role,
 p_department: department, p_position: position, p_phone: phone,
 p_employee_number: role === 'employee' ? employee_number : null,
-p_supervisor_id: role === 'employee' ? supervisor_id : null
+p_supervisor_id: supervisor_id,
+p_department_id: department_id, p_job_role: job_role
 });
 const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر إنشاء المستخدم'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
@@ -5554,9 +5574,10 @@ return true;
 
 // ---- تخصيص نموذج Creative Gene ----
 function renderSettingsCg() {
-const roleOpts = JOB_ROLES.map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
+const _r = currentParams.role || '';
+const roleOpts = JOB_ROLES.map(([v,l]) => `<option value="${v}" ${v===_r?'selected':''}>${l}</option>`).join('');
 return `<div class="card"><div class="card-body"><div class="form-group" style="margin:0"><label class="form-label">النموذج (حسب المسمى الوظيفي)</label>
-<select class="form-control" id="cg-role-select" onchange="loadCgSettings(this.value)" style="max-width:320px"><option value="">🟣 النموذج الافتراضي</option>${roleOpts}</select></div></div></div>
+<select class="form-control" id="cg-role-select" onchange="loadCgSettings(this.value)" style="max-width:320px"><option value="" ${_r?'':'selected'}>🟣 النموذج الافتراضي</option>${roleOpts}</select></div></div></div>
 <div id="cg-settings-body"><div class="card"><div class="card-body">⏳ جارٍ تحميل النموذج…</div></div></div>`;
 }
 async function loadCgSettings(role) {
@@ -5678,7 +5699,7 @@ function attachSettingsHandlers(tab) {
 document.querySelectorAll('[data-nav-settings]').forEach(b => {
 b.addEventListener('click', () => navigate('settings', { tab: b.dataset.navSettings }));
 });
-if (tab === 'cg') { loadCgSettings(); return; }
+if (tab === 'cg') { loadCgSettings(currentParams.role || ''); return; }
 
 const reset = document.getElementById('reset-criteria-btn');
 if (reset) reset.addEventListener('click', async (e) => {
@@ -5811,14 +5832,17 @@ const header = `<div class="page-header"><div><div class="page-title">🗂️ ا
 ${isAdmin && tab==='depts' ? '<button class="btn btn-primary" onclick="departmentModal()">➕ إضافة قسم</button>' : ''}</div>`;
 return header + tabsBar + (tab === 'templates' ? renderTemplatesTab(deptId) : renderDeptsTab(isAdmin));
 }
+function tmplTypeLabel(t) { return t==='task_based_weekly'?'📅 أسبوعي':(t==='section_based'?'📋 أقسام (بنود)':(t==='pdf_based_weekly'?'📄 PDF (معايير)':'—')); }
 function renderDeptsTab(isAdmin) {
 const rows = window._departments.map(d => `<tr>
-<td>${Utils.escape(d.name)}</td><td>${Utils.escape(d.code||'-')}</td><td>${d.employee_count} موظف</td>
-<td>${d.template_type==='task_based_weekly'?'📅 أسبوعي':(d.template_type==='section_based'?'📋 أقسام':'—')}</td>
+<td>${deptBadgeHTML(d)}</td><td><code>${Utils.escape(d.code||'-')}</code></td>
+<td>${tmplTypeLabel(d.template_type)}</td>
+<td style="text-align:center">${d.employee_count} موظف</td>
+<td style="text-align:center">${d.templates_count!=null?d.templates_count:'—'} نموذج</td>
 <td>${d.is_active?'<span class="badge badge-success">نشط</span>':'<span class="badge badge-secondary">معطّل</span>'}</td>
 <td>${isAdmin?`<button class="btn btn-sm btn-warning" onclick="departmentModal(${d.id})">تعديل</button> <button class="btn btn-sm ${d.is_active?'btn-danger':'btn-success'}" onclick="setDeptActive(${d.id},${!d.is_active})">${d.is_active?'تعطيل':'تفعيل'}</button>`:'—'}</td>
-</tr>`).join('') || '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--muted)">لا توجد أقسام</td></tr>';
-return `<div class="card"><table class="table"><thead><tr><th>القسم</th><th>الكود</th><th>الموظفون</th><th>النموذج</th><th>الحالة</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+</tr>`).join('') || '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">لا توجد أقسام</td></tr>';
+return `<div class="card"><div style="overflow-x:auto"><table class="table"><thead><tr><th>القسم</th><th>الكود</th><th>نوع النموذج</th><th style="text-align:center">الموظفون</th><th style="text-align:center">النماذج</th><th>الحالة</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 function departmentModal(id) {
 const d = id ? window._departments.find(x => x.id === id) : null;
@@ -5851,43 +5875,42 @@ Toast.success('تم'); await loadDepartments(true); navigate('departments',{tab:
 }).catch(e => Toast.error(e.message));
 }
 function renderTemplatesTab(deptId) {
-const opts = window._departments.map(d => `<option value="${d.id}" ${deptId==d.id?'selected':''}>${Utils.escape(d.name)} (${d.template_type==='task_based_weekly'?'أسبوعي':'أقسام'})</option>`).join('');
-const selector = `<div class="card"><div class="card-body"><div class="form-group"><label class="form-label">اختر القسم</label><select class="form-control" onchange="navigate('departments',{tab:'templates',dept:parseInt(this.value)||null})"><option value="">-- اختر --</option>${opts}</select></div></div>`;
-if (!deptId) return selector + '<div class="alert alert-info">اختر قسماً لعرض/تعديل نموذج تقييمه.</div>';
-const dept = window._departments.find(d => d.id == deptId);
-window._templates = window._templates || {};
-if (!window._templates[deptId]) {
-const tok = window.getSessionToken ? getSessionToken() : null;
-window.sb.rpc('get_template_for_department', { p_session_token: tok, p_department_id: parseInt(deptId) }).then(({data,error}) => {
-window._templates[deptId] = (Array.isArray(data)?data[0]:data) || { ok:false };
-if (currentPage==='departments' && currentParams && currentParams.dept==deptId) navigate('departments',{tab:'templates',dept:deptId});
-}).catch(()=>{});
-return selector + '<div class="card"><div class="card-body">⏳ جارٍ تحميل النموذج…</div></div>';
+return `<div id="tmpl-tree"><div class="card"><div class="card-body">⏳ جارٍ تحميل النماذج…</div></div></div>`;
 }
-const t = window._templates[deptId];
-if (!t.ok) return selector + '<div class="alert alert-danger">تعذّر تحميل النموذج</div>';
-if (!t.exists) return selector + '<div class="alert alert-info">لا يوجد نموذج لهذا القسم بعد.</div>';
-if (t.template_type === 'section_based') {
-const secs = (t.template.sections||[]).length;
-return selector + `<div class="card"><div class="card-body"><h3 style="font-size:16px">📋 نموذج بنود — ${dept?Utils.escape(dept.name):''}</h3><p style="color:var(--muted)">${secs} أقسام. تُعدَّل تفاصيل الأقسام/البنود من <a href="#" onclick="navigate('settings',{tab:'form'});return false;">صفحة الإعدادات</a>.</p></div></div>`;
-}
-if (t.template_type === 'pdf_based_weekly') {
-const nc = (t.template.criteria||[]).length;
-return selector + `<div class="card"><div class="card-body"><h3 style="font-size:16px">🎨 نموذج Creative Gene (PDF) — ${dept?Utils.escape(dept.name):''}</h3><p style="color:var(--muted)">${nc} معايير + نماذج لكل مسمى وظيفي. يُعدَّل من <a href="#" onclick="navigate('settings',{tab:'cg'});return false;">تخصيص نموذج Creative Gene</a> في الإعدادات.</p></div></div>`;
-}
-// task_based: محرّر الأهداف
-const tj = t.template, roles = tj.role_kpis || {};
-let inner = `<h3 style="font-size:16px">📅 نموذج أسبوعي — أهداف المؤشرات (${dept?Utils.escape(dept.name):''})</h3>
-<p style="color:var(--muted);font-size:13px">حدّد هدف كل مؤشر عددي: النسبة = القيمة÷الهدف×100 (المؤشرات "أقل أفضل" تُعكس). النِّسب المئوية بلا هدف.</p>`;
-Object.keys(roles).forEach(role => {
-inner += `<h4 style="margin:14px 0 6px;color:var(--primary)">${ROLE_NAMES[role]||role}</h4>`;
-(roles[role]||[]).forEach(k => {
-if (k.type === 'count') inner += `<div class="form-group"><label class="form-label">${Utils.escape(k.name)} ${k.lower_is_better?'<span style="color:var(--warning);font-size:11px">(أقل أفضل)</span>':''}</label><input type="number" min="0" class="form-control" data-tgt="${role}|${k.id}" value="${k.target!=null?k.target:''}" placeholder="الهدف"></div>`;
-else inner += `<div style="font-size:12px;color:var(--muted);margin-bottom:6px">• ${Utils.escape(k.name)}: نسبة مئوية (0-100)</div>`;
+function cgRoleArabic(jr) { return jr ? ((JOB_ROLES.find(x => x[0] === jr)||[])[1] || jr) : 'النموذج الافتراضي'; }
+async function loadTemplatesTree() {
+const host = document.getElementById('tmpl-tree'); if (!host) return;
+await loadDepartments();
+let tmpls = [];
+try { const { data } = await window.sb.from('evaluation_templates').select('id,department_id,job_role,template_type,version,is_active').eq('is_active', true); tmpls = data || []; } catch(_){}
+const byDept = {}; tmpls.forEach(t => { (byDept[t.department_id] = byDept[t.department_id]||[]).push(t); });
+const isAdmin = currentUser.role === 'admin';
+let html = '';
+(window._departments||[]).forEach(d => {
+const isCg = d.template_type === 'pdf_based_weekly';
+const list = (byDept[d.id]||[]).sort((a,b) => (a.job_role?1:0)-(b.job_role?1:0) || String(a.job_role||'').localeCompare(String(b.job_role||'')));
+const editTarget = isCg ? "navigate('settings',{tab:'cg'})" : "navigate('settings',{tab:'form'})";
+const items = list.map(t => {
+const delBtn = (isCg && t.job_role) ? ` <button class="btn btn-sm btn-danger" onclick="deleteCgRoleTemplate('${t.job_role}')">حذف</button>` : '';
+const editBtn = isCg ? `navigate('settings',{tab:'cg',role:'${t.job_role||''}'})` : editTarget;
+return `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
+<div>📄 <strong>${t.job_role?'نموذج '+Utils.escape(cgRoleArabic(t.job_role)):'النموذج الافتراضي'}</strong> <span style="color:var(--muted);font-size:12px">${t.job_role?'('+Utils.escape(t.job_role)+') · ':''}v${t.version}</span></div>
+<div><button class="btn btn-sm btn-warning" onclick="${editBtn}">تعديل</button>${delBtn}</div>
+</div>`; }).join('') || '<div style="padding:14px;color:var(--muted)">لا نماذج</div>';
+html += `<div class="card" style="margin-bottom:16px;border-top:4px solid ${isCg?'#7b1fa2':'#1976d2'}">
+<div class="card-header"><div class="card-title">${isCg?'🎨':'📊'} ${Utils.escape(d.name)} <span style="font-size:12px;color:var(--muted);font-weight:400">${tmplTypeLabel(d.template_type)} · ${list.length} نموذج</span></div></div>
+<div class="card-body" style="padding:0">${items}</div>
+${isCg ? `<div style="padding:12px 14px;border-top:1px solid var(--border)"><button class="btn btn-secondary btn-sm" onclick="navigate('settings',{tab:'cg'})">➕ إضافة/تعديل نموذج لمسمى</button></div>` : ''}
+</div>`;
 });
-});
-inner += `<button class="btn btn-primary" onclick="saveTaskTargets(${deptId})">💾 حفظ الأهداف</button>`;
-return selector + `<div class="card"><div class="card-body">${inner}</div></div>`;
+host.innerHTML = html || '<div class="alert alert-info">لا توجد أقسام.</div>';
+}
+async function deleteCgRoleTemplate(jobRole) {
+if (!confirm(`حذف نموذج «${cgRoleArabic(jobRole)}»؟\n\nالتقييمات السابقة محفوظة بـ snapshot ولن تتأثّر. التقييمات الجديدة لهذا المسمى ستستخدم النموذج الافتراضي.`)) return;
+const { data, error } = await window.sb.rpc('delete_evaluation_template', { p_session_token: cgToken(), p_department_id: cgDeptId(), p_job_role: jobRole });
+const r = Array.isArray(data)?data[0]:data;
+if (error || !r || !(r.ok===true || r===true)) { const m=(r&&r.message)||(error&&error.message)||'تعذّر الحذف'; if(!handleSessionError(m)) Toast.error(m); return; }
+Toast.success('تم حذف النموذج'); loadTemplatesTree();
 }
 async function saveTaskTargets(deptId) {
 const t = window._templates[deptId];
@@ -5935,6 +5958,7 @@ el.addEventListener('click', e => { e.stopPropagation(); navigate('new-objection
 
 if (page === 'dashboard') { renderDashboardCharts(); if (currentUser.role === 'employee') loadEmployeeWeekCard(); }
 if (page === 'reports') renderReportsCharts();
+if (page === 'departments' && (currentParams.tab || 'depts') === 'templates') loadTemplatesTree();
 if (page === 'cg-week') {
 const ws = currentParams.week || weekStartSaturdayJS();
 loadCgWeekTable(ws);
