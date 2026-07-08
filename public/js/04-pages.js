@@ -5095,10 +5095,29 @@ ${u.must_change_password ? '<div class="alert alert-warning" style="margin-botto
 </form>
 </div>
 </div>
+<div class="card">
+<div class="card-header"><div class="card-title">🔔 إشعارات البريد الإلكتروني</div></div>
+<div class="card-body">
+<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+<div><div style="font-weight:600">استقبال الإشعارات عبر البريد</div><div style="font-size:12px;color:var(--muted)">إشعار عند اعتماد تقييمك + تذكير أسبوعي إن لم ترفع تقييمك.</div></div>
+<label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="pf-email-notif" ${u.email_notifications_enabled!==false?'checked':''} style="width:20px;height:20px"> <span id="pf-email-notif-lbl" style="font-weight:700;color:${u.email_notifications_enabled!==false?'var(--success)':'var(--muted)'}">${u.email_notifications_enabled!==false?'مُفعّلة':'معطّلة'}</span></label>
+</div>
+</div>
+</div>
 </div>`;
 }
 
 function attachProfileHandlers() {
+const enToggle = document.getElementById('pf-email-notif');
+if (enToggle) enToggle.addEventListener('change', async () => {
+const val = enToggle.checked;
+const { data, error } = await window.sb.rpc('set_email_notifications', { p_session_token: (window.getSessionToken?window.getSessionToken():null), p_enabled: val });
+const r = Array.isArray(data)?data[0]:data;
+if (error || !r || !r.ok) { const m=(r&&r.message)||(error&&error.message)||'تعذّر الحفظ'; if(!handleSessionError(m)) Toast.error(m); enToggle.checked=!val; return; }
+const lbl = document.getElementById('pf-email-notif-lbl'); if (lbl) { lbl.textContent = val?'مُفعّلة':'معطّلة'; lbl.style.color = val?'var(--success)':'var(--muted)'; }
+try { const me=DB.getUser(currentUser.id); if(me) me.email_notifications_enabled=val; } catch(_){}
+Toast.success(val?'تم تفعيل إشعارات البريد':'تم تعطيل إشعارات البريد');
+});
 const pf = document.getElementById('profile-form');
 if (pf) pf.addEventListener('submit', async e => {
 e.preventDefault();
