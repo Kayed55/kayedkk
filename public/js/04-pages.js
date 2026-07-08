@@ -24,7 +24,7 @@ let _navToken = 0;
 let _navDebounce = null;
 const _FORM_PAGES = ['new-evaluation', 'edit-evaluation'];
 // عناوين الأقسام — تُستخدم في الشريط العلوي وفي عنوان تبويب المتصفّح
-const PAGE_TITLES = {dashboard:'لوحة التحكم', employees:'إدارة الموظفين', 'view-employee':'بيانات الموظف', evaluations:'التقييمات', 'new-evaluation':'تقييم جديد', 'cg-week':'أسبوع Creative Gene', 'cg-objections':'اعتراضات Creative Gene', 'cg-my-team':'موظفوني — Creative Gene', 'cg-frequent-errors':'المعايير الأدنى أداءً — Creative Gene', 'cg-actions-report':'تقرير الإجراءات — Creative Gene', 'cg-upload':'رفع تقييم جديد', 'cg-requests':'طلبات التقييم — Creative Gene', 'cg-pending-approval':'بانتظار الاعتماد — Creative Gene', 'view-evaluation':'تفاصيل التقييم', 'edit-evaluation':'تعديل التقييم', reports:'التقارير', 'monthly-report':'التقرير الشهري', 'actions-report':'تقرير الإجراءات المتخذة', 'errors-report':'الأخطاء المتكررة الشهرية', objections:'الاعتراضات', 'view-objection':'تفاصيل الاعتراض', 'new-objection':'تقديم اعتراض', 'audit-log':'سجل العمليات', users:'إدارة المستخدمين', profile:'الملف الشخصي', notifications:'الإشعارات', settings:'الإعدادات', login:'تسجيل الدخول'};
+const PAGE_TITLES = {dashboard:'لوحة التحكم', employees:'إدارة الموظفين', 'view-employee':'بيانات الموظف', evaluations:'التقييمات', 'new-evaluation':'تقييم جديد', 'cg-week':'أسبوع Creative Gene', 'cg-objections':'اعتراضات Creative Gene', 'cg-my-team':'موظفوني — Creative Gene', 'cg-frequent-errors':'المعايير الأدنى أداءً — Creative Gene', 'cg-actions-report':'تقرير الإجراءات — Creative Gene', 'cg-upload':'رفع تقييم جديد', 'cg-requests':'طلبات التقييم — Creative Gene', 'cg-pending-approval':'بانتظار الاعتماد — Creative Gene', 'view-evaluation':'تفاصيل التقييم', 'edit-evaluation':'تعديل التقييم', reports:'التقارير', 'monthly-report':'التقرير الشهري', 'actions-report':'تقرير الإجراءات المتخذة', 'errors-report':'الأخطاء المتكررة الشهرية', objections:'الاعتراضات', 'view-objection':'تفاصيل الاعتراض', 'new-objection':'تقديم اعتراض', 'audit-log':'سجل العمليات', 'quality-report':'تقرير الجودة', users:'إدارة المستخدمين', profile:'الملف الشخصي', notifications:'الإشعارات', settings:'الإعدادات', login:'تسجيل الدخول'};
 
 function destroyCharts() {
 charts.forEach(c => { try { c.destroy(); } catch(e){} });
@@ -67,6 +67,7 @@ const pages = {
 'view-objection': () => renderViewObjection(params.id),
 'new-objection': () => renderNewObjection(params.evaluation_id),
 'audit-log': renderAuditLog,
+'quality-report': renderQualityReport,
 'users': renderUsersAdmin,
 'departments': () => renderDepartments(params.tab || 'depts', params.dept),
 'profile': renderProfile,
@@ -736,6 +737,7 @@ html += `<div class="menu-section" data-section="${sec.key}">
 </div>`;
 });
 const bottom = [];
+if (role==='admin' || role==='quality_officer') bottom.push(['quality-report','📊','تقرير الجودة']);
 if (role==='admin' || role==='quality_officer') bottom.push(['departments','⚙️','الأقسام والنماذج']);
 bottom.push(['employees','👥','إدارة الموظفين']);
 if (role==='admin') bottom.push(['users','🛡️','إدارة المستخدمين']);
@@ -1088,6 +1090,88 @@ const recHtml = rec.length ? rec.map(a => { const [ic,col] = activityIcon(a.acti
 html += `<div class="card"><div class="card-header"><div class="card-title">🕒 آخر النشاطات</div></div><div class="card-body">${recHtml}</div></div>`;
 host.innerHTML = html;
 order.forEach(k => buildSectionCharts(k, sections[k]));
+}
+
+// ============================================
+// م9 — تقرير الجودة
+// ============================================
+function renderQualityReport() {
+if (!(currentUser.role==='admin'||currentUser.role==='quality_officer')) return '<div class="alert alert-danger">غير مصرح</div>';
+const qos = (DB.getUsers({role:'quality_officer'})||[]);
+const qoOpts = qos.map(q=>`<option value="${q.id}">${Utils.escape(q.full_name)}</option>`).join('');
+return `<div class="page-header"><div><div class="page-title">📊 تقرير الجودة</div><div class="page-subtitle">الأداء العام لموظفي الجودة ونتائج التقييمات حسب القسم</div></div>
+<div style="display:flex;gap:8px"><button class="btn btn-danger btn-sm" id="qr-pdf">📄 PDF</button><button class="btn btn-success btn-sm" id="qr-xlsx">📊 Excel</button></div></div>
+<div class="card"><div class="card-body"><div style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
+<div class="form-group" style="margin:0;min-width:160px"><label class="form-label">الفترة</label><select class="form-control" id="qr-period"><option value="month">هذا الشهر</option><option value="last">الشهر الماضي</option><option value="3m" selected>آخر 3 أشهر</option><option value="custom">مخصّص</option></select></div>
+<div class="form-group qr-custom" style="margin:0;display:none"><label class="form-label">من</label><input type="date" class="form-control" id="qr-from"></div>
+<div class="form-group qr-custom" style="margin:0;display:none"><label class="form-label">إلى</label><input type="date" class="form-control" id="qr-to"></div>
+<div class="form-group" style="margin:0;min-width:150px"><label class="form-label">القسم</label><select class="form-control" id="qr-dept"><option value="">الكل</option><option value="2">محزم</option><option value="3">Creative Gene</option></select></div>
+<div class="form-group" style="margin:0;min-width:160px"><label class="form-label">موظف الجودة</label><select class="form-control" id="qr-qo"><option value="">الكل</option>${qoOpts}</select></div>
+<button class="btn btn-primary" id="qr-apply">تطبيق</button>
+</div></div></div>
+<div id="qr-body"><div class="card"><div class="card-body" style="text-align:center;padding:44px"><div class="spinner"></div></div></div></div>`;
+}
+function qrDateRange() {
+const p = (document.getElementById('qr-period')||{}).value || '3m';
+const today = new Date(); const iso = d => d.toISOString().substring(0,10);
+if (p==='custom') return { from: (document.getElementById('qr-from')||{}).value||null, to: (document.getElementById('qr-to')||{}).value||null };
+if (p==='month') return { from: iso(new Date(today.getFullYear(),today.getMonth(),1)), to: iso(today) };
+if (p==='last') return { from: iso(new Date(today.getFullYear(),today.getMonth()-1,1)), to: iso(new Date(today.getFullYear(),today.getMonth(),0)) };
+const f = new Date(today); f.setMonth(f.getMonth()-3); return { from: iso(f), to: iso(today) };
+}
+async function loadQualityReport() {
+const host = document.getElementById('qr-body'); if (!host) return;
+const { from, to } = qrDateRange();
+const dept = (document.getElementById('qr-dept')||{}).value || null;
+const qo = (document.getElementById('qr-qo')||{}).value || null;
+const { data, error } = await window.sb.rpc('get_quality_report', { p_session_token: cgToken(), p_from_date: from, p_to_date: to, p_department_id: dept?parseInt(dept):null, p_quality_user_id: qo?parseInt(qo):null });
+const j = Array.isArray(data)?data[0]:data;
+if (error || !j || !j.ok) { const m=(j&&j.message)||(error&&error.message)||'تعذّر تحميل التقرير'; if(!handleSessionError(m)) host.innerHTML=`<div class="alert alert-danger">${Utils.escape(m)}</div>`; return; }
+window._qrData = j;
+const ov = j.overall, ovColor = ov>=85?'#16a34a':ov>=70?'#f59e0b':'#dc2626';
+const secCards = (j.sections||[]).map(s=>{ const cfg=DASH_SECTIONS[s.key]||{color:'#475569',soft:'#eee',icon:''};
+return `<div class="card" style="border-top:4px solid ${cfg.color}"><div class="card-body">
+<div style="font-weight:800;font-size:16px;color:${cfg.color};margin-bottom:10px">${cfg.icon} ${Utils.escape(s.name)}</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:14px">
+<div>نسبة النجاح: <b style="color:${cfg.color}">${s.pass_rate}%</b></div><div>الإجمالي: <b>${s.total}</b></div>
+<div>ناجح: <b style="color:#16a34a">${s.pass}</b></div><div>راسب: <b style="color:#dc2626">${s.fail}</b></div>
+<div>المتوسط: <b>${s.avg}%</b></div><div>الاعتراضات: <b>${s.objections}</b></div>
+</div><div style="font-size:11px;color:var(--muted);margin-top:8px">درجة النجاح: ${s.pass_score}</div></div></div>`; }).join('');
+const off = (j.officers||[]);
+const offRows = off.length ? off.map(o=>`<tr><td>${Utils.escape(o.name)}</td><td style="text-align:center">${o.total}</td><td style="text-align:center">${o.mahzam}</td><td style="text-align:center">${o.cg}</td><td style="text-align:center">${o.objections}</td><td style="text-align:center">${o.accepted_rate}%</td><td style="text-align:center">${o.avg_score}%</td></tr>`).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:16px">لا بيانات</td></tr>';
+host.innerHTML = `
+<div class="card" style="border-top:5px solid ${ovColor};margin-bottom:18px;background:${ovColor}0d"><div class="card-body" style="text-align:center;padding:26px">
+<div style="font-size:14px;color:var(--muted);font-weight:600">النسبة العامة للجودة</div>
+<div style="font-size:56px;font-weight:800;color:${ovColor};line-height:1.1">${ov}%</div>
+<div style="font-size:12px;color:var(--muted)">متوسط نسب نجاح الأقسام · ${j.from} ← ${j.to}</div></div></div>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-bottom:18px">${secCards||'<div class="alert alert-info">لا أقسام</div>'}</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:18px">
+<div class="card"><div class="card-header"><div class="card-title">📊 مقارنة نسب النجاح</div></div><div class="card-body"><div style="height:220px"><canvas id="qr-bar"></canvas></div></div></div>
+<div class="card"><div class="card-header"><div class="card-title">📈 تطور النسبة العامة (6 أسابيع)</div></div><div class="card-body"><div style="height:220px"><canvas id="qr-line"></canvas></div></div></div></div>
+<div class="card"><div class="card-header"><div class="card-title">👤 أداء موظفي الجودة</div></div><div style="overflow-x:auto"><table class="table"><thead><tr><th>موظف الجودة</th><th style="text-align:center">التقييمات</th><th style="text-align:center">محزم</th><th style="text-align:center">CG</th><th style="text-align:center">اعتراضات</th><th style="text-align:center">% مقبولة</th><th style="text-align:center">متوسط الدرجات</th></tr></thead><tbody>${offRows}</tbody></table></div></div>`;
+const bar = document.getElementById('qr-bar');
+if (bar) charts.push(new Chart(bar, { type:'bar', data:{ labels:(j.sections||[]).map(s=>s.name), datasets:[{ label:'نسبة النجاح %', data:(j.sections||[]).map(s=>s.pass_rate), backgroundColor:(j.sections||[]).map(s=>(DASH_SECTIONS[s.key]||{}).color||'#475569') }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true, max:100 } } } }));
+const line = document.getElementById('qr-line');
+if (line) charts.push(new Chart(line, { type:'line', data:{ labels:(j.line||[]).map(p=>p.week), datasets:[{ label:'النسبة العامة %', data:(j.line||[]).map(p=>p.rate), borderColor:'#7b1fa2', backgroundColor:'#7b1fa222', tension:0.35, fill:true }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true, max:100 } } } }));
+}
+async function qrExportPDF() {
+const j = window._qrData; if (!j) { Toast.error('طبّق التقرير أولاً'); return; }
+const sec = (j.sections||[]).map(s=>`<tr><td style="padding:6px;border:1px solid #cbd5e1">${Utils.escape(s.name)}</td><td style="padding:6px;border:1px solid #cbd5e1;text-align:center">${s.pass_rate}%</td><td style="padding:6px;border:1px solid #cbd5e1;text-align:center">${s.total}</td><td style="padding:6px;border:1px solid #cbd5e1;text-align:center">${s.pass}</td><td style="padding:6px;border:1px solid #cbd5e1;text-align:center">${s.fail}</td><td style="padding:6px;border:1px solid #cbd5e1;text-align:center">${s.avg}%</td><td style="padding:6px;border:1px solid #cbd5e1;text-align:center">${s.objections}</td></tr>`).join('');
+const offs = (j.officers||[]).map(o=>`<tr><td style="padding:6px;border:1px solid #cbd5e1">${Utils.escape(o.name)}</td><td style="padding:6px;border:1px solid #cbd5e1;text-align:center">${o.total}</td><td style="padding:6px;border:1px solid #cbd5e1;text-align:center">${o.mahzam}</td><td style="padding:6px;border:1px solid #cbd5e1;text-align:center">${o.cg}</td><td style="padding:6px;border:1px solid #cbd5e1;text-align:center">${o.objections}</td><td style="padding:6px;border:1px solid #cbd5e1;text-align:center">${o.accepted_rate}%</td><td style="padding:6px;border:1px solid #cbd5e1;text-align:center">${o.avg_score}%</td></tr>`).join('');
+const html = `<div style="padding:24px;font-family:'Cairo',sans-serif;direction:rtl;background:white">${buildPDFHeader('📊 تقرير الجودة',`الفترة: ${j.from} ← ${j.to}`,'#7c3aed')}
+<div style="text-align:center;margin:12px 0 18px"><div style="font-size:13px;color:#64748b">النسبة العامة للجودة</div><div style="font-size:40px;font-weight:800;color:#7c3aed">${j.overall}%</div></div>
+<h3 style="color:#7c3aed">الأقسام</h3><table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px"><thead><tr style="background:#7c3aed;color:white"><th style="padding:8px;border:1px solid #6d28d9">القسم</th><th style="padding:8px;border:1px solid #6d28d9">نسبة النجاح</th><th style="padding:8px;border:1px solid #6d28d9">الإجمالي</th><th style="padding:8px;border:1px solid #6d28d9">ناجح</th><th style="padding:8px;border:1px solid #6d28d9">راسب</th><th style="padding:8px;border:1px solid #6d28d9">المتوسط</th><th style="padding:8px;border:1px solid #6d28d9">اعتراضات</th></tr></thead><tbody>${sec}</tbody></table>
+<h3 style="color:#06579F">أداء موظفي الجودة</h3><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#06579F;color:white"><th style="padding:8px;border:1px solid #044a87">الموظف</th><th style="padding:8px;border:1px solid #044a87">التقييمات</th><th style="padding:8px;border:1px solid #044a87">محزم</th><th style="padding:8px;border:1px solid #044a87">CG</th><th style="padding:8px;border:1px solid #044a87">اعتراضات</th><th style="padding:8px;border:1px solid #044a87">% مقبولة</th><th style="padding:8px;border:1px solid #044a87">متوسط الدرجات</th></tr></thead><tbody>${offs}</tbody></table></div>`;
+try { await htmlToPDF(html, `تقرير_الجودة_${new Date().toISOString().slice(0,10)}.pdf`); } catch(e) { Toast.error('تعذّر إنشاء PDF'); }
+}
+function qrExportXLSX() {
+const j = window._qrData; if (!j) { Toast.error('طبّق التقرير أولاً'); return; }
+const wb = XLSX.utils.book_new();
+const secData = (j.sections||[]).map(s=>({'القسم':s.name,'نسبة النجاح %':s.pass_rate,'الإجمالي':s.total,'ناجح':s.pass,'راسب':s.fail,'المتوسط %':s.avg,'الاعتراضات':s.objections,'درجة النجاح':s.pass_score}));
+XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(secData.length?secData:[{'-':'لا بيانات'}]), 'الأقسام');
+const offData = (j.officers||[]).map(o=>({'موظف الجودة':o.name,'التقييمات':o.total,'محزم':o.mahzam,'Creative Gene':o.cg,'اعتراضات':o.objections,'% مقبولة':o.accepted_rate,'متوسط الدرجات %':o.avg_score}));
+XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(offData.length?offData:[{'-':'لا بيانات'}]), 'موظفو الجودة');
+XLSX.writeFile(wb, `تقرير_الجودة_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 
 // ============================================
@@ -2731,7 +2815,7 @@ return `<div class="page-header"><div><div class="page-title">📄 تقييم أ
 <div class="card"><div class="card-body">
 <div style="padding:10px 12px;background:#f3e8ff;border-radius:8px;margin-bottom:14px;font-size:13px">المسمى: <strong>${jobTitleCell(emp)}</strong> &nbsp;|&nbsp; القسم: ${deptBadgeHTML(dept)} &nbsp;|&nbsp; النموذج المُستخدم: <strong>${usedTemplateLabel(ev)}</strong></div>
 <div style="display:flex;gap:32px;flex-wrap:wrap;align-items:center">
-<div><div style="font-size:13px;color:var(--muted)">الدرجة الكلية</div><div style="font-size:34px;font-weight:800;color:var(--primary)">${pct} / 100</div>${Utils.gradeBadge(pct)}</div>
+<div><div style="font-size:13px;color:var(--muted)">الدرجة الكلية</div><div style="font-size:34px;font-weight:800;color:var(--primary)">${pct} / 100</div>${passFailBadge(pct, emp?emp.department_id:cgDeptId())}</div>
 <div><div style="font-size:13px;color:var(--muted)">المُقيِّم</div><div style="font-size:16px;font-weight:600">${evr?Utils.escape(evr.full_name):'—'}</div></div>
 <div><div style="font-size:13px;color:var(--muted)">تاريخ التقييم</div><div style="font-size:16px;font-weight:600">${Utils.formatDate(ev.evaluation_date)}</div></div>
 <div><button class="btn btn-primary" onclick="openCgPdfByEval(${ev.id})">📄 فتح ملف PDF</button></div>
@@ -2787,7 +2871,7 @@ const crit = (ev.template_snapshot && ev.template_snapshot.criteria) || [];
 const scores = ev.section_scores || ev.items || {};
 const critRows = crit.filter(c => scores[c.id] != null).map(c => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed var(--border)"><span>${Utils.escape(c.name)} <span style="color:var(--muted);font-size:11px">(${c.weight}%)</span></span><strong>${scores[c.id]}</strong></div>`).join('');
 evalBlock = `<div style="margin-top:12px;display:flex;gap:24px;flex-wrap:wrap;align-items:center">
-<div><div style="font-size:12px;color:var(--muted)">درجتك</div><div style="font-size:26px;font-weight:800;color:var(--primary)">${ev.percentage}%</div>${Utils.gradeBadge(ev.percentage)}</div>
+<div><div style="font-size:12px;color:var(--muted)">درجتك</div><div style="font-size:26px;font-weight:800;color:var(--primary)">${ev.percentage}%</div>${passFailBadge(ev.percentage, cgDeptId())}</div>
 ${ev.evaluation_notes ? `<div style="flex:1;min-width:200px"><div style="font-size:12px;color:var(--muted)">ملاحظات المُقيّم</div><div>${Utils.escape(ev.evaluation_notes)}</div></div>` : ''}
 </div>
 ${critRows ? `<div style="margin-top:12px"><div style="font-size:12px;color:var(--muted);margin-bottom:4px">المعايير التفصيلية</div>${critRows}</div>` : ''}`;
@@ -2874,6 +2958,9 @@ return s==='accepted' ? '<span class="badge badge-success">مقبول</span>'
  : s==='rejected' ? '<span class="badge badge-danger">مرفوض</span>'
  : '<span class="badge badge-warning">قيد المراجعة</span>';
 }
+// درجة نجاح القسم (م9) — من الأقسام المُحمّلة، مع افتراضي (CG=90، غيره=80)
+function deptPassScore(deptId) { const d=(window._departments||[]).find(x=>x.id===deptId); return (d && d.pass_score!=null) ? d.pass_score : (deptId===cgDeptId()?90:80); }
+function passFailBadge(percentage, deptId) { const ps=deptPassScore(deptId); const pass=(parseFloat(percentage)>=ps); return `<span class="badge ${pass?'badge-success':'badge-danger'}" title="درجة النجاح للقسم: ${ps}">${pass?'✅ ناجح':'❌ راسب'}</span>`; }
 async function reviewObjectionModal(objId) {
 if (!(currentUser.role === 'quality_officer' || currentUser.role === 'admin')) { Toast.error('مراجعة الاعتراض للجودة أو المدير فقط'); return; }
 const { data } = await window.sb.from('creative_gene_objections').select('*').eq('id', objId).maybeSingle();
@@ -6211,15 +6298,35 @@ return header + tabsBar + (tab === 'templates' ? renderTemplatesTab(deptId) : re
 }
 function tmplTypeLabel(t) { return t==='task_based_weekly'?'📅 أسبوعي':(t==='section_based'?'📋 أقسام (بنود)':(t==='pdf_based_weekly'?'📄 PDF (معايير)':'—')); }
 function renderDeptsTab(isAdmin) {
-const rows = window._departments.map(d => `<tr>
+const canPass = currentUser.role === 'admin' || currentUser.role === 'quality_officer';
+const rows = window._departments.map(d => { const ps = d.pass_score != null ? d.pass_score : 80;
+return `<tr>
 <td>${deptBadgeHTML(d)}</td><td><code>${Utils.escape(d.code||'-')}</code></td>
 <td>${tmplTypeLabel(d.template_type)}</td>
 <td style="text-align:center">${d.employee_count} موظف</td>
 <td style="text-align:center">${d.templates_count!=null?d.templates_count:'—'} نموذج</td>
+<td style="text-align:center"><span title="الموظف الذي يحصل على درجة أقل من هذا الرقم يعتبر راسباً في التقييم" style="cursor:help"><span class="badge badge-info" style="font-size:13px">${ps}</span> <span style="font-size:11px;color:var(--muted)">(أقل = راسب)</span></span>${canPass?` <button class="btn btn-sm btn-secondary" onclick="editPassScore(${d.id})" title="تعديل درجة النجاح">✏️</button>`:''}</td>
 <td>${d.is_active?'<span class="badge badge-success">نشط</span>':'<span class="badge badge-secondary">معطّل</span>'}</td>
 <td>${isAdmin?`<button class="btn btn-sm btn-warning" onclick="departmentModal(${d.id})">تعديل</button> <button class="btn btn-sm ${d.is_active?'btn-danger':'btn-success'}" onclick="setDeptActive(${d.id},${!d.is_active})">${d.is_active?'تعطيل':'تفعيل'}</button>`:'—'}</td>
-</tr>`).join('') || '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">لا توجد أقسام</td></tr>';
-return `<div class="card"><div style="overflow-x:auto"><table class="table"><thead><tr><th>القسم</th><th>الكود</th><th>نوع النموذج</th><th style="text-align:center">الموظفون</th><th style="text-align:center">النماذج</th><th>الحالة</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+</tr>`; }).join('') || '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">لا توجد أقسام</td></tr>';
+return `<div class="card"><div style="overflow-x:auto"><table class="table"><thead><tr><th>القسم</th><th>الكود</th><th>نوع النموذج</th><th style="text-align:center">الموظفون</th><th style="text-align:center">النماذج</th><th style="text-align:center">درجة النجاح</th><th>الحالة</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+function editPassScore(deptId) {
+if (!(currentUser.role==='admin'||currentUser.role==='quality_officer')) { Toast.error('غير مصرح'); return; }
+const d = (window._departments||[]).find(x=>x.id===deptId); if(!d){ Toast.error('القسم غير موجود'); return; }
+const ps = d.pass_score!=null?d.pass_score:80;
+Modal.show('درجة نجاح — '+Utils.escape(d.name), `
+<div class="alert alert-info" style="font-size:13px">الموظف الذي يحصل على درجة <b>أقل</b> من هذا الرقم يُعتبر راسباً. التغيير يُعيد حساب حالة كل التقييمات (القديمة والجديدة) لهذا القسم فوراً.</div>
+<div class="form-group"><label class="form-label">درجة النجاح (0 - 100) *</label><input type="number" min="0" max="100" class="form-control" id="ps-val" value="${ps}"></div>`,
+`<button class="btn btn-secondary" onclick="Modal.close()">إلغاء</button><button class="btn btn-primary" id="ps-save">حفظ</button>`);
+document.getElementById('ps-save').addEventListener('click', async () => {
+const v = parseInt(document.getElementById('ps-val').value);
+if (!(v>=0 && v<=100)) { Toast.error('أدخل رقماً بين 0 و100'); return; }
+const { data, error } = await window.sb.rpc('set_department_pass_score', { p_session_token: cgToken(), p_department_id: deptId, p_pass_score: v });
+const r = Array.isArray(data)?data[0]:data;
+if (error || !r || !r.ok) { const m=(r&&r.message)||(error&&error.message)||'تعذّر الحفظ'; if(!handleSessionError(m)) Toast.error(m); return; }
+Modal.close(); Toast.success('تم تحديث درجة النجاح'); _dashCache=null; await loadDepartments(true); navigate('departments',{tab:'depts'});
+});
 }
 function departmentModal(id) {
 const d = id ? window._departments.find(x => x.id === id) : null;
@@ -6511,6 +6618,14 @@ if (di) di.addEventListener('change', () => navigate('cg-week', { week: di.value
 }
 if (page === 'cg-objections') loadCgObjections();
 if (page === 'cg-my-team') loadCgMyTeam();
+if (page === 'quality-report') {
+loadQualityReport();
+const per = document.getElementById('qr-period');
+if (per) per.addEventListener('change', () => { document.querySelectorAll('.qr-custom').forEach(el => el.style.display = per.value==='custom'?'':'none'); });
+const apply = document.getElementById('qr-apply'); if (apply) apply.addEventListener('click', () => loadQualityReport());
+const pdf = document.getElementById('qr-pdf'); if (pdf) pdf.addEventListener('click', qrExportPDF);
+const xls = document.getElementById('qr-xlsx'); if (xls) xls.addEventListener('click', qrExportXLSX);
+}
 if (page === 'cg-upload') attachCgUpload();
 if (page === 'cg-pending-approval') loadCgPending();
 if (page === 'cg-requests') {
