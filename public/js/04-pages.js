@@ -2959,12 +2959,10 @@ function cgUploadBehalf(empId, ws) { pickPdfAndUpload(empId, ws, () => loadCgWee
 // ============================================================
 // الحالات السبع: [key, label, color, emoji]
 const WF_STATES = [
-['pending_upload','بانتظار الرفع','#94a3b8','⚪'],
-['pending_quality','بانتظار الجودة','#0ea5e9','🔵'],
-['under_evaluation','قيد التقييم','#8b5cf6','🟣'],
-['pending_supervisor','بانتظار اعتماد المشرف','#f59e0b','🟠'],
-['approved','معتمد','#22c55e','🟢'],
-['objection_raised','اعتراض مُقدَّم','#ef4444','🔴'],
+['pending_quality','بانتظار التقييم','#0ea5e9','🔵'],
+['pending_supervisor','بانتظار إجراء المشرف','#f59e0b','🟠'],
+['approved','تم الاعتماد','#22c55e','🟢'],
+['objection_raised','يوجد اعتراض','#ef4444','🔴'],
 ['closed','مغلق','#64748b','⚫']
 ];
 function wfState(s) { return WF_STATES.find(x => x[0] === s); }
@@ -3106,7 +3104,6 @@ const body = rows.map(r => {
 const st = r.workflow_state;
 let actions = '';
 if (st === 'pending_quality') actions += `<button class="btn btn-sm btn-success" onclick="openRequestForEval(${r.weekly_status_id},${r.employee_id},'${r.week_start}')">📝 فتح للتقييم</button>`;
-else if (st === 'under_evaluation') actions += `<button class="btn btn-sm btn-primary" onclick="navigate('new-evaluation',{dept:${cgDeptId()},emp:${r.employee_id},week:'${r.week_start}'})">✏️ متابعة التقييم</button>`;
 else if (st === 'objection_raised' && currentUser.role === 'quality_officer' && r.has_objection) actions += `<button class="btn btn-sm btn-warning" onclick="reviewObjectionByEval(${r.evaluation_id})">⚖️ مراجعة الاعتراض</button>`;
 if (r.evaluation_id) actions += ` <button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${r.evaluation_id})">📄</button>`;
 else actions += ` <button class="btn btn-sm btn-secondary" onclick="openCgPdfByWeek(${r.employee_id},'${r.week_start}')">📄</button>`;
@@ -6473,7 +6470,8 @@ navigate('evaluations', params);
 });
 document.querySelectorAll('[data-del-eval]').forEach(b => b.addEventListener('click', async e => {
 e.stopPropagation();
-await handleDeleteEval(b, 'evaluations');
+// حافظ على فلتر القسم الحالي بعد الحذف (وإلا عادت الشاشة تعرض كل الأقسام)
+await handleDeleteEval(b, 'evaluations', currentParams.dept != null ? { dept: currentParams.dept } : {});
 }));
 const xls = document.getElementById('exp-xlsx');
 if (xls) xls.addEventListener('click', exportListXLSX);
