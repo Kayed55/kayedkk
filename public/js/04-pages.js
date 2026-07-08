@@ -5826,7 +5826,7 @@ const ROLE_NAMES = { real_estate_marketer:'مسوّق عقاري', designer:'م�
 function renderDepartments(activeTab, deptId) {
 if (currentUser.role !== 'admin' && currentUser.role !== 'quality_officer') return '<div class="alert alert-danger">غير مصرح</div>';
 if (!window._departments) { loadDepartments(true).then(() => { if (currentPage === 'departments') navigate('departments', { tab: activeTab, dept: deptId }); }); return '<div class="card"><div class="card-body">⏳ جارٍ التحميل…</div></div>'; }
-const isAdmin = currentUser.role === 'admin';
+const isAdmin = currentUser.role === 'admin' || currentUser.role === 'quality_officer';
 const tab = activeTab || 'depts';
 const tabsBar = `<div style="display:flex;gap:8px;margin-bottom:16px">
 <button class="btn btn-sm ${tab==='depts'?'btn-primary':'btn-secondary'}" onclick="navigate('departments',{tab:'depts'})">🗂️ الأقسام</button>
