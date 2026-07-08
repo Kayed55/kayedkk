@@ -2611,6 +2611,7 @@ p_evaluation_notes: notes, p_week_start: ws
 const rr = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!rr || !rr.ok) { const m=(rr&&rr.message)||(error&&error.message)||'تعذّر حفظ التقييم'; if(!handleSessionError(m)) Toast.error(m); return false; }
 if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(true); }catch(_){} }
+try { if (rr.evaluation_id && !DB.getEvaluation(rr.evaluation_id) && window.sb) { const { data: ne } = await window.sb.from('evaluations').select('*').eq('id', rr.evaluation_id).maybeSingle(); if (ne) { DB.data.evaluations = (DB.data.evaluations || []).filter(x => x.id !== ne.id).concat(ne); localStorage.setItem(DB.KEY, JSON.stringify(DB.data)); } } } catch(_){}
 Toast.success(`تم حفظ التقييم — ${rr.percentage}% (${rr.grade})`);
 navigate('view-evaluation', { id: rr.evaluation_id });
 return true;
@@ -2962,15 +2963,17 @@ return `<div class="page-header"><div><div class="page-title">📅 تقييم أ
 function renderViewEvaluation(id) {
 const ev = DB.getEvaluation(id);
 if (!ev) {
-// شبكة أمان: قد يكون سباق توقيت (التقييم مُنشأ للتوّ) — اسحب مرّة وأعد الرسم قبل اليأس
-if (window.__viewEvalRetry !== id && window.SupabaseSync && SupabaseSync.pullAll) {
+// شبكة أمان: سباق توقيت (التقييم مُنشأ للتوّ) — اسحب ثم اجلب مباشرةً كخط دفاع أخير قبل اليأس
+if (window.__viewEvalRetry !== id && window.sb) {
 window.__viewEvalRetry = id;
-SupabaseSync.pullAll(true).then(function(){
-if (typeof currentPage !== 'undefined' && currentPage === 'view-evaluation'
-&& currentParams && currentParams.id === id && DB.getEvaluation(id)) {
-navigate('view-evaluation', { id: id });
+(async () => {
+try { if (window.SupabaseSync && SupabaseSync.pullAll) await SupabaseSync.pullAll(true); } catch(_){}
+if (!DB.getEvaluation(id)) {
+try { const { data: ne } = await window.sb.from('evaluations').select('*').eq('id', id).maybeSingle();
+if (ne) { DB.data.evaluations = (DB.data.evaluations || []).filter(x => x.id !== ne.id).concat(ne); try { localStorage.setItem(DB.KEY, JSON.stringify(DB.data)); } catch(_){} } } catch(_){}
 }
-});
+if (typeof currentPage !== 'undefined' && currentPage === 'view-evaluation' && currentParams && currentParams.id === id) navigate('view-evaluation', { id: id });
+})();
 return '<div class="alert alert-info">⏳ جارٍ تحميل تفاصيل التقييم…</div>';
 }
 window.__viewEvalRetry = null;
