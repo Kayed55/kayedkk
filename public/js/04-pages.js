@@ -1408,7 +1408,7 @@ return `<tr data-search="${Utils.escape((u.full_name||'')+' '+(u.employee_number
 <button class="btn btn-sm btn-primary" data-view-emp="${u.id}">عرض</button>
 ${(currentUser.role === 'admin' || currentUser.role === 'quality_officer') ? `<button class="btn btn-sm btn-warning" data-edit-emp="${u.id}">تعديل</button>` : ''}
 ${(currentUser.role === 'admin' || currentUser.role === 'quality_officer') ? `<button class="btn btn-sm btn-info" data-reset-pw="${u.id}" title="إعادة تعيين كلمة المرور">🔑</button>` : ''}
-${(currentUser.role === 'admin' || currentUser.role === 'quality_officer') ? `<button class="btn btn-sm" data-delete-user="${u.id}" title="حذف نهائي — لا يمكن التراجع" style="background:#b91c1c;color:#fff">🗑</button>` : ''}
+${currentUser.role === 'admin' ? `<button class="btn btn-sm" data-delete-user="${u.id}" title="حذف نهائي — لا يمكن التراجع" style="background:#b91c1c;color:#fff">🗑</button>` : ''}
 </td>
 </tr>`;
 }).join('');
@@ -1645,7 +1645,7 @@ const users = DB.data.users.filter(u => u.role !== 'employee');
 const isQuality = currentUser.role === 'quality_officer';
 const rows = users.map(u => { const lock = isQuality && u.role === 'admin';
 const dis = lock ? `disabled title="لا يمكن تعديل حسابات الأدمن" style="opacity:.5;cursor:not-allowed"` : '';
-const canDel = (currentUser.role === 'admin' || (isQuality && !['admin','quality_officer'].includes(u.role))) && u.id !== currentUser.id;
+const canDel = currentUser.role === 'admin' && u.id !== currentUser.id;
 return `<tr>
 <td>${u.id}</td>
 <td><div style="display:flex;align-items:center;gap:10px"><div class="user-avatar">${Utils.getInitials(u.full_name)}</div>${Utils.escape(u.full_name)}</div></td>
@@ -1693,43 +1693,51 @@ return `
 </div>`;
 }
 
-// ===== م18: حذف المستخدمين (Soft Delete) =====
+// ===== م18-أ: الحذف النهائي (Hard Delete) للمستخدم مع كل بياناته — أدمن فقط =====
 async function deleteUserFlow(id) {
   const u = DB.getUser(id);
   if (!u) { Toast.error('المستخدم غير موجود'); return; }
+  if (currentUser.role !== 'admin') { Toast.error('الحذف النهائي للمدير فقط'); return; }
   if (id === currentUser.id) { Toast.error('لا يمكنك حذف حسابك الخاص'); return; }
-  const isAdmin = currentUser.role === 'admin', isQO = currentUser.role === 'quality_officer';
-  if (!isAdmin && !(isQO && !['admin','quality_officer'].includes(u.role))) { Toast.error('ليس لديك صلاحية حذف هذا المستخدم'); return; }
+  const tok = window.getSessionToken ? getSessionToken() : null;
+  let pv = { evaluations:0, pdfs:0, objections:0, cg_weekly:0, cg_actions:0, cg_objections:0 };
+  try { const { data } = await window.sb.rpc('get_user_deletion_preview', { p_session_token: tok, p_user_id: id }); if (Array.isArray(data) && data[0]) pv = data[0]; } catch(_){}
   const roleLabel = (Utils.roleName ? Utils.roleName(u.role) : u.role);
   const body = `<div style="font-size:14px;line-height:1.9">
-    <div class="alert alert-danger" style="margin-bottom:12px">⚠️ هذا الإجراء لا يمكن التراجع عنه — سيُؤرشَف المستخدم ويُطرَد من جلساته فوراً.</div>
+    <div class="alert alert-danger" style="margin-bottom:12px">⚠️ هذا الإجراء <b>لا يمكن التراجع عنه</b> — البيانات ستُحذف نهائياً من قاعدة البيانات ومن التخزين.</div>
     <div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:12px">
-      <div><b>الاسم:</b> ${Utils.escape(u.full_name)}</div><div><b>البريد:</b> ${Utils.escape(u.email||'-')}</div>
-      <div><b>القسم:</b> ${Utils.escape(u.department||'-')}</div><div><b>الدور:</b> ${Utils.escape(roleLabel)}</div></div>
-    <div class="form-group"><label class="form-label">للتأكيد اكتب كلمة <b style="color:#b91c1c">حذف</b>:</label>
-      <input class="form-control" id="del-confirm-input" placeholder="حذف" autocomplete="off"></div></div>`;
-  const footer = `<button class="btn btn-secondary" id="del-cancel">إلغاء</button><button class="btn" id="del-ok" disabled style="background:#b91c1c;color:#fff;opacity:.5">🗑 تأكيد الحذف</button>`;
-  Modal.show('🗑 حذف المستخدم', body, footer);
-  const input = document.getElementById('del-confirm-input'), okBtn = document.getElementById('del-ok');
-  if (input) input.addEventListener('input', () => { const ok = input.value.trim() === 'حذف'; okBtn.disabled = !ok; okBtn.style.opacity = ok ? '1' : '.5'; });
-  const cancel = document.getElementById('del-cancel');
-  if (cancel) cancel.addEventListener('click', () => Modal.close());
-  if (okBtn) okBtn.addEventListener('click', () => _doDeleteUser(id, null, false));
+      <b>${Utils.escape(u.full_name)}</b> — ${Utils.escape(u.email||'-')} · ${Utils.escape(roleLabel)} · ${Utils.escape(u.department||'-')}</div>
+    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px;margin-bottom:12px;color:#991b1b">
+      سيتم حذف: <b>${pv.evaluations}</b> تقييم · <b>${pv.pdfs}</b> ملف PDF · <b>${pv.objections}</b> اعتراض · <b>${pv.cg_weekly}</b> تقرير أسبوعي · <b>${pv.cg_actions}</b> إجراء · <b>${pv.cg_objections}</b> اعتراض CG — وكل سجلّات المستخدم.</div>
+    <div class="form-group"><label class="form-label">اكتب اسم المستخدم كاملاً: <b>${Utils.escape(u.full_name)}</b></label>
+      <input class="form-control" id="del-name-input" autocomplete="off"></div>
+    <div class="form-group"><label class="form-label">واكتب <b style="color:#b91c1c">حذف نهائي</b> للتأكيد:</label>
+      <input class="form-control" id="del-confirm-input" placeholder="حذف نهائي" autocomplete="off"></div></div>`;
+  const footer = `<button class="btn btn-secondary" id="del-cancel">إلغاء</button><button class="btn" id="del-ok" disabled style="background:#b91c1c;color:#fff;opacity:.5">🗑 حذف نهائي</button>`;
+  Modal.show('🗑 حذف نهائي للمستخدم', body, footer);
+  const nameI = document.getElementById('del-name-input'), confI = document.getElementById('del-confirm-input'), okBtn = document.getElementById('del-ok');
+  const check = () => { const ok = nameI.value.trim() === (u.full_name||'').trim() && confI.value.trim() === 'حذف نهائي'; okBtn.disabled = !ok; okBtn.style.opacity = ok ? '1' : '.5'; };
+  if (nameI) nameI.addEventListener('input', check);
+  if (confI) confI.addEventListener('input', check);
+  document.getElementById('del-cancel').addEventListener('click', () => Modal.close());
+  okBtn.addEventListener('click', () => _doHardDelete(id, null, false));
 }
-async function _doDeleteUser(id, transferTo, unlink) {
+async function _doHardDelete(id, transferTo, unlink) {
   const tok = window.getSessionToken ? getSessionToken() : null;
   const payload = { p_session_token: tok, p_user_id: id };
   if (transferTo) payload.p_transfer_supervisees_to = transferTo;
   if (unlink) payload.p_unlink_supervisees = true;
-  const { data, error } = await window.sb.rpc('delete_user', payload);
+  const { data, error } = await window.sb.rpc('delete_user_completely', payload);
   const row = (!error && Array.isArray(data) && data[0]) ? data[0] : (data || null);
   if (!row) { Toast.error((error && error.message) || 'تعذّر الحذف'); return; }
   if (!row.ok && row.code === 'require_transfer') { _showTransferModal(id, row.message); return; }
   if (!row.ok) { const h = handleSessionError(row.message); if (!h) Toast.error(row.message); return; }
+  // حذف ملفات PDF خادمياً (آمن — أدمن فقط)
+  const paths = row.pdf_paths || [];
+  if (paths.length) { try { await window.sb.rpc('delete_storage_pdfs', { p_session_token: tok, p_paths: paths }); } catch(_){} }
   Modal.close();
-  const u = DB.getUser(id);
   if (window.SupabaseSync && SupabaseSync.pullAll) { try { await SupabaseSync.pullAll(true); } catch(_){} }
-  Toast.success('تم حذف المستخدم' + (u ? ` (${u.full_name})` : ''));
+  Toast.success(`تم الحذف النهائي (${row.evaluations_deleted||0} تقييم · ${row.pdfs_deleted||0} ملف)`);
   if (typeof navigate === 'function') navigate(currentPage === 'employees' ? 'employees' : 'users');
 }
 function _showTransferModal(id, msg) {
@@ -1747,38 +1755,30 @@ function _showTransferModal(id, msg) {
   document.getElementById('tr-ok').addEventListener('click', () => {
     const to = document.getElementById('transfer-sup').value, unlink = document.getElementById('unlink-sup').checked;
     if (!to && !unlink) { Toast.error('اختر مشرفاً بديلاً أو فعّل إزالة الربط'); return; }
-    _doDeleteUser(id, to ? parseInt(to) : null, unlink);
+    _doHardDelete(id, to ? parseInt(to) : null, unlink);
   });
 }
 function renderDeletedUsers() {
   if (currentUser.role !== 'admin') return '<div class="alert alert-danger">هذه الشاشة للمدير فقط</div>';
-  return `<div class="page-header"><div><div class="page-title">🗑 المستخدمون المحذوفون</div><div class="page-subtitle">أرشيف — يمكن استعادتهم (تبقى تقييماتهم وسجلّاتهم محفوظة)</div></div>
+  return `<div class="page-header"><div><div class="page-title">🗑 سجل المحذوفين نهائياً</div><div class="page-subtitle">أرشيف للسجل فقط — البيانات حُذفت نهائياً ولا يمكن استعادتها</div></div>
   <button class="btn btn-secondary" onclick="navigate('users')">← رجوع للمستخدمين</button></div>
   <div class="card"><div style="overflow-x:auto"><table class="table" id="deleted-users-table">
-  <thead><tr><th>#</th><th>الاسم</th><th>البريد</th><th>الدور</th><th>القسم</th><th>تاريخ الحذف</th><th>حذفه</th><th>إجراء</th></tr></thead>
-  <tbody><tr><td colspan="8" style="text-align:center;padding:20px">…جارٍ التحميل</td></tr></tbody></table></div></div>`;
+  <thead><tr><th>الاسم</th><th>البريد</th><th>الدور</th><th>القسم</th><th>تقييمات</th><th>ملفات</th><th>تاريخ الحذف</th><th>حذفه</th><th>السبب</th></tr></thead>
+  <tbody><tr><td colspan="9" style="text-align:center;padding:20px">…جارٍ التحميل</td></tr></tbody></table></div></div>`;
 }
 async function loadDeletedUsersTable() {
   const tok = window.getSessionToken ? getSessionToken() : null;
   const tbody = document.querySelector('#deleted-users-table tbody');
   if (!tbody) return;
-  const { data, error } = await window.sb.rpc('list_deleted_users', { p_session_token: tok });
-  if (error) { tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:20px;color:#b91c1c">تعذّر التحميل: ${Utils.escape(error.message)}</td></tr>`; return; }
+  const { data, error } = await window.sb.rpc('list_deleted_users_archive', { p_session_token: tok });
+  if (error) { tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:20px;color:#b91c1c">تعذّر التحميل: ${Utils.escape(error.message)}</td></tr>`; return; }
   const rows = Array.isArray(data) ? data : [];
-  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px">لا يوجد مستخدمون محذوفون</td></tr>'; return; }
-  tbody.innerHTML = rows.map(r => `<tr><td>${r.id}</td><td>${Utils.escape(r.full_name||'-')}</td><td>${Utils.escape(r.email||'-')}</td>
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px">لا يوجد سجلّات حذف</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r => `<tr><td>${Utils.escape(r.full_name||'-')}</td><td>${Utils.escape(r.email||'-')}</td>
     <td>${Utils.roleBadge ? Utils.roleBadge(r.role) : Utils.escape(r.role)}</td><td>${Utils.escape(r.department||'-')}</td>
-    <td>${Utils.formatDate ? Utils.formatDate(r.deleted_at) : (r.deleted_at||'').slice(0,10)}</td><td>${Utils.escape(r.deleted_by_name||'-')}</td>
-    <td><button class="btn btn-sm btn-success" data-restore-user="${r.id}">♻️ استعادة</button></td></tr>`).join('');
-  tbody.querySelectorAll('[data-restore-user]').forEach(b => b.addEventListener('click', async () => {
-    const id = parseInt(b.dataset.restoreUser);
-    if (!confirm('استعادة هذا المستخدم؟')) return;
-    const { data: d2, error: e2 } = await window.sb.rpc('restore_user', { p_session_token: tok, p_user_id: id });
-    const row = (!e2 && Array.isArray(d2) && d2[0]) ? d2[0] : null;
-    if (!row || !row.ok) { Toast.error((row && row.message) || (e2 && e2.message) || 'تعذّر الاستعادة'); return; }
-    if (window.SupabaseSync && SupabaseSync.pullAll) { try { await SupabaseSync.pullAll(true); } catch(_){} }
-    Toast.success('تمت الاستعادة'); navigate('deleted-users');
-  }));
+    <td>${r.evaluations_count||0}</td><td>${r.pdfs_count||0}</td>
+    <td>${Utils.formatDate ? Utils.formatDate(r.deleted_at) : (r.deleted_at||'').slice(0,10)}</td>
+    <td>${Utils.escape(r.deleted_by_name||'-')}</td><td>${Utils.escape(r.deletion_reason||'-')}</td></tr>`).join('');
 }
 
 // onUserDeptChange مُعرّفة أعلاه (م15 — ديناميكية)
