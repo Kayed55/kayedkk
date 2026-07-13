@@ -56,7 +56,16 @@ CRITERIA = this.data.criteria;
 this.save();
 },
 
-save() { localStorage.setItem(this.KEY, JSON.stringify(this.data)); },
+save() {
+    // تخزين آمن للحصّة: لا نُفشل العملية لو امتلأ localStorage — المصدر الحقيقي هو Supabase.
+    try { localStorage.setItem(this.KEY, JSON.stringify(this.data)); }
+    catch (e) {
+      try {
+        const lite = Object.assign({}, this.data, { evaluations: (this.data.evaluations||[]).slice(-120), audit_logs: [], notifications: (this.data.notifications||[]).slice(-120) });
+        localStorage.setItem(this.KEY, JSON.stringify(lite));
+      } catch (_) { console.warn('DB.save: localStorage ممتلئ — تم التجاهل (المصدر Supabase)'); }
+    }
+  },
 
 // تحديث المعايير
 saveCriteria(newCriteria) {

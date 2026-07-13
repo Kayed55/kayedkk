@@ -167,12 +167,28 @@ _sectionError(page, params);
 function _sectionError(page, params) {
 const c = document.querySelector('.content');
 if (!c) return;
+const err = (window.SupabaseSync && window.SupabaseSync._lastPullError) || null;
+const detail = err
+  ? `الجدول: ${err.table} · الرمز: ${err.status || '—'}\nالخطأ: ${err.message}\nالوقت: ${err.at}`
+  : 'لا تفاصيل إضافية (قد يكون انقطاع اتصال مؤقت).';
+const detailHtml = err
+  ? `<div style="color:var(--muted);font-size:12px;margin-top:6px">الجدول المتعذّر: <b>${err.table}</b> · الرمز: <b>${err.status||'—'}</b></div>`
+  : '';
 c.innerHTML = `<div class="section-error"><div style="font-size:44px">⚠️</div>
 <div style="font-weight:800;font-size:16px">تعذّر تحميل البيانات</div>
 <div style="color:var(--muted);font-size:13px">تحقّق من اتصال الإنترنت ثم أعد المحاولة.</div>
-<button class="btn btn-primary" id="sec-retry">🔄 إعادة المحاولة</button></div>`;
+${detailHtml}
+<div style="display:flex;gap:8px;justify-content:center;margin-top:10px">
+<button class="btn btn-primary" id="sec-retry">🔄 إعادة المحاولة</button>
+<button class="btn btn-secondary" id="sec-copy">📋 نسخ تفاصيل الخطأ</button></div></div>`;
 const r = document.getElementById('sec-retry');
 if (r) r.addEventListener('click', () => navigateToSection(page, params));
+const cp = document.getElementById('sec-copy');
+if (cp) cp.addEventListener('click', () => {
+  const txt = `[pullAll error]\n${detail}\nUA: ${(navigator&&navigator.userAgent)||''}`;
+  try { navigator.clipboard.writeText(txt); if (window.Toast && Toast.success) Toast.success('نُسخت تفاصيل الخطأ'); }
+  catch(_) { window.prompt('انسخ التفاصيل:', txt); }
+});
 }
 
 // مربّع تأكيد خطر (زر تأكيد أحمر + إلغاء) — يُرجع Promise<boolean>

@@ -118,14 +118,24 @@ window.SupabaseSync = {
           // أمان: نقرأ من users_public (view بدون كلمات السر) بدلاً من users
           // كلمات السر يجب ألا تصل للمتصفح أبداً عبر anon key.
           const readFrom = (table === 'users') ? 'users_public' : table;
-          const { data, error } = await window.sb.from(readFrom).select('*').order('id', { ascending: true });
+          // إعادة محاولة ذكية: حتى 3 محاولات بفاصل 500ms قبل الاستسلام
+          let data = null, error = null, status = null;
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            const t0 = Date.now();
+            const res = await window.sb.from(readFrom).select('*').order('id', { ascending: true });
+            data = res.data; error = res.error; status = res.status;
+            const ms = Date.now() - t0;
+            if (!error) { console.log(`  ✓ [pullAll] Table: ${table} (${readFrom}) | Status: ${status} | ${(data||[]).length} rows | ${ms}ms`); break; }
+            console.error(`[pullAll] Table: ${table} | Status: ${status} | Attempt: ${attempt}/3 | Error: ${error.message}`);
+            if (attempt < 3) await new Promise(r => setTimeout(r, 500));
+          }
           if (error) {
             // أوقف العملية كلها بدل الكتابة فوق بيانات سليمة ببيانات ناقصة/فارغة
-            console.warn(`⚠️ Failed to pull ${table} — aborting pull:`, error.message);
+            self._lastPullError = { table: readFrom, status: status, message: error.message, at: new Date().toISOString(), ua: (navigator && navigator.userAgent) || '' };
+            console.warn(`⚠️ فشلت قراءة ${table} بعد 3 محاولات — إيقاف السحب`);
             return false;
           }
           results[table] = data || [];
-          console.log(`  ✓ ${table}: ${data.length} rows`);
         }
 
         // مصدر CRITERIA الآن = نموذج قسم محزم (section_based) من evaluation_templates
@@ -162,13 +172,33 @@ window.SupabaseSync = {
         }
         self._appliedSeq = seq;
 
-        // حفظ في localStorage بنفس مفتاح DB
-        localStorage.setItem('qe_system_v6', JSON.stringify(dbData));
-
-        // إعادة تحميل DB ليعكس البيانات الجديدة في الذاكرة
-        if (window.DB && typeof window.DB.init === 'function') {
-          window.DB.init();
+        // ===== تخزين آمن للحصّة (localStorage ~5MB) =====
+        // البيانات كبرت (evaluations وحدها ~3MB) وقد تتجاوز الحصّة → setItem يرمي QuotaExceededError.
+        // الحل: نضمن البيانات الكاملة في الذاكرة (يعمل التطبيق)، ونُخزّن أخفّ نسخة تسع الحصّة (أفضل جهد).
+        const KEY = 'qe_system_v6';
+        const variants = [
+          dbData,                                                                                   // الكامل
+          Object.assign({}, dbData, { evaluations: (dbData.evaluations||[]).slice(-120), audit_logs: [], notifications: (dbData.notifications||[]).slice(-120) }), // مُقلّم
+          Object.assign({}, dbData, { evaluations: [], audit_logs: [], notifications: [] })         // الأصغر (يبقي users + criteria)
+        ];
+        let persisted = 'none';
+        for (let i = 0; i < variants.length; i++) {
+          try { localStorage.setItem(KEY, JSON.stringify(variants[i])); persisted = (i === 0 ? 'full' : 'lite'); break; }
+          catch (e) { if (i === variants.length - 1) console.warn('[pullAll] localStorage ممتلئ — تعذّر حتى تخزين النسخة الصغرى:', (e && e.name) || e); }
         }
+        if (persisted !== 'full') console.warn('[pullAll] تجاوز حصّة localStorage — خُزّنت نسخة (' + persisted + ')؛ البيانات كاملة في الذاكرة.');
+
+        // إعادة تحميل DB من المُخزَّن (يضبط CRITERIA وبنية البيانات — criteria محفوظة في كل النسخ)
+        if (window.DB && typeof window.DB.init === 'function') window.DB.init();
+        // اضمن أن الذاكرة تحوي البيانات الكاملة الطازجة حتى لو خُزّنت نسخة مُقلّمة
+        if (window.DB && window.DB.data) {
+          const d = window.DB.data;
+          d.users = dbData.users; d.evaluations = dbData.evaluations; d.notifications = dbData.notifications;
+          d.objections = dbData.objections; d.audit_logs = dbData.audit_logs; d.criteria = dbData.criteria;
+          d.nextUserId = dbData.nextUserId; d.nextEvalId = dbData.nextEvalId;
+          d.nextNotifId = dbData.nextNotifId; d.nextObjectionId = dbData.nextObjectionId; d.nextAuditId = dbData.nextAuditId;
+        }
+        self._lastPullError = null;
 
         this.ready = true;
         this.lastSync = Date.now();
