@@ -1447,12 +1447,48 @@ async function loadDepartments(force) {
   return window._departments;
 }
 
-function onEmpDeptChange() {
-const dv = parseInt((document.getElementById('ef-deptid')||{}).value);
-const wrap = document.getElementById('ef-jobrole-wrap');
-const isCg = dv === cgDeptId();
-if (wrap) wrap.style.display = isCg ? '' : 'none';
-if (!isCg) { const jr = document.getElementById('ef-jobrole'); if (jr) jr.value = ''; }
+// ===== المسميات الوظيفية الديناميكية (م15) — تُجلَب من evaluation_templates حسب القسم =====
+window._jrCache = window._jrCache || {};
+async function loadJobRolesByDept(deptId) {
+if (!deptId) return [];
+deptId = parseInt(deptId);
+if (window._jrCache[deptId]) return window._jrCache[deptId];
+try { const { data } = await window.sb.rpc('list_job_roles_by_department', { p_session_token: cgToken(), p_department_id: deptId }); window._jrCache[deptId] = data || []; }
+catch (_) { window._jrCache[deptId] = []; }
+return window._jrCache[deptId];
+}
+function jrLabel(r) { return (r.job_title && r.job_title.trim()) ? r.job_title : (cgRoleArabic(r.job_role) || r.job_role); }
+async function populateJobRole(deptId, selId, wrapId, hintId, titleId, currentRole) {
+const sel = document.getElementById(selId), wrap = document.getElementById(wrapId), hint = document.getElementById(hintId);
+if (!sel) return;
+const roles = await loadJobRolesByDept(deptId);
+if (!roles.length) { if (wrap) wrap.style.display = 'none'; sel.innerHTML = '<option value="">-- لا مسميات لهذا القسم --</option>'; if (hint) hint.innerHTML = ''; return; }
+if (wrap) wrap.style.display = '';
+const has = currentRole && roles.some(r => r.job_role === currentRole);
+let opts = '<option value="">-- اختر المسمى --</option>' + roles.map(r => `<option value="${Utils.escape(r.job_role)}" ${r.job_role===currentRole?'selected':''}>${Utils.escape(jrLabel(r))}</option>`).join('');
+if (currentRole && !has) opts = `<option value="${Utils.escape(currentRole)}" selected>${Utils.escape(cgRoleArabic(currentRole)||currentRole)} (قديم — بلا نموذج)</option>` + opts;
+sel.innerHTML = opts;
+updateJobRoleHint(deptId, selId, hintId, titleId);
+}
+function updateJobRoleHint(deptId, selId, hintId, titleId) {
+const sel = document.getElementById(selId), hint = document.getElementById(hintId);
+if (!hint || !sel) return;
+const roles = window._jrCache[parseInt(deptId)] || [];
+const val = sel.value;
+if (!val) { hint.innerHTML = ''; return; }
+const m = roles.find(r => r.job_role === val);
+if (m) {
+hint.innerHTML = `<span style="color:var(--success)">✅ النموذج المرتبط: <b>${Utils.escape(m.template_name || jrLabel(m))}</b></span>`;
+if (titleId) { const t = document.getElementById(titleId); if (t && !t.value.trim()) t.value = jrLabel(m); }
+} else {
+hint.innerHTML = `<span style="color:var(--danger)">⚠️ المسمى الحالي لا يرتبط بأي نموذج نشط — الرجاء اختيار مسمى صحيح.</span>`;
+}
+}
+async function onEmpDeptChange() {
+await populateJobRole((document.getElementById('ef-deptid')||{}).value, 'ef-jobrole', 'ef-jobrole-wrap', 'ef-jobrole-hint', 'ef-jobtitle', null);
+}
+async function onUserDeptChange() {
+await populateJobRole((document.getElementById('usr-deptid')||{}).value, 'usr-jobrole', 'usr-jobrole-wrap', 'usr-jobrole-hint', null, null);
 }
 async function showEmployeeModal(editId=null) {
 const ed = editId ? DB.getUser(editId) : null;
@@ -1482,7 +1518,7 @@ const body = `<form id="emp-form">
 <div class="form-group"><label class="form-label">الوصف الوظيفي *</label><input class="form-control" id="ef-pos" required value="${ed?Utils.escape(ed.position||''):'موظف خدمة'}"></div>
 <div class="form-group"><label class="form-label">👨‍💼 المشرف</label>${supDropdown}</div>
 <div class="form-group"><label class="form-label">القسم * <span style="font-size:11px;color:var(--muted)">(يحدّد نموذج التقييم)</span></label><select class="form-control" id="ef-deptid" required onchange="onEmpDeptChange()"><option value="">-- اختر القسم --</option>${deptOpts}</select></div>
-<div class="form-group" id="ef-jobrole-wrap" style="${ed && ed.department_id === _cgId ? '' : 'display:none'}"><label class="form-label">المسمى الوظيفي التقني (الدور) * <span style="font-size:11px;color:var(--muted)">(يحدّد نموذج التقييم)</span></label><select class="form-control" id="ef-jobrole"><option value="">-- اختر المسمى --</option>${jobOpts}</select></div>
+<div class="form-group" id="ef-jobrole-wrap" style="${ed && ed.department_id === _cgId ? '' : 'display:none'}"><label class="form-label">المسمى الوظيفي التقني (الدور) * <span style="font-size:11px;color:var(--muted)">(يحدّد نموذج التقييم)</span></label><select class="form-control" id="ef-jobrole" onchange="updateJobRoleHint((document.getElementById('ef-deptid')||{}).value,'ef-jobrole','ef-jobrole-hint','ef-jobtitle')"><option value="">-- اختر المسمى --</option></select><div id="ef-jobrole-hint" style="font-size:12px;margin-top:5px"></div></div>
 <div class="form-group"><label class="form-label">المسمى الوظيفي المرئي <span style="font-size:11px;color:var(--muted)">(يظهر في القوائم والتقارير)</span></label><input class="form-control" id="ef-jobtitle" value="${ed?Utils.escape(ed.job_title||''):''}" placeholder="مثال: مصمم جرافيك"></div>
 ${!ed ? `<div style="background:#eff6ff;padding:10px;border-radius:8px;font-size:12px;color:var(--primary-dark)">🔐 ستُولَّد كلمة مرور مؤقتة تلقائياً وتُرسَل لبريد الموظف وتُعرَض لك بعد الإضافة.</div>` : ''}
 </div>
@@ -1493,9 +1529,8 @@ ${!ed ? `<div style="background:#f1f5f9;padding:10px;border-radius:8px;font-size
 const footer = `<button class="btn btn-secondary" onclick="Modal.close()">إلغاء</button><button class="btn btn-primary" id="ef-save">${ed?'حفظ':'إضافة'}</button>`;
 Modal.show(ed?'تعديل بيانات الموظف':'إضافة موظف جديد', body, footer);
 
-// اقتراح المسمى الوظيفي تلقائياً من الدور (إن كان الحقل فارغاً)
-const _jrEl = document.getElementById('ef-jobrole'), _jtEl = document.getElementById('ef-jobtitle');
-if (_jrEl && _jtEl) _jrEl.addEventListener('change', () => { if (!_jtEl.value.trim() && JOB_TITLE_SUGGEST[_jrEl.value]) _jtEl.value = JOB_TITLE_SUGGEST[_jrEl.value]; });
+// م15: تعبئة المسميات ديناميكياً من النماذج (مع تحديد المسمى الحالي عند التعديل)
+populateJobRole(ed ? ed.department_id : '', 'ef-jobrole', 'ef-jobrole-wrap', 'ef-jobrole-hint', 'ef-jobtitle', ed ? (ed.job_role||null) : null);
 
 document.getElementById('ef-save').addEventListener('click', async (e) => {
 const btn = e.currentTarget;
@@ -1637,13 +1672,7 @@ return `
 </div>`;
 }
 
-function onUserDeptChange() {
-const dv = parseInt((document.getElementById('usr-deptid')||{}).value);
-const wrap = document.getElementById('usr-jobrole-wrap');
-const isCg = dv === cgDeptId();
-if (wrap) wrap.style.display = isCg ? '' : 'none';
-if (!isCg) { const jr = document.getElementById('usr-jobrole'); if (jr) jr.value = ''; }
-}
+// onUserDeptChange مُعرّفة أعلاه (م15 — ديناميكية)
 async function showUserModal(editId=null) {
 const ed = editId ? DB.getUser(editId) : null;
 if (currentUser.role==='quality_officer' && ed && ed.role==='admin') { Toast.error('لا يمكن لموظف الجودة تعديل حسابات الأدمن'); return; }
@@ -1663,7 +1692,7 @@ const body = `<form id="usr-form">
 <div class="form-group"><label class="form-label">📧 البريد الإلكتروني *</label><input type="email" class="form-control" id="usr-email" required value="${ed?Utils.escape(ed.email||''):''}"></div>
 <div class="form-group"><label class="form-label">📱 رقم الجوال</label><input class="form-control" id="usr-phone" value="${ed?Utils.escape(ed.phone||''):''}"></div>
 <div class="form-group"><label class="form-label">القسم <span style="font-size:11px;color:var(--muted)">(إلزامي لغير المدير/الجودة)</span></label><select class="form-control" id="usr-deptid" onchange="onUserDeptChange()"><option value="">-- بلا قسم --</option>${deptOptsU}</select></div>
-<div class="form-group" id="usr-jobrole-wrap" style="${ed && ed.department_id === _cgIdU ? '' : 'display:none'}"><label class="form-label">المسمى الوظيفي التقني (الدور) *</label><select class="form-control" id="usr-jobrole"><option value="">-- اختر --</option>${cgJobOptsU}</select></div>
+<div class="form-group" id="usr-jobrole-wrap" style="${ed && ed.department_id === _cgIdU ? '' : 'display:none'}"><label class="form-label">المسمى الوظيفي التقني (الدور) *</label><select class="form-control" id="usr-jobrole" onchange="updateJobRoleHint((document.getElementById('usr-deptid')||{}).value,'usr-jobrole','usr-jobrole-hint',null)"><option value="">-- اختر --</option></select><div id="usr-jobrole-hint" style="font-size:12px;margin-top:5px"></div></div>
 <div class="form-group"><label class="form-label">الوصف الوظيفي</label><input class="form-control" id="usr-pos" value="${ed?Utils.escape(ed.position||''):''}"></div>
 <div class="form-group"><label class="form-label">نوع الحساب *</label>
 <select class="form-control" id="usr-role" ${ed?'disabled':''} onchange="onUserDeptChange(); document.getElementById('usr-sup-wrap').style.display = this.value==='employee'?'block':'none'; document.getElementById('usr-num-wrap').style.display = this.value==='employee'?'block':'none'">
@@ -1690,6 +1719,9 @@ ${!ed ? `<div style="background:#eff6ff;padding:10px;border-radius:8px;font-size
 </form>`;
 const footer = `<button class="btn btn-secondary" onclick="Modal.close()">إلغاء</button><button class="btn btn-primary" id="usr-save">${ed?'حفظ':'إضافة'}</button>`;
 Modal.show(ed?'تعديل بيانات المستخدم':'إضافة مستخدم جديد', body, footer);
+
+// م15: تعبئة المسميات ديناميكياً من النماذج
+populateJobRole(ed ? ed.department_id : '', 'usr-jobrole', 'usr-jobrole-wrap', 'usr-jobrole-hint', null, ed ? (ed.job_role||null) : null);
 
 document.getElementById('usr-save').addEventListener('click', async (e) => {
 const btn = e.currentTarget;
@@ -6136,7 +6168,7 @@ await submitWithFeedback(save, 'جاري الحفظ...', null, async () => {
 const { data, error } = await window.sb.rpc('upsert_evaluation_template', { p_session_token: cgToken(), p_department_id: cgDeptId(), p_template: t, p_template_type: 'pdf_based_weekly', p_job_role: window._cgEditRole || null });
 const r = Array.isArray(data)?data[0]:data;
 if (error || !r || !r.ok) { const m=(r&&r.message)||(error&&error.message)||'تعذّر الحفظ'; if(!handleSessionError(m)) Toast.error(m); return false; }
-if (window._templates) delete window._templates[cgDeptId()];
+if (window._templates) delete window._templates[cgDeptId()]; if (window._jrCache) delete window._jrCache[cgDeptId()];
 Toast.success('تم حفظ نموذج Creative Gene'); return true;
 });
 });
@@ -6512,7 +6544,7 @@ if(w.mode==='edit'){ ({data,error} = await window.sb.rpc('upsert_evaluation_temp
 else { ({data,error} = await window.sb.rpc('create_cg_template',{ p_session_token:cgToken(), p_department_id:cgDeptId(), p_job_role:t.job_role, p_template:payload })); }
 const r = Array.isArray(data)?data[0]:data;
 if(error || !r || !r.ok){ const m=(r&&r.message)||(error&&error.message)||'تعذّر الحفظ'; if(!handleSessionError(m)) Toast.error(m); return false; }
-if(window._templates) delete window._templates[cgDeptId()];
+if(window._templates) delete window._templates[cgDeptId()]; if(window._jrCache) delete window._jrCache[cgDeptId()];
 Modal.close(); Toast.success(w.mode==='edit'?'تم تحديث النموذج (يُطبَّق على التقييمات الجديدة فقط)':'تم إنشاء النموذج بنجاح'); loadTemplatesTree(); return true;
 });
 }
@@ -6521,7 +6553,7 @@ if(!confirm(active?`تفعيل نموذج «${jobRole}»؟`:`تعطيل نموذ
 window.sb.rpc('set_cg_template_active',{ p_session_token:cgToken(), p_department_id:cgDeptId(), p_job_role:jobRole, p_active:active }).then(({data,error})=>{
 const r=Array.isArray(data)?data[0]:data;
 if(error||!r||!r.ok){ const m=(r&&r.message)||(error&&error.message)||'خطأ'; if(!handleSessionError(m)) Toast.error(m); return; }
-if(window._templates) delete window._templates[cgDeptId()];
+if(window._templates) delete window._templates[cgDeptId()]; if(window._jrCache) delete window._jrCache[cgDeptId()];
 Toast.success('تم'); loadTemplatesTree();
 }).catch(e=>Toast.error(e.message));
 }
@@ -6531,7 +6563,7 @@ if(!ok) return;
 const { data, error } = await window.sb.rpc('delete_evaluation_template',{ p_session_token:cgToken(), p_department_id:cgDeptId(), p_job_role:jobRole });
 const r = Array.isArray(data)?data[0]:data;
 if(error||!r||!r.ok){ const m=(r&&r.message)||(error&&error.message)||'تعذّر الحذف'; if(!handleSessionError(m)) Toast.error(m); return; }
-if(window._templates) delete window._templates[cgDeptId()];
+if(window._templates) delete window._templates[cgDeptId()]; if(window._jrCache) delete window._jrCache[cgDeptId()];
 Toast.success('تم حذف النموذج'); loadTemplatesTree();
 }
 async function deleteCgRoleTemplate(jobRole) {
