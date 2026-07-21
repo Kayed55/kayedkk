@@ -656,9 +656,14 @@ const { data, error } = await window.sb.rpc('request_password_reset', { p_email:
 if (error) { console.warn('request_password_reset error:', error.message); resetMsg = error.message; }
 if (Array.isArray(data) && data.length) {
 const row = data[0];
-if (row.ok) {
+if (row.ok && row.temp_password) {
 tempPw = row.temp_password;
 resetUserData = { email: row.user_email, full_name: row.user_name };
+} else if (row.ok) {
+// المسار المؤمَّن: رسالة عامة موحّدة بلا كشف حساب ولا كلمة مرور — إعادة التعيين عبر مدير النظام
+Toast.success(row.message || 'إذا كان البريد مسجّلًا فستصلك كلمة مرور مؤقتة. لإعادة التعيين فورًا تواصل مع مدير النظام.');
+Modal.close();
+return;
 } else {
 resetMsg = row.message || 'فشلت العملية';
 }
@@ -3314,6 +3319,9 @@ return { path: path, name: file.name };
 // ---- شاشة الموظف: رفع تقييم جديد (من/إلى تاريخ ≤ 7 أيام) ----
 function renderCgUpload() {
 if (currentUser.role !== 'employee') return '<div class="alert alert-danger">غير مصرح</div>';
+// بوّابة القسم: صفحة رفع التقييم لموظفي Creative Gene فقط (بناءً على department_id لا الاسم)
+if (!(isCreativeGeneDept(currentUser.department_id) || currentUser.department_id === cgDeptId()))
+return '<div class="alert alert-danger">غير مصرح — صفحة رفع التقييم مخصّصة لموظفي Creative Gene فقط.</div>';
 const today = new Date().toISOString().substring(0, 10);
 return `<div class="page-header"><div><div class="page-title">📤 رفع تقييم جديد</div><div class="page-subtitle">ارفع ملف تقييمك الأسبوعي (PDF) لإرساله إلى موظفة الجودة</div></div><button class="btn btn-secondary" data-nav="dashboard">← رجوع</button></div>
 <form id="cgup-form"><div class="card"><div class="card-body">

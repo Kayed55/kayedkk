@@ -69,7 +69,7 @@ const Utils = {
 escape(s) { return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); },
 formatDate(d) { if (!d) return '-'; const dt = new Date(d); return `${dt.getDate().toString().padStart(2,'0')}/${(dt.getMonth()+1).toString().padStart(2,'0')}/${dt.getFullYear()}`; },
 getInitials(n) { return (n||'?').split(' ').map(w=>w[0]).slice(0,2).join(''); },
-roleLabel(r) { return {admin:'مدير النلاإ', quality_officer:'موظف الجودة', supervisor:'مشرف', employee:'موغف'}[r] || r; },
+roleLabel(r) { return {admin:'مدير النظام', quality_officer:'موظف الجودة', supervisor:'مشرف', employee:'موظف', manager:'مدير قسم'}[r] || r; },
 roleBadge(r) { const colors = {admin:'#1e40af', quality_officer:'#0891b2', supervisor:'#7c3aed', employee:'#64748b'}; return `<span class="badge" style="background:${colors[r]||'#64748b'}33;color:${colors[r]||'#64748b'}">${this.roleLabel(r)}</span>`; },
 // التصنيف الثنائي: 84 وأقل = راسب | 85+ = ناجح
 gradeBadge(p) {
