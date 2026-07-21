@@ -12,7 +12,7 @@
 // ============================================
 // حساب الدرجات
 // ============================================
-function calculateScores(items) {
+function calculateScores(items, passScore = 85) {
 const A = CRITERIA.answers;
 const sectionScores = {};
 const errors = [];
@@ -53,10 +53,11 @@ sectionScores[s.key] = Math.round(total * 10) / 10;
 const totalScore = Math.round(Object.values(sectionScores).reduce((a,b)=>a+b, 0) * 10) / 10;
 const percentage = totalScore;
 
-// التصنيف الثنائي:
-// 84% وأقل = راسب | 85-100% = ناجح
+// التصنيف الثنائي حسب عتبة نجاح القسم (افتراضي 85 للتوافق الخلفي)
+// المرحلة 1 (م19): تقبل العتبة كمعامل؛ لا تمرير فعلي بعد → السلوك الحالي محفوظ
+const ps = (passScore != null) ? passScore : 85;
 let grade, status;
-if (percentage >= 85) { grade = 'ناجح'; status = 'ناجح'; }
+if (percentage >= ps) { grade = 'ناجح'; status = 'ناجح'; }
 else { grade = 'راسب'; status = 'راسب'; }
 
 return { sectionScores, totalScore, percentage, grade, status, errors };
@@ -71,14 +72,17 @@ formatDate(d) { if (!d) return '-'; const dt = new Date(d); return `${dt.getDate
 getInitials(n) { return (n||'?').split(' ').map(w=>w[0]).slice(0,2).join(''); },
 roleLabel(r) { return {admin:'مدير النظام', quality_officer:'موظف الجودة', supervisor:'مشرف', employee:'موظف', manager:'مدير قسم'}[r] || r; },
 roleBadge(r) { const colors = {admin:'#1e40af', quality_officer:'#0891b2', supervisor:'#7c3aed', employee:'#64748b'}; return `<span class="badge" style="background:${colors[r]||'#64748b'}33;color:${colors[r]||'#64748b'}">${this.roleLabel(r)}</span>`; },
-// التصنيف الثنائي: 84 وأقل = راسب | 85+ = ناجح
-gradeBadge(p) {
+// التصنيف الثنائي حسب عتبة نجاح القسم (افتراضي 85 للتوافق الخلفي)
+// المرحلة 1 (م19): تقبل العتبة كمعامل اختياري؛ الاستدعاءات الحالية تبقى على 85
+gradeBadge(p, passScore = 85) {
+const ps = (passScore != null) ? passScore : 85;
 let cls = 'badge-danger', txt = 'راسب';
-if (p >= 85) { cls = 'badge-success'; txt = 'ناجح'; }
+if (p >= ps) { cls = 'badge-success'; txt = 'ناجح'; }
 return `<span class="badge ${cls}">${txt} ${p}%</span>`;
 },
-gradeLabel(p) {
-return p >= 85 ? 'ناجح' : 'راسب';
+gradeLabel(p, passScore = 85) {
+const ps = (passScore != null) ? passScore : 85;
+return p >= ps ? 'ناجح' : 'راسب';
 },
 timeAgo(d) {
 const diff = (Date.now() - new Date(d).getTime()) / 1000;
