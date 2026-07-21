@@ -1412,7 +1412,7 @@ return `<tr data-search="${Utils.escape((u.full_name||'')+' '+(u.employee_number
 <td>
 <button class="btn btn-sm btn-primary" data-view-emp="${u.id}">عرض</button>
 ${(currentUser.role === 'admin' || currentUser.role === 'quality_officer') ? `<button class="btn btn-sm btn-warning" data-edit-emp="${u.id}">تعديل</button>` : ''}
-${(currentUser.role === 'admin' || currentUser.role === 'quality_officer') ? `<button class="btn btn-sm btn-info" data-reset-pw="${u.id}" title="إعادة تعيين كلمة المرور">🔑</button>` : ''}
+${currentUser.role === 'admin' ? `<button class="btn btn-sm btn-info" data-reset-pw="${u.id}" title="إعادة تعيين كلمة المرور">🔑</button>` : ''}
 ${currentUser.role === 'admin' ? `<button class="btn btn-sm" data-delete-user="${u.id}" title="حذف نهائي — لا يمكن التراجع" style="background:#b91c1c;color:#fff">🗑</button>` : ''}
 </td>
 </tr>`;
@@ -1661,7 +1661,7 @@ return `<tr>
 <td>${Utils.formatDate(u.created_at)}</td>
 <td>
 <button class="btn btn-sm btn-warning" ${lock?dis:`data-edit-user="${u.id}"`}>تعديل</button>
-<button class="btn btn-sm btn-info" ${lock?dis:`data-reset-pw="${u.id}" title="إعادة تعيين كلمة المرور"`}>🔑</button>
+${currentUser.role === 'admin' ? `<button class="btn btn-sm btn-info" ${lock?dis:`data-reset-pw="${u.id}" title="إعادة تعيين كلمة المرور"`}>🔑</button>` : ''}
 ${u.is_active ? `<button class="btn btn-sm btn-danger" ${lock?dis:`data-deact-user="${u.id}"`}>تعطيل</button>` : ''}
 ${canDel ? `<button class="btn btn-sm" data-delete-user="${u.id}" title="حذف نهائي — لا يمكن التراجع" style="background:#b91c1c;color:#fff">🗑 حذف</button>` : ''}
 </td>
