@@ -3179,8 +3179,25 @@ return `<tr><td>${Utils.escape(e.full_name)}</td><td>${jobTitleCell(e)}</td><td>
 }).join('');
 host.innerHTML = `<div class="card"><div class="card-body" style="padding:0;overflow-x:auto"><table class="table"><thead><tr><th>الموظف</th><th>المسمى الوظيفي</th><th>آخر أسبوع</th><th>الدرجة</th><th>الاعتراض</th><th>الإجراء</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
+// جلب-ودمج التقييم بالمعرّف مع إعادة محاولة — يمنع «التقييم غير موجود» بسبب race بعد الإنشاء.
+async function ensureEvalLoaded(evalId, tries) {
+tries = tries || 3;
+let ev = DB.getEvaluation(evalId);
+if (ev) return ev;
+for (let i = 0; i < tries && !ev; i++) {
+try {
+if (window.sb) {
+const { data } = await window.sb.from('evaluations').select('*').eq('id', evalId).maybeSingle();
+if (data) { DB.data.evaluations = (DB.data.evaluations || []).filter(x => x.id !== data.id).concat(data); try { localStorage.setItem(DB.KEY, JSON.stringify(DB.data)); } catch(_){} ev = data; break; }
+}
+} catch (e) { console.warn('[ensureEvalLoaded] محاولة ' + (i+1) + ' فشلت:', e && e.message); }
+if (!ev && i < tries - 1) await new Promise(r => setTimeout(r, 400));
+}
+if (!ev) console.warn('[ensureEvalLoaded] لم يُعثر على التقييم #' + evalId + ' بعد ' + tries + ' محاولات (race محتمل).');
+return ev;
+}
 async function takeActionModal(evalId) {
-const ev = DB.getEvaluation(evalId);
+const ev = await ensureEvalLoaded(evalId);
 if (!ev) { Toast.error('التقييم غير موجود'); return; }
 const emp = DB.getUser(ev.employee_id);
 const types = (ev.template_snapshot && ev.template_snapshot.allowed_action_types) || ['warning','training','praise','other'];
@@ -3399,8 +3416,7 @@ return `<tr><td>${periodRange(r)}</td><td>${wfBadge(r.workflow_state)}</td><td>$
 host.innerHTML = `<div class="card"><div class="card-body" style="padding:0;overflow-x:auto"><table class="table"><thead><tr><th>الفترة</th><th>الحالة</th><th>الدرجة</th><th></th></tr></thead><tbody>${body}</tbody></table></div></div>`;
 }
 async function objectFromRequest(evalId, deadline) {
-let ev = DB.getEvaluation(evalId);
-if (!ev && window.sb) { try { const { data } = await window.sb.from('evaluations').select('*').eq('id', evalId).maybeSingle(); ev = data; } catch (_) {} }
+const ev = await ensureEvalLoaded(evalId);
 if (!ev) { Toast.error('التقييم غير موجود'); return; }
 if (deadline) { try { ev = Object.assign({}, ev, { objection_deadline: deadline }); } catch (_) {} }
 raiseObjectionFlow(ev, () => loadMyRequests());
