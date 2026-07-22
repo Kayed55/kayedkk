@@ -947,7 +947,7 @@ return `<tr style="cursor:pointer" data-nav-eval="${e.id}">
 <td><div style="display:flex;align-items:center;gap:10px"><div class="user-avatar">${Utils.getInitials(emp?emp.full_name:'-')}</div>${Utils.escape(emp ? emp.full_name : '-')}</div></td>
 <td>${Utils.escape(evr ? evr.full_name : '-')}</td>
 <td>${Utils.formatDate(e.evaluation_date)}</td>
-<td>${Utils.gradeBadge(e.percentage)}</td>
+<td>${Utils.gradeBadge(e.percentage, e.pass_score_snapshot ?? 85)}</td>
 </tr>`;
 }).join('') : '<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--muted)">لا توجد تقييمات بعد</td></tr>';
 
@@ -2015,7 +2015,7 @@ return `<tr style="cursor:pointer" data-nav-eval="${e.id}">
 <td>${Utils.formatDate(e.evaluation_date)}</td>
 <td>${Utils.escape(evr ? evr.full_name : '-')}</td>
 <td>${e.total_score}/100</td>
-<td>${Utils.gradeBadge(e.percentage)}</td>
+<td>${Utils.gradeBadge(e.percentage, e.pass_score_snapshot ?? 85)}</td>
 </tr>`;
 }).join('');
 
@@ -2170,7 +2170,7 @@ return `<tr>
 <td>${Utils.formatDate(e.evaluation_date)}</td>
 <td>${Utils.escape(evr?evr.full_name:'-')}</td>
 <td>${e.total_score}/100</td>
-<td>${Utils.gradeBadge(e.percentage)}</td>
+<td>${Utils.gradeBadge(e.percentage, e.pass_score_snapshot ?? 85)}</td>
 <td>
 <button class="btn btn-sm btn-primary" data-nav-eval="${e.id}">عرض</button>
 ${canEdit ? `<button class="btn btn-sm btn-warning" data-edit-eval="${e.id}">تعديل</button>` : ''}
@@ -3249,6 +3249,8 @@ ${cgHistoryHTML()}`;
 function cgHistoryHTML() {
 const evs = (DB.data.evaluations||[]).filter(e => e.template_type === 'pdf_based_weekly').sort((a,b)=> String(b.week_start||'').localeCompare(String(a.week_start||'')));
 if (!evs.length) return '<div class="alert alert-info">لا توجد تقييمات بعد.</div>';
+// TODO(م19-أسبوعي): pass_score_snapshot=NULL للتقييمات الأسبوعية (create_weekly_evaluation مؤجّل).
+//   لا تضف ?? 85 هنا — قد يخفي bug تصنيف عتبة 90 لـ CG. سيُعالج في جلسة الأسبوعي.
 const rows = evs.map(e => { const emp = DB.getUser(e.employee_id); return `<tr>
 <td>${emp?Utils.escape(emp.full_name):'-'}</td>
 <td>${e.week_start||''} ← ${e.week_end||''}</td>
@@ -3498,6 +3500,8 @@ const { data, error } = await window.sb.rpc('list_workflow_requests', { p_sessio
 if (error) { if (!handleSessionError(error.message)) host.innerHTML = `<div class="alert alert-danger">${Utils.escape(error.message)}</div>`; return; }
 const rows = data || [];
 if (!rows.length) { host.innerHTML = '<div class="alert alert-info">لا توجد تقييمات بانتظار اعتمادك حالياً.</div>'; return; }
+// TODO(م19-أسبوعي): pass_score_snapshot=NULL للتقييمات الأسبوعية (create_weekly_evaluation مؤجّل).
+//   لا تضف ?? 85 هنا — قد يخفي bug تصنيف عتبة 90 لـ CG. سيُعالج في جلسة الأسبوعي.
 const body = rows.map(r => `<tr>
 <td>${Utils.escape(r.employee_name||'-')}</td><td>${periodRange(r)}</td>
 <td>${r.percentage != null ? Utils.gradeBadge(r.percentage) + ' <strong>' + r.percentage + '%</strong>' : '—'}</td>
@@ -5802,7 +5806,7 @@ ${sectionsHTML}
 <div>
 <div style="font-size:13px;color:var(--muted)">الدرجة الإجمالية</div>
 <div id="live-score" style="font-size:32px;font-weight:800;color:var(--warning)">${ev.total_score} / 100</div>
-<div id="live-grade">${Utils.gradeBadge(ev.percentage)}</div>
+<div id="live-grade">${Utils.gradeBadge(ev.percentage, ev.pass_score_snapshot ?? 85)}</div>
 </div>
 <div style="display:flex;gap:10px">
 <button type="button" class="btn btn-secondary" data-nav-eval="${ev.id}">إلغاء</button>
@@ -5818,12 +5822,15 @@ function attachEditEvalHandlers() {
 const form = document.getElementById('edit-eval-form');
 if (!form) return;
 const evalId = parseInt(form.dataset.evalId);
+// م19-د: العتبة المجمّدة للتقييم قيد التعديل — تطابق ما يجمّده الخادم (admin_update_evaluation)
+const ev = DB.getEvaluation(evalId) || {};
+const _editPS = ev.pass_score_snapshot ?? 85;
 
 const updateLive = () => {
 const items = collectItems();
-const r = calculateScores(items);
+const r = calculateScores(items, _editPS);
 document.getElementById('live-score').textContent = `${r.totalScore} / 100`;
-document.getElementById('live-grade').innerHTML = Utils.gradeBadge(r.percentage);
+document.getElementById('live-grade').innerHTML = Utils.gradeBadge(r.percentage, _editPS);
 };
 
 form.querySelectorAll('input[type=radio]').forEach(r => r.addEventListener('change', updateLive));
@@ -6039,7 +6046,7 @@ return `<tr>
 <td>${Utils.escape(evr?evr.full_name:'-')}</td>
 <td>${Utils.formatDate(e.evaluation_date)}</td>
 <td>${e.total_score}/100</td>
-<td>${Utils.gradeBadge(e.percentage)}</td>
+<td>${Utils.gradeBadge(e.percentage, e.pass_score_snapshot ?? 85)}</td>
 <td>
 <button class="btn btn-sm btn-primary" data-nav-eval="${e.id}">👁️ عرض</button>
 <button class="btn btn-sm btn-warning" data-edit-eval="${e.id}">✏️ تعديل</button>
