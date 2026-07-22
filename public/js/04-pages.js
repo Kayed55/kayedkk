@@ -2173,9 +2173,9 @@ return `<tr>
 <td>${Utils.gradeBadge(e.percentage, e.pass_score_snapshot ?? 85)}</td>
 <td>
 <button class="btn btn-sm btn-primary" data-nav-eval="${e.id}">عرض</button>
-${canEdit ? ((!e.template_type || e.template_type === 'section_based')
+${canEdit ? ((!e.template_type || e.template_type === 'section_based' || e.template_type === 'pdf_based_weekly')
   ? `<button class="btn btn-sm btn-warning" data-edit-eval="${e.id}">تعديل</button>`
-  : `<span style="font-size:11px;color:var(--muted)" title="تعديل تقييمات كريتف جين/الأسبوعية من صفحة القسم">التعديل من صفحة القسم</span>`) : ''}
+  : `<span style="font-size:11px;color:var(--muted)" title="التقييمات الأسبوعية تُعدَّل من صفحة القسم">التعديل من صفحة القسم</span>`) : ''}
 ${canDelete ? `<button class="btn btn-sm btn-danger" data-del-eval="${e.id}">حذف</button>` : ''}
 </td>
 </tr>`;
@@ -5742,23 +5742,96 @@ htmlToPDF(html, fname)
 // ============================================
 // Edit Evaluation
 // ============================================
+// ===== م20-ب: تعديل تقييم كريتف جين (PDF) — نموذج مخصّص =====
+function renderCgEditEvaluation(ev) {
+const emp = DB.getUser(ev.employee_id);
+const crit = (ev.template_snapshot && ev.template_snapshot.criteria) || [];
+const scores = ev.section_scores || ev.items || {};
+const rows = crit.map(c => {
+const cap = c.weight;                         // القصّ عند الوزن (اتساق مع الإنشاء و compute_pdf_weighted)
+const cur = scores[c.id] != null ? scores[c.id] : '';
+return `<div class="form-group"><label class="form-label">${Utils.escape(c.name)} <span style="color:var(--muted);font-size:12px">(0 - ${cap})</span></label>
+<input type="number" min="0" max="${cap}" step="0.5" class="form-control cg-score" data-cid="${c.id}" data-weight="${cap}" value="${cur}"></div>`;
+}).join('');
+return `
+<div class="page-header">
+<div><div class="page-title">تعديل تقييم CG #${ev.id}</div><div class="page-subtitle">${Utils.escape(emp?emp.full_name:'-')} — ${ev.week_start||''} ← ${ev.week_end||''}</div></div>
+<button class="btn btn-secondary" data-nav-eval="${ev.id}">← إلغاء</button>
+</div>
+<form id="cg-edit-form" data-eval-id="${ev.id}">
+<div class="card"><div class="card-header"><div class="card-title">📊 درجات المعايير</div></div>
+<div class="card-body">
+${rows || '<div class="alert alert-warning">لا توجد معايير في نموذج هذا التقييم</div>'}
+<div class="form-group" style="margin-top:12px"><label class="form-label">الملاحظات (اختياري)</label><textarea class="form-control" id="cg-edit-notes" rows="3">${Utils.escape(ev.evaluation_notes||'')}</textarea></div>
+</div></div>
+<div class="card" style="position:sticky;bottom:0;z-index:10;border:2px solid var(--primary)"><div class="card-body">
+<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px">
+<div><div style="font-size:13px;color:var(--muted)">الدرجة الإجمالية</div>
+<div id="cg-edit-total" style="font-size:32px;font-weight:800;color:var(--primary)">${ev.percentage} / 100</div>
+<div id="cg-edit-grade">${Utils.gradeBadge(ev.percentage, ev.pass_score_snapshot ?? 85)}</div></div>
+<div style="display:flex;gap:10px">
+<button type="button" class="btn btn-secondary" data-nav-eval="${ev.id}">إلغاء</button>
+<button type="submit" class="btn btn-success" style="padding:12px 26px;font-size:15px">💾 حفظ التعديلات</button>
+</div></div></div></div>
+</form>`;
+}
+
+function attachCgEditHandlers() {
+const form = document.getElementById('cg-edit-form');
+if (!form) return;
+const evalId = parseInt(form.dataset.evalId);
+const ev = DB.getEvaluation(evalId) || {};
+const ps = ev.pass_score_snapshot ?? 85;
+const inputs = form.querySelectorAll('.cg-score');
+const recompute = () => {
+let sum = 0, ok = true;
+inputs.forEach(i => { const v = parseFloat(i.value), w = parseFloat(i.dataset.weight)||0; if (!(v>=0 && v<=w)) ok=false; else sum += v; });
+const total = Math.round(sum*100)/100;
+const tEl = document.getElementById('cg-edit-total'); if (tEl) tEl.textContent = ok ? (total + ' / 100') : '— / 100';
+const gEl = document.getElementById('cg-edit-grade'); if (gEl) gEl.innerHTML = ok ? Utils.gradeBadge(total, ps) : '';
+};
+inputs.forEach(i => i.addEventListener('input', recompute));
+recompute();
+form.addEventListener('submit', async e => {
+e.preventDefault();
+const btn = form.querySelector('button[type=submit]');
+await submitWithFeedback(btn, 'جاري حفظ التعديلات...', null, async () => {
+const scores = {}; let ok = true;
+inputs.forEach(i => { const v = parseFloat(i.value), w = parseFloat(i.dataset.weight)||0; if (!(v>=0 && v<=w)) ok=false; scores[i.dataset.cid] = v; });
+if (!ok) { Toast.error('كل درجة يجب أن تكون بين 0 والحد الأقصى للمعيار'); return false; }
+const notes = ((document.getElementById('cg-edit-notes')||{}).value || '').trim();
+const tok = window.getSessionToken ? getSessionToken() : null;
+const { data, error } = await window.sb.rpc('admin_update_cg_evaluation', { p_session_token: tok, p_eval_id: evalId, p_criteria_scores: scores, p_evaluation_notes: notes });
+const r = (!error && Array.isArray(data) && data[0]) ? data[0] : (data && !Array.isArray(data) ? data : null);
+if (!r || !r.ok) { const m = (r && r.message) || (error && error.message) || 'تعذّر حفظ التعديلات'; if (!handleSessionError(m)) Toast.error(m); return false; }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try { await SupabaseSync.pullAll(true); } catch(_){} }
+Toast.success(`تم حفظ التعديلات — ${r.percentage}% (${r.grade})`);
+navigate('view-evaluation', { id: evalId });
+return true;
+});
+});
+}
+
 function renderEditEvaluation(id) {
 const ev = DB.getEvaluation(id);
 if (!ev) return '<div class="alert alert-danger">التقييم غير موجود</div>';
 const canEdit = Perms.can('edit_evaluation') || (currentUser.role === 'supervisor' && ev.evaluator_id === currentUser.id);
 if (!canEdit) return '<div class="alert alert-danger">ليس لديك صلاحية لتعديل هذا التقييم</div>';
 
-// م20 المرحلة 1 (حارس): هذا المسار يبني نموذج محزم القطاعي فقط. تعديل تقييم غير قطاعي
-// (كريتف جين pdf_based_weekly / الأسبوعي task_based_weekly) عبره يعيد احتسابه كمحزم
-// ويُتلف بياناته. نمنع فتح النموذج حتى يُبنى مسار التعديل المخصّص (م20-ب).
+// م20-ب: تفرّع مسار التعديل بحسب نوع التقييم.
+//  • pdf_based_weekly (كريتف جين) → نموذج تعديل CG مخصّص (renderCgEditEvaluation).
+//  • task_based_weekly (الأسبوعي) → غير مدعوم بعد → حارس (يُبنى لاحقاً).
+//  • section_based / فارغ (محزم، بما فيها القديمة) → المسار القطاعي أدناه.
+if (ev.template_type === 'pdf_based_weekly') {
+return renderCgEditEvaluation(ev);
+}
 if (ev.template_type && ev.template_type !== 'section_based') {
 return `<div class="page-header">
 <div><div class="page-title">تعديل تقييم #${ev.id}</div></div>
 <button class="btn btn-secondary" data-nav="evaluations">← العودة إلى القائمة</button>
 </div>
 <div class="alert alert-warning" style="font-size:14px;line-height:1.9">
-تعديل تقييمات كريتف جين / التقييمات الأسبوعية يتم من صفحة القسم المخصّصة.
-مسار التعديل هنا للتقييمات القطاعية (محزم) فقط.
+تعديل التقييمات الأسبوعية غير مدعوم من هنا بعد. مسار التعديل هنا للتقييمات القطاعية (محزم) فقط.
 </div>`;
 }
 
@@ -6065,9 +6138,9 @@ return `<tr>
 <td>${Utils.gradeBadge(e.percentage, e.pass_score_snapshot ?? 85)}</td>
 <td>
 <button class="btn btn-sm btn-primary" data-nav-eval="${e.id}">👁️ عرض</button>
-${(!e.template_type || e.template_type === 'section_based')
+${(!e.template_type || e.template_type === 'section_based' || e.template_type === 'pdf_based_weekly')
   ? `<button class="btn btn-sm btn-warning" data-edit-eval="${e.id}">✏️ تعديل</button>`
-  : `<span style="font-size:11px;color:var(--muted)" title="تعديل تقييمات كريتف جين/الأسبوعية من صفحة القسم">التعديل من صفحة القسم</span>`}
+  : `<span style="font-size:11px;color:var(--muted)" title="التقييمات الأسبوعية تُعدَّل من صفحة القسم">التعديل من صفحة القسم</span>`}
 <button class="btn btn-sm btn-danger" data-del-eval="${e.id}">🗑️ حذف</button>
 </td>
 </tr>`;
@@ -6814,7 +6887,7 @@ if (page === 'actions-report') renderActionsReportCharts();
 if (page === 'errors-report') renderErrorsReportCharts();
 if (page === 'profile') attachProfileHandlers();
 if (page === 'new-evaluation') attachNewEvalHandlers();
-if (page === 'edit-evaluation') attachEditEvalHandlers();
+if (page === 'edit-evaluation') { attachEditEvalHandlers(); attachCgEditHandlers(); }
 if (page === 'settings') attachSettingsHandlers(currentParams.tab || 'form');
 if (page === 'new-objection') attachNewObjectionHandlers(currentParams.evaluation_id);
 if (page === 'view-objection') attachObjectionHandlers(currentParams.id);
