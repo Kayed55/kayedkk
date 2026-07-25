@@ -1603,9 +1603,13 @@ const deptObj = (window._departments || []).find(d => d.id === department_id);
 const department = deptObj ? deptObj.name : '';
 const _isCg = isCreativeGeneDept(department_id);
 const _isMahzam = isMahzamDept(department_id);   // م23-ج
+const _mahzamTplRaw = (document.getElementById('ef-mahzam-tpl')||{}).value;
+const _mahzamTplVal = (_mahzamTplRaw || '').trim();
 const job_role = _isCg
   ? (document.getElementById('ef-jobrole').value || null)
-  : (_isMahzam ? ((document.getElementById('ef-mahzam-tpl')||{}).value || null) : null);
+  : (_isMahzam ? (_mahzamTplVal === '' ? null : _mahzamTplVal) : null);
+// م23-د (تشخيص مؤقت — يُزال بعد تأكيد الإصلاح): يكشف القيمة وقت الحفظ
+console.log('[saveEmp] dept=', department_id, '| _isMahzam=', _isMahzam, '| ef-mahzam-tpl raw=', JSON.stringify(_mahzamTplRaw), '| → p_job_role=', job_role);
 const job_title = ((document.getElementById('ef-jobtitle')||{}).value || '').trim();
 
 if (!full_name || !employee_number || !position || !email) {
