@@ -6072,6 +6072,148 @@ if (!sub.key) sub.key = `${s.key || 'section'}_s${i + 1}`;
 });
 }
 
+// ============================================
+// م23-هـ: تصدير/استيراد قوالب محزم عبر Excel (SheetJS)
+// ============================================
+function renderMahzamTemplatesSection() {
+return `<div class="card" style="margin-bottom:16px">
+<div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+<div class="card-title">📚 نماذج محزم المحفوظة</div>
+<label class="btn btn-sm btn-success" style="cursor:pointer;margin:0">⬆️ استيراد نموذج
+<input type="file" id="mahzam-import-file" accept=".xlsx" style="display:none">
+</label>
+</div>
+<div class="card-body" style="padding:0"><div id="mahzam-tpl-list"><div style="padding:16px;color:var(--muted)">⏳ جارٍ التحميل…</div></div></div>
+</div>`;
+}
+async function loadMahzamTemplatesList() {
+const host = document.getElementById('mahzam-tpl-list');
+if (!host) return;
+let rows = [];
+try {
+const { data } = await window.sb.rpc('list_mahzam_templates', { p_session_token:(window.getSessionToken?getSessionToken():null), p_department_id: mahzamDeptId() });
+rows = Array.isArray(data) ? data : [];
+} catch(_) {}
+try { window._mahzamTpls = window._mahzamTpls || {}; window._mahzamTpls[mahzamDeptId()] = rows.filter(t => t.is_active); } catch(_){}
+if (!rows.length) { host.innerHTML = '<div style="padding:16px;color:var(--muted)">لا توجد نماذج محفوظة.</div>'; return; }
+const body = rows.map(t => `<tr>
+<td>${t.job_role ? Utils.escape(t.job_role) : '<strong>النموذج الافتراضي</strong>'}</td>
+<td>${t.is_active ? '<span class="badge badge-success">نشط</span>' : '<span class="badge badge-info">معطّل</span>'}</td>
+<td>${t.version||1}</td>
+<td><button class="btn btn-sm btn-secondary" data-export-tpl="${Utils.escape(t.job_role||'')}">📥 تصدير</button></td>
+</tr>`).join('');
+host.innerHTML = `<div style="overflow-x:auto"><table class="table"><thead><tr><th>النموذج</th><th>الحالة</th><th>الإصدار</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
+host.querySelectorAll('[data-export-tpl]').forEach(b => b.addEventListener('click', () => {
+const jr = b.dataset.exportTpl || '';
+const tpl = rows.find(t => (t.job_role||'') === jr);
+if (tpl) exportMahzamTemplate(tpl);
+}));
+}
+function mahzamTemplateToSheets(tpl) {
+const j = tpl.template_jsonb || {};
+const ans = j.answers || {};
+const info = [
+{ Field:'department_id', Value: (tpl.department_id!=null?tpl.department_id:mahzamDeptId()) },
+{ Field:'job_role', Value: tpl.job_role || '' },
+{ Field:'template_type', Value: 'section_based' },
+{ Field:'answers.OK', Value: ans.OK || '' },
+{ Field:'answers.ERR', Value: ans.ERR || '' },
+{ Field:'answers.NA', Value: ans.NA || '' }
+];
+const sections = [], items = [];
+(j.sections||[]).forEach(s => {
+sections.push({ section_key:s.key, title:s.title, type:s.type, weight:s.weight });
+(s.subsections||[]).forEach(sub => (sub.items||[]).forEach(it => {
+items.push({ section_key:s.key, subsection_key:sub.key, subsection_title:sub.title, subsection_weight:sub.weight, item_key:it.key, item_label:it.label });
+}));
+});
+return { info, sections, items };
+}
+function exportMahzamTemplate(tpl) {
+try {
+const { info, sections, items } = mahzamTemplateToSheets(tpl);
+const wb = XLSX.utils.book_new();
+XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(info), 'Info');
+XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sections), 'Sections');
+XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(items), 'Items');
+XLSX.writeFile(wb, `mahzam_template_${tpl.job_role || 'default'}_v${tpl.version||1}.xlsx`);
+} catch(e) { Toast.error('تعذّر التصدير: ' + (e.message||e)); }
+}
+function sheetsToMahzamTemplate(wb) {
+for (const n of ['Info','Sections','Items']) if (!wb.Sheets[n]) return { ok:false, errors:['شيت «'+n+'» غير موجود في الملف'] };
+const infoRows = XLSX.utils.sheet_to_json(wb.Sheets['Info']);
+const secRows  = XLSX.utils.sheet_to_json(wb.Sheets['Sections']);
+const itemRows = XLSX.utils.sheet_to_json(wb.Sheets['Items']);
+const info = {};
+infoRows.forEach(r => { if (r.Field != null) info[String(r.Field).trim()] = (r.Value != null ? String(r.Value) : ''); });
+if ((info['template_type']||'') !== 'section_based') return { ok:false, errors:['نوع النموذج يجب أن يكون section_based (وجدنا: '+(info['template_type']||'—')+')'] };
+const answers = { OK:info['answers.OK']||'', ERR:info['answers.ERR']||'', NA:info['answers.NA']||'' };
+if (!answers.OK || !answers.ERR || !answers.NA) return { ok:false, errors:['قيم answers (OK/ERR/NA) مطلوبة في شيت Info'] };
+let job_role = (info['job_role']||'').trim() || null;
+if (job_role && !/^[a-z][a-z0-9_]{1,49}$/.test(job_role)) return { ok:false, errors:['اسم النموذج (job_role) يجب أن يبدأ بحرف إنجليزي صغير ويحتوي فقط على حروف صغيرة وأرقام وشرطة سفلية'] };
+if (!secRows.length) return { ok:false, errors:['شيت Sections فارغ'] };
+const secMap = new Map(); let wsum = 0;
+for (const r of secRows) {
+const key = (r.section_key!=null?String(r.section_key).trim():'');
+if (!key) return { ok:false, errors:['يوجد صف في Sections بلا section_key'] };
+if (secMap.has(key)) return { ok:false, errors:['معرف قسم مكرّر في Sections: '+key] };
+const type = String(r.type||'').trim();
+if (type!=='critical' && type!=='non-critical') return { ok:false, errors:['نوع القسم «'+key+'» يجب أن يكون critical أو non-critical'] };
+const w = Number(r.weight);
+if (!isFinite(w)) return { ok:false, errors:['وزن القسم «'+key+'» ليس رقماً'] };
+wsum += w;
+secMap.set(key, { key, title:String(r.title||''), type, weight:w, _subs:new Map() });
+}
+if (Math.round(wsum*100)/100 !== 100) return { ok:false, errors:['مجموع أوزان الأقسام = '+wsum+'% (يجب أن يكون 100%)'] };
+for (const r of itemRows) {
+const sk = (r.section_key!=null?String(r.section_key).trim():'');
+if (!secMap.has(sk)) return { ok:false, errors:['معرف القسم «'+sk+'» مستخدم في Items لكنه غير موجود في شيت Sections'] };
+const sec = secMap.get(sk);
+const subk = (r.subsection_key!=null?String(r.subsection_key).trim():'');
+if (!subk) return { ok:false, errors:['يوجد بند بلا subsection_key في القسم «'+sk+'»'] };
+if (!sec._subs.has(subk)) sec._subs.set(subk, { key:subk, title:String(r.subsection_title||''), weight:(isFinite(Number(r.subsection_weight))?Number(r.subsection_weight):0), items:[] });
+const ik = (r.item_key!=null?String(r.item_key).trim():'');
+if (!ik) return { ok:false, errors:['يوجد بند بلا item_key في القسم الفرعي «'+subk+'»'] };
+sec._subs.get(subk).items.push({ key:ik, label:String(r.item_label||'') });
+}
+const sections = [];
+for (const sec of secMap.values()) {
+const subs = [...sec._subs.values()];
+if (!subs.length) return { ok:false, errors:['القسم «'+sec.key+'» بلا بنود في شيت Items'] };
+sections.push({ key:sec.key, type:sec.type, title:sec.title, weight:sec.weight, subsections:subs });
+}
+return { ok:true, template_jsonb:{ answers, sections }, job_role, department_id:mahzamDeptId(), errors:[] };
+}
+async function handleMahzamImport(file) {
+if (!file) return;
+if (file.size > 500*1024) { Toast.error('حجم الملف يتجاوز الحد (500KB)'); return; }
+let wb;
+try { const buf = await file.arrayBuffer(); wb = XLSX.read(new Uint8Array(buf), { type:'array' }); }
+catch(_) { Toast.error('تعذّر قراءة ملف Excel'); return; }
+const parsed = sheetsToMahzamTemplate(wb);
+if (!parsed.ok) { Toast.error(parsed.errors[0] || 'ملف غير صالح'); return; }
+if (!parsed.job_role) { Toast.error('استيراد «النموذج الافتراضي» غير مدعوم — غيّر job_role في شيت Info لإنشاء نموذج مسمّى، أو عدّل الافتراضي من محرّر المعايير أدناه.'); return; }
+let existing = [];
+try { const { data } = await window.sb.rpc('list_mahzam_templates', { p_session_token:(window.getSessionToken?getSessionToken():null), p_department_id: parsed.department_id }); existing = Array.isArray(data)?data:[]; } catch(_){}
+if (existing.some(t => (t.job_role||null) === parsed.job_role)) {
+if (!confirm('يوجد نموذج بالاسم «'+parsed.job_role+'» في قسم محزم. هل تريد استبداله؟')) return;
+}
+const { data, error } = await window.sb.rpc('create_mahzam_template', {
+p_session_token:(window.getSessionToken?getSessionToken():null),
+p_department_id: parsed.department_id, p_job_role: parsed.job_role, p_template_data: parsed.template_jsonb
+});
+const row = (!error && Array.isArray(data) && data[0]) ? data[0] : (data||null);
+if (!row || !row.ok) { const m=(row&&row.message)||(error&&error.message)||'تعذّر حفظ النموذج'; if(!handleSessionError(m)) Toast.error(m); return; }
+try { window._mahzamTpls = {}; } catch(_){}
+Toast.success('تم استيراد النموذج «'+parsed.job_role+'» بنجاح');
+loadMahzamTemplatesList();
+}
+function onMahzamImportChange(inputEl) {
+const f = inputEl && inputEl.files && inputEl.files[0];
+handleMahzamImport(f);
+if (inputEl) inputEl.value = '';
+}
+
 function renderSettingsForm() {
 ensureCriteriaKeys();
 const sectionsHTML = CRITERIA.sections.map(s => `
@@ -6113,7 +6255,7 @@ ${sub.items.length > 1 ? `<button class="btn btn-sm btn-danger" data-del-item="$
 </div>
 </div>`).join('');
 
-return `
+return `${renderMahzamTemplatesSection()}
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
 <div style="color:var(--muted);font-size:14px">📊 إجمالي: ${CRITERIA.sections.length} قسم | ${CRITERIA.sections.reduce((s,sec) => s + sec.subsections.length, 0)} قسم فرعي | ${CRITERIA.sections.reduce((s,sec) => s + sec.subsections.reduce((ss,sub)=>ss+sub.items.length, 0), 0)} بند</div>
 <button class="btn btn-success" id="add-section-btn">➕ إضافة قسم رئيسي</button>
@@ -6444,6 +6586,13 @@ document.querySelectorAll('[data-nav-settings]').forEach(b => {
 b.addEventListener('click', () => navigate('settings', { tab: b.dataset.navSettings }));
 });
 if (tab === 'cg') { loadCgSettings(currentParams.role || ''); return; }
+
+// م23-هـ: قائمة نماذج محزم + استيراد Excel (تبويب «نموذج محزم» فقط)
+if (tab === 'form') {
+loadMahzamTemplatesList();
+const imp = document.getElementById('mahzam-import-file');
+if (imp) imp.addEventListener('change', () => onMahzamImportChange(imp));
+}
 
 const reset = document.getElementById('reset-criteria-btn');
 if (reset) reset.addEventListener('click', async (e) => {
