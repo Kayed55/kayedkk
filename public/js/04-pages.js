@@ -7107,6 +7107,10 @@ const w = window._cgWiz, t = w.tpl;
 const sum = Math.round(t.criteria.reduce((s,c)=>s+(parseFloat(c.weight)||0),0));
 if(!t.name||!t.job_title){ w.step=1; cgWizShow(); Toast.error('أكمل البيانات الأساسية'); return; }
 if(sum!==100){ w.step=2; cgWizShow(); Toast.error('مجموع الأوزان يجب أن يساوي 100'); return; }
+// م25: تحقق أوزان/بنية خادمي عبر _validate_template_sections (نفس منطق section_based) — قبل الحفظ، يغطّي new+edit
+{ const { data: vErr, error: vErrRpc } = await window.sb.rpc('_validate_template_sections', { p_type:'pdf_based_weekly', p_sections:t.criteria });
+  if(vErrRpc){ if(!handleSessionError(vErrRpc.message)) Toast.error('تعذّر التحقق الخادمي: '+vErrRpc.message); return; }
+  if(vErr){ w.step=2; cgWizShow(); Toast.error(vErr); return; } }
 const payload = { name:t.name, job_title:t.job_title, job_role:(w.mode==='edit'?(w.origRole||null):(t.job_role||null)), criteria:t.criteria, allowed_action_types:t.allowed_action_types, objection_window_hours:t.objection_window_hours||48, pdf_max_size_mb:t.pdf_max_size_mb||20 };
 const btn = document.getElementById('wiz-save');
 await submitWithFeedback(btn, 'جارٍ الحفظ...', null, async () => {
