@@ -6277,53 +6277,212 @@ ${t.status!=='archived'?`<button class="btn btn-sm btn-warning" data-tm-status="
 host.querySelectorAll('[data-tm-edit]').forEach(b=>b.addEventListener('click',()=>{
 const t=(window._tmCache||[]).find(x=>x.id==b.dataset.tmEdit); if(!t) return;
 if(t.template_type==='pdf_based_weekly') openCgWizard('edit', t.job_role||'');   // م24-ج: CG → المعالج
-else templateEditorModal(t);                                                    // section_based → محرّر MVP
+else templateEditorModal(t);                                                    // م26: section_based → المحرّر الديناميكي
 }));
 host.querySelectorAll('[data-tm-copy]').forEach(b=>b.addEventListener('click',()=>tmCopy((window._tmCache||[]).find(x=>x.id==b.dataset.tmCopy))));
 host.querySelectorAll('[data-tm-status]').forEach(b=>b.addEventListener('click',()=>{const p=b.dataset.tmStatus.split('|'); tmSetStatus(p[0],p[1]);}));
 host.querySelectorAll('[data-tm-del]').forEach(b=>b.addEventListener('click',()=>tmDelete(b.dataset.tmDel)));
 }
 // محرّر MVP (JSON مُتحقَّق عبر create_template/update_template) — النموذج الديناميكي في م24-ج-2
+// ============================================================
+// م26: محرّر النماذج الديناميكي لـ section_based (يستبدل محرّر JSON الخام في م24-ج)
+//   • شجرة قابلة للطيّ: أقسام → أقسام فرعية → بنود + أزرار +/🗑 + إعادة توزيع
+//   • إعادة حساب أوزان حيّة مع تلوين، تحقق عميلي فوري + خادمي عبر _validate_template_sections
+//   • pdf_based_weekly يُحوَّل لمعالج cgWiz (يلبّي تحرير المعايير أصلاً)
+//   ملاحظة: العناوين عربية لا تُحوَّل إلى slug (a-z0-9) → المفاتيح افتراضياً مرقّمة
+//           (section_1/sub_1/item_1) وقابلة للتعديل، وتُصحَّح/تُملأ عند الحفظ.
+// ============================================================
+function teSlug(s, fb){ const v=(s||'').toString().trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,''); return v||fb; }
+function teValidKey(k, fb){ k=(k||'').toString().trim().toLowerCase().replace(/[^a-z0-9_]/g,''); return /^[a-z][a-z0-9_]{0,49}$/.test(k)?k:fb; }
+function teRound(x){ return Math.round((parseFloat(x)||0)*100)/100; }
+function teEqualWeights(n){ if(n<=0) return []; const each=Math.round((100/n)*100)/100; const arr=Array(n).fill(each); const s=arr.reduce((a,b)=>a+b,0); arr[n-1]=Math.round((arr[n-1]+(100-s))*100)/100; return arr; }
+function teNewSub(i){ return { key:'sub_'+(i+1), title:'', weight:0, items:[{ key:'item_1', label:'' }] }; }
+function teNewSection(i){ return { key:'section_'+(i+1), title:'', type:'non-critical', weight:0, _open:true, subsections:[teNewSub(0)] }; }
+
 async function templateEditorModal(existing, forceType) {
 const isEdit = !!existing;
-let tpl=null, deptId='', type=(isEdit?'':(forceType||'')), name='', jobRole='', bodyJson='';
+// حارس: pdf → cgWiz (لا يُحرَّر هنا — يحفظ حقول CG الغنية عبر upsert)
+const typeGuess = isEdit ? (existing.template_type||'') : (forceType||'');
+if (typeGuess === 'pdf_based_weekly') { if (isEdit) openCgWizard('edit', existing.job_role||''); else openCgWizard('new', null); return; }
+let deptId='', name='', jobRole='', sections=null;
 if (isEdit) {
+let tpl=null;
 try { const { data } = await window.sb.from('evaluation_templates').select('*').eq('id', existing.id).maybeSingle(); tpl=data; } catch(_){}
 if (!tpl) { Toast.error('تعذّر جلب النموذج'); return; }
-deptId=tpl.department_id; type=tpl.template_type; name=tpl.name||''; jobRole=tpl.job_role||'';
-bodyJson=JSON.stringify(type==='section_based'?((tpl.template_jsonb||{}).sections||[]):((tpl.template_jsonb||{}).criteria||[]), null, 2);
+if (tpl.template_type === 'pdf_based_weekly') { openCgWizard('edit', tpl.job_role||''); return; }
+deptId=tpl.department_id; name=tpl.name||''; jobRole=tpl.job_role||'';
+sections=JSON.parse(JSON.stringify((tpl.template_jsonb||{}).sections||[]));
+if(!sections.length) sections=[teNewSection(0)];
+} else {
+sections=[teNewSection(0)]; sections[0].weight=100; sections[0].subsections[0].weight=100;
 }
+window._teState = { isEdit, id:isEdit?existing.id:null, deptId, name, jobRole, sections, dirty:false };
+teShowModal();
+}
+
+function teShowModal(){
+const st=window._teState;
 const depts=(window._departments||[]).filter(d=>d.is_active!==false);
-const deptOpts=depts.map(d=>`<option value="${d.id}" ${d.id==deptId?'selected':''}>${Utils.escape(d.name)}</option>`).join('');
-Modal.show(isEdit?'تعديل نموذج':'إضافة نموذج', `
-<div class="form-group"><label class="form-label">الاسم (slug إنجليزي) *</label><input class="form-control" id="tpl-name" value="${Utils.escape(name)}" placeholder="مثال: customer_service" style="direction:ltr;text-align:left"></div>
-<div class="form-group"><label class="form-label">الدور الوظيفي (اختياري)</label><input class="form-control" id="tpl-jr" value="${Utils.escape(jobRole)}" placeholder="slug اختياري" style="direction:ltr;text-align:left"></div>
-<div class="form-group"><label class="form-label">القسم *</label><select class="form-control" id="tpl-dept" ${isEdit?'disabled':''}><option value="">-- اختر --</option>${deptOpts}</select></div>
-<div class="form-group"><label class="form-label">النوع * <span style="font-size:11px;color:var(--muted)">(لا يتغيّر بعد الإنشاء)</span></label><select class="form-control" id="tpl-type" ${(isEdit||forceType)?'disabled':''}><option value="">-- اختر --</option><option value="section_based" ${type==='section_based'?'selected':''}>محزم (بنود)</option><option value="pdf_based_weekly" ${type==='pdf_based_weekly'?'selected':''}>CG (PDF)</option></select></div>
-<div class="form-group"><label class="form-label">بنية النموذج (JSON) *</label>
-<div style="font-size:11px;color:var(--muted);margin-bottom:4px;line-height:1.7">• <b>section_based</b>: مصفوفة أقسام <code>{key,type,title,weight,subsections:[{key,title,weight,items:[{key,label}]}]}</code> — أوزان الأقسام=100، والفرعية داخل كل قسم=100.<br>• <b>pdf</b>: مصفوفة <code>{id,name,weight}</code> — المجموع=100.</div>
-<textarea class="form-control" id="tpl-json" rows="12" style="font-family:monospace;direction:ltr;text-align:left" placeholder="[ ... ]">${Utils.escape(bodyJson)}</textarea></div>`,
-`<button class="btn btn-secondary" onclick="Modal.close()">إلغاء</button><button class="btn btn-primary" id="tpl-save">${isEdit?'حفظ':'إنشاء'}</button>`);
-document.getElementById('tpl-save').addEventListener('click', async ()=>{
-const nm=(document.getElementById('tpl-name').value||'').trim();
-const jr=(document.getElementById('tpl-jr').value||'').trim()||null;
-const dp=isEdit?deptId:parseInt((document.getElementById('tpl-dept').value||'0'));
-const tp=isEdit?type:(forceType||(document.getElementById('tpl-type')||{}).value||'');
-let sections;
-try { sections=JSON.parse(document.getElementById('tpl-json').value||''); } catch(e){ Toast.error('JSON غير صالح: '+(e.message||e)); return; }
-if (!nm) { Toast.error('الاسم مطلوب'); return; }
-if (!isEdit && (!dp||!tp)) { Toast.error('القسم والنوع مطلوبان'); return; }
-const btn=document.getElementById('tpl-save');
-await submitWithFeedback(btn, 'جاري الحفظ...', null, async ()=>{
+const deptOpts=depts.map(d=>`<option value="${d.id}" ${d.id==st.deptId?'selected':''}>${Utils.escape(d.name)}</option>`).join('');
+const body=`<style>.modal{max-width:1100px !important;width:min(95vw,1100px) !important}</style>
+<div id="te-root">
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
+<div class="form-group"><label class="form-label">الاسم (slug إنجليزي) *</label><input class="form-control" id="te-name" value="${Utils.escape(st.name)}" placeholder="customer_service" style="direction:ltr;text-align:left"></div>
+<div class="form-group"><label class="form-label">الدور الوظيفي (اختياري)</label><input class="form-control" id="te-jr" value="${Utils.escape(st.jobRole)}" placeholder="slug اختياري" style="direction:ltr;text-align:left"></div>
+<div class="form-group"><label class="form-label">القسم *</label><select class="form-control" id="te-dept" ${st.isEdit?'disabled':''}><option value="">-- اختر --</option>${deptOpts}</select></div>
+<div class="form-group"><label class="form-label">النوع</label><input class="form-control" value="محزم (بنود)" disabled style="background:#f1f5f9"></div>
+</div>
+<div style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px;padding:10px;border-radius:8px;background:#f8fafc"><strong>مجموع أوزان الأقسام</strong><strong id="te-secsum">—</strong></div>
+<div id="te-tree"></div>
+<div style="display:flex;gap:8px;margin-top:10px">
+<button class="btn btn-secondary btn-sm" data-act="add-section" type="button">➕ إضافة قسم</button>
+<button class="btn btn-secondary btn-sm" data-act="redist-sections" type="button">⚖️ إعادة توزيع أوزان الأقسام</button>
+</div>
+</div>`;
+const footer=`<button class="btn btn-secondary" id="te-cancel">إلغاء</button><button class="btn btn-primary" id="te-save">${st.isEdit?'حفظ':'إنشاء'}</button>`;
+Modal.show(st.isEdit?'✏️ تعديل نموذج (محزم)':'➕ إضافة نموذج (محزم)', body, footer);
+const root=document.getElementById('te-root');
+root.addEventListener('input', teOnInput);
+root.addEventListener('click', teOnClick);
+document.getElementById('te-cancel').addEventListener('click', teClose);
+document.getElementById('te-save').addEventListener('click', teSave);
+teRenderTree();
+}
+
+function teBadge(sum){ const ok=teRound(sum)===100; return `<span style="color:${ok?'#16a34a':'#dc2626'};font-weight:800">${teRound(sum)} / 100</span>`; }
+
+function teRenderTree(){
+const st=window._teState; const host=document.getElementById('te-tree'); if(!host) return;
+host.innerHTML = st.sections.map((s,si)=>{
+const open = s._open!==false;
+const subSum = (s.subsections||[]).reduce((a,x)=>a+(parseFloat(x.weight)||0),0);
+const subsHtml = (s.subsections||[]).map((sub,bi)=>{
+const itemsHtml=(sub.items||[]).map((it,ii)=>`<div style="display:flex;gap:6px;align-items:center;margin:4px 0 4px 0;padding-right:18px">
+<input class="form-control" data-s="${si}" data-sub="${bi}" data-it="${ii}" data-f="label" value="${Utils.escape(it.label||'')}" placeholder="نص البند (عربي)" style="flex:1">
+<input class="form-control" data-s="${si}" data-sub="${bi}" data-it="${ii}" data-f="key" value="${Utils.escape(it.key||'')}" placeholder="key" dir="ltr" style="width:120px;direction:ltr;text-align:left">
+<button class="btn btn-sm btn-danger" data-act="del-item" data-s="${si}" data-sub="${bi}" data-it="${ii}" type="button">🗑</button></div>`).join('');
+const noItems=!(sub.items||[]).length?`<div style="color:#b45309;font-size:12px;padding:4px 18px">⚠️ لا بنود — أضف بنداً</div>`:'';
+return `<div style="border:1px dashed var(--border);border-radius:6px;padding:8px;margin:6px 0;background:#fff">
+<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+<span style="font-size:12px;color:var(--muted)">فرعي</span>
+<input class="form-control" data-s="${si}" data-sub="${bi}" data-f="title" value="${Utils.escape(sub.title||'')}" placeholder="عنوان الفرعي (عربي، اختياري)" style="flex:1;min-width:140px">
+<input class="form-control" data-s="${si}" data-sub="${bi}" data-f="key" value="${Utils.escape(sub.key||'')}" placeholder="key" dir="ltr" style="width:110px;direction:ltr;text-align:left">
+<input type="number" min="0" max="100" step="0.5" class="form-control" data-s="${si}" data-sub="${bi}" data-f="weight" value="${teRound(sub.weight)}" style="width:90px" title="وزن الفرعي">
+<button class="btn btn-sm btn-danger" data-act="del-sub" data-s="${si}" data-sub="${bi}" type="button">🗑</button>
+</div>
+${itemsHtml}${noItems}
+<button class="btn btn-sm btn-secondary" data-act="add-item" data-s="${si}" data-sub="${bi}" type="button" style="margin-top:4px">➕ بند</button>
+</div>`;
+}).join('');
+const noSubs=!(s.subsections||[]).length?`<div style="color:#b45309;font-size:12px;padding:4px">⚠️ لا أقسام فرعية — أضف قسماً فرعياً</div>`:'';
+return `<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;background:#f8fafc">
+<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+<button class="btn btn-sm btn-secondary" data-act="toggle-sec" data-s="${si}" type="button" style="width:32px">${open?'▾':'▸'}</button>
+<input class="form-control" data-s="${si}" data-f="title" value="${Utils.escape(s.title||'')}" placeholder="عنوان القسم (عربي)" style="flex:1;min-width:160px">
+<input class="form-control" data-s="${si}" data-f="key" value="${Utils.escape(s.key||'')}" placeholder="key" dir="ltr" style="width:120px;direction:ltr;text-align:left">
+<input type="number" min="0" max="100" step="0.5" class="form-control" data-s="${si}" data-f="weight" value="${teRound(s.weight)}" style="width:90px" title="وزن القسم">
+<select class="form-control" data-s="${si}" data-f="type" style="width:130px"><option value="non-critical" ${s.type!=='critical'?'selected':''}>non-critical</option><option value="critical" ${s.type==='critical'?'selected':''}>critical</option></select>
+<button class="btn btn-sm btn-danger" data-act="del-section" data-s="${si}" type="button">🗑</button>
+</div>
+<div style="${open?'':'display:none'}">
+<div style="display:flex;justify-content:space-between;align-items:center;margin:8px 0;font-size:13px"><span>مجموع أوزان الفرعية</span><span class="te-subsum" data-s="${si}">${teBadge(subSum)}</span></div>
+${subsHtml}${noSubs}
+<div style="display:flex;gap:8px;margin-top:6px">
+<button class="btn btn-sm btn-secondary" data-act="add-sub" data-s="${si}" type="button">➕ قسم فرعي</button>
+<button class="btn btn-sm btn-secondary" data-act="redist-subs" data-s="${si}" type="button">⚖️ توزيع أوزان الفرعية</button>
+</div>
+</div></div>`;
+}).join('');
+teRecalc();
+}
+
+function teRecalc(){
+const st=window._teState; if(!st) return;
+const secEl=document.getElementById('te-secsum');
+if(secEl) secEl.innerHTML=teBadge(st.sections.reduce((a,s)=>a+(parseFloat(s.weight)||0),0));
+st.sections.forEach((s,si)=>{ const el=document.querySelector('.te-subsum[data-s="'+si+'"]'); if(el) el.innerHTML=teBadge((s.subsections||[]).reduce((a,x)=>a+(parseFloat(x.weight)||0),0)); });
+}
+
+function teOnInput(e){
+const st=window._teState; if(!st) return; const t=e.target;
+if(t.id==='te-name'){ st.name=t.value; st.dirty=true; return; }
+if(t.id==='te-jr'){ st.jobRole=t.value; st.dirty=true; return; }
+if(t.id==='te-dept'){ st.deptId=t.value; st.dirty=true; return; }
+const f=t.dataset.f; if(!f) return;
+const si=+t.dataset.s; const subi=t.dataset.sub!=null?+t.dataset.sub:null; const iti=t.dataset.it!=null?+t.dataset.it:null;
+const sec=st.sections[si]; if(!sec) return;
+st.dirty=true;
+if(iti!=null){ if(sec.subsections[subi]&&sec.subsections[subi].items[iti]) sec.subsections[subi].items[iti][f]=t.value; }
+else if(subi!=null){ const sub=sec.subsections[subi]; if(sub){ sub[f]= f==='weight'?teRound(t.value):t.value; if(f==='weight') teRecalc(); } }
+else { sec[f]= f==='weight'?teRound(t.value):t.value; if(f==='weight') teRecalc(); }
+}
+
+function teRedistSections(){ const st=window._teState; const w=teEqualWeights(st.sections.length); st.sections.forEach((s,i)=>s.weight=w[i]); }
+function teRedistSubs(si){ const st=window._teState; const subs=st.sections[si].subsections||[]; const w=teEqualWeights(subs.length); subs.forEach((s,i)=>s.weight=w[i]); }
+
+function teOnClick(e){
+const b=e.target.closest('[data-act]'); if(!b) return;
+const st=window._teState; if(!st) return;
+const act=b.dataset.act; const si=b.dataset.s!=null?+b.dataset.s:null; const subi=b.dataset.sub!=null?+b.dataset.sub:null; const iti=b.dataset.it!=null?+b.dataset.it:null;
+if(act==='toggle-sec'){ st.sections[si]._open = !(st.sections[si]._open!==false); teRenderTree(); return; }
+let changed=true;
+switch(act){
+case 'add-section': st.sections.push(teNewSection(st.sections.length)); teRedistSections(); break;
+case 'del-section': { const s=st.sections[si]; if(!confirm('حذف القسم «'+(s.title||'—')+'»؟ هذا لا يمكن التراجع عنه قبل الحفظ.')) return; st.sections.splice(si,1); teRedistSections(); break; }
+case 'redist-sections': teRedistSections(); break;
+case 'add-sub': { const subs=st.sections[si].subsections; subs.push(teNewSub(subs.length)); teRedistSubs(si); break; }
+case 'del-sub': { const sub=st.sections[si].subsections[subi]; if(!confirm('حذف القسم الفرعي «'+(sub.title||'—')+'»؟ هذا لا يمكن التراجع عنه قبل الحفظ.')) return; st.sections[si].subsections.splice(subi,1); teRedistSubs(si); break; }
+case 'redist-subs': teRedistSubs(si); break;
+case 'add-item': { const items=st.sections[si].subsections[subi].items; items.push({ key:'item_'+(items.length+1), label:'' }); break; }
+case 'del-item': { const it=st.sections[si].subsections[subi].items[iti]; if(!confirm('حذف البند «'+(it.label||'—')+'»؟ هذا لا يمكن التراجع عنه قبل الحفظ.')) return; st.sections[si].subsections[subi].items.splice(iti,1); break; }
+default: changed=false;
+}
+if(changed){ st.dirty=true; teRenderTree(); }
+}
+
+function teClose(){ const st=window._teState; if(st&&st.dirty&&!confirm('هناك تغييرات لم تُحفظ. الخروج بلا حفظ؟')) return; Modal.close(); }
+
+async function teSave(){
+const st=window._teState; if(!st) return;
+const nm=(st.name||'').trim();
+if(!/^[a-z][a-z0-9_]{1,49}$/.test(nm)){ Toast.error('الاسم يجب أن يبدأ بحرف إنجليزي صغير (2–50: حروف صغيرة/أرقام/شرطة سفلية)'); return; }
+const jr=(st.jobRole||'').trim();
+if(jr && !/^[a-z][a-z0-9_]{1,49}$/.test(jr)){ Toast.error('الدور الوظيفي: صيغة slug غير صحيحة'); return; }
+if(!st.isEdit && !st.deptId){ Toast.error('القسم مطلوب'); return; }
+if(!st.sections.length){ Toast.error('أضف قسماً واحداً على الأقل'); return; }
+// بناء نسخة نظيفة + تحقق عميلي + ملء/تصحيح المفاتيح (بلا حقول انتقالية مثل _open)
+const clean=[];
+for(let si=0; si<st.sections.length; si++){ const s=st.sections[si];
+if(!(s.title||'').trim()){ Toast.error('القسم '+(si+1)+': العنوان مطلوب'); return; }
+if(!(s.subsections||[]).length){ Toast.error('القسم «'+s.title+'» بلا أقسام فرعية'); return; }
+const subs=[];
+for(let bi=0; bi<s.subsections.length; bi++){ const sub=s.subsections[bi];
+if(!(sub.items||[]).length){ Toast.error('الفرعي '+(bi+1)+' في «'+s.title+'» بلا بنود'); return; }
+const items=[];
+for(let ii=0; ii<sub.items.length; ii++){ const it=sub.items[ii];
+if(!(it.label||'').trim()){ Toast.error('بند بلا نص في «'+s.title+'»'); return; }
+items.push({ key:teValidKey(it.key,'item_'+(ii+1)), label:it.label.trim() }); }
+subs.push({ key:teValidKey(sub.key,'sub_'+(bi+1)), title:(sub.title||'').trim(), weight:teRound(sub.weight), items }); }
+clean.push({ key:teValidKey(s.key,'section_'+(si+1)), title:s.title.trim(), type:(s.type==='critical'?'critical':'non-critical'), weight:teRound(s.weight), subsections:subs }); }
+const secSum=teRound(clean.reduce((a,s)=>a+s.weight,0));
+if(secSum!==100){ Toast.error('مجموع أوزان الأقسام = '+secSum+'% (يجب أن يكون 100%)'); return; }
+for(const s of clean){ const ss=teRound(s.subsections.reduce((a,x)=>a+x.weight,0)); if(ss!==100){ Toast.error('مجموع أوزان الفرعية في «'+s.title+'» = '+ss+'% (يجب أن يكون 100%)'); return; } }
+const btn=document.getElementById('te-save');
+await submitWithFeedback(btn, 'جارٍ الحفظ...', null, async ()=>{
+// تحقق خادمي عبر _validate_template_sections (م25) مع fallback خطأ الصلاحية
+const { data:vErr, error:vErrRpc } = await window.sb.rpc('_validate_template_sections', { p_type:'section_based', p_sections:clean });
+const permDenied = vErrRpc && (vErrRpc.code==='42501' || /permission denied/i.test(vErrRpc.message||''));
+if(vErrRpc && !permDenied){ if(!handleSessionError(vErrRpc.message)) Toast.error('تعذّر التحقق الخادمي: '+vErrRpc.message); return false; }
+if(!vErrRpc && vErr){ Toast.error(vErr); return false; }
 const tok=(window.getSessionToken?getSessionToken():null);
 let data, error;
-if (isEdit) ({data,error}=await window.sb.rpc('update_template',{p_session_token:tok,p_id:existing.id,p_name:nm,p_job_role:jr,p_sections:sections}));
-else ({data,error}=await window.sb.rpc('create_template',{p_session_token:tok,p_department_id:dp,p_name:nm,p_job_role:jr,p_template_type:tp,p_sections:sections}));
+if(st.isEdit) ({data,error}=await window.sb.rpc('update_template',{p_session_token:tok,p_id:st.id,p_name:nm,p_job_role:jr||null,p_sections:clean}));
+else ({data,error}=await window.sb.rpc('create_template',{p_session_token:tok,p_department_id:parseInt(st.deptId),p_name:nm,p_job_role:jr||null,p_template_type:'section_based',p_sections:clean}));
 const r=(!error&&Array.isArray(data)&&data[0])?data[0]:(data||null);
-if (!r||!r.ok){const m=(r&&r.message)||(error&&error.message)||'تعذّر الحفظ'; if(!handleSessionError(m)) Toast.error(m); return false;}
+if(!r||!r.ok){ const m=(r&&r.message)||(error&&error.message)||'تعذّر الحفظ'; if(!handleSessionError(m)) Toast.error(m); return false; }
 try{window._mahzamTpls={};}catch(_){}
-Modal.close(); Toast.success(r.message||'تم'); loadTemplatesCards(); return true;
-});
+st.dirty=false;
+Modal.close(); Toast.success('تم حفظ النموذج «'+nm+'»'); loadTemplatesCards(); return true;
 });
 }
 async function tmCopy(t){
