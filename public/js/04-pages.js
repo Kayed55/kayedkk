@@ -242,8 +242,9 @@ if (!deptId) return [];
 window._mahzamTpls = window._mahzamTpls || {};
 if (window._mahzamTpls[deptId]) return window._mahzamTpls[deptId];
 try {
-const { data } = await window.sb.rpc('list_mahzam_templates', { p_session_token:(window.getSessionToken?getSessionToken():null), p_department_id: deptId });
-const rows = (Array.isArray(data)?data:[]).filter(t => t.is_active);
+// م24-ج: list_templates العام (يستثني الأرشيف)؛ نأخذ النشطة لقائمة اختيار الموظف
+const { data } = await window.sb.rpc('list_templates', { p_session_token:(window.getSessionToken?getSessionToken():null), p_department_id: deptId });
+const rows = (Array.isArray(data)?data:[]).filter(t => t.status === 'active');
 window._mahzamTpls[deptId] = rows;
 return rows;
 } catch(_) { return []; }
@@ -6216,6 +6217,159 @@ handleMahzamImport(f);
 if (inputEl) inputEl.value = '';
 }
 
+// ============================================
+// م24-ج: إدارة النماذج (بطاقات لكل الأقسام) — عبر RPCs العامة
+// ============================================
+function renderTemplatesManagement() {
+const depts = (window._departments||[]).filter(d=>d.is_active!==false);
+const deptOpts = depts.map(d=>`<option value="${d.id}">${Utils.escape(d.name)}</option>`).join('');
+return `
+<div class="card" style="margin-bottom:16px"><div class="card-body">
+<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between">
+<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+<select class="form-control" id="tm-f-dept" style="max-width:170px"><option value="">كل الأقسام</option>${deptOpts}</select>
+<select class="form-control" id="tm-f-type" style="max-width:170px"><option value="">كل الأنواع</option><option value="section_based">محزم (بنود)</option><option value="pdf_based_weekly">CG (PDF)</option></select>
+<select class="form-control" id="tm-f-status" style="max-width:150px"><option value="">نشط + معطّل</option><option value="active">نشط</option><option value="inactive">معطّل</option></select>
+</div>
+<button class="btn btn-success" id="tm-add">➕ إضافة نموذج</button>
+</div></div></div>
+<div id="tm-cards"><div style="padding:16px;color:var(--muted)">⏳ جارٍ التحميل…</div></div>`;
+}
+async function loadTemplatesCards() {
+const host = document.getElementById('tm-cards');
+if (!host) return;
+const depts = (await loadDepartments()).filter(d=>d.is_active!==false);
+const tok = (window.getSessionToken?getSessionToken():null);
+let all = [];
+for (const d of depts) {
+try {
+const { data } = await window.sb.rpc('list_templates', { p_session_token: tok, p_department_id: d.id });
+(Array.isArray(data)?data:[]).forEach(t => all.push(Object.assign({}, t, { _deptId:d.id, _deptName:d.name })));
+} catch(_){}
+}
+window._tmCache = all;
+renderTemplatesCardsFiltered();
+}
+function renderTemplatesCardsFiltered() {
+const host = document.getElementById('tm-cards');
+if (!host) return;
+const fD=(document.getElementById('tm-f-dept')||{}).value, fT=(document.getElementById('tm-f-type')||{}).value, fS=(document.getElementById('tm-f-status')||{}).value;
+let rows = (window._tmCache||[]);
+if (fD) rows = rows.filter(t=>String(t._deptId)===fD);
+if (fT) rows = rows.filter(t=>t.template_type===fT);
+if (fS) rows = rows.filter(t=>t.status===fS);
+if (!rows.length) { host.innerHTML='<div style="padding:16px;color:var(--muted)">لا توجد نماذج مطابقة.</div>'; return; }
+const tl = t => t==='section_based'?'محزم (بنود)':t==='pdf_based_weekly'?'CG (PDF)':t;
+const sb = s => s==='active'?'<span class="badge badge-success">نشط</span>':s==='inactive'?'<span class="badge badge-info">معطّل</span>':'<span class="badge badge-warning">مؤرشف</span>';
+host.innerHTML = `<div class="grid grid-2" style="gap:14px">`+rows.map(t=>`
+<div class="card"><div class="card-body">
+<div style="display:flex;justify-content:space-between;align-items:start;gap:8px">
+<div><div style="font-weight:800;font-size:16px">${Utils.escape(t.name)}</div>
+<div style="font-size:12px;color:var(--muted)">${Utils.escape(t._deptName)} · ${tl(t.template_type)} · إصدار ${t.version||1}</div></div>${sb(t.status)}</div>
+<div style="display:flex;gap:16px;margin:10px 0;font-size:13px"><span>📋 ${t.item_count||0} بند</span><span>👥 ${t.employee_count||0} موظف</span>${t.job_role?`<span style="color:var(--muted)">دور: ${Utils.escape(t.job_role)}</span>`:''}</div>
+<div style="display:flex;gap:6px;flex-wrap:wrap">
+<button class="btn btn-sm btn-primary" data-tm-edit="${t.id}">✏️ تعديل</button>
+<button class="btn btn-sm btn-secondary" data-tm-copy="${t.id}">📄 نسخ</button>
+${t.status==='active'?`<button class="btn btn-sm btn-warning" data-tm-status="${t.id}|inactive">⏸️ تعطيل</button>`:t.status==='inactive'?`<button class="btn btn-sm btn-success" data-tm-status="${t.id}|active">▶️ تفعيل</button>`:''}
+${t.status!=='archived'?`<button class="btn btn-sm btn-warning" data-tm-status="${t.id}|archived">🗄️ أرشفة</button>`:''}
+<button class="btn btn-sm btn-danger" data-tm-del="${t.id}">🗑️ حذف</button>
+</div></div></div>`).join('')+`</div>`;
+host.querySelectorAll('[data-tm-edit]').forEach(b=>b.addEventListener('click',()=>{
+const t=(window._tmCache||[]).find(x=>x.id==b.dataset.tmEdit); if(!t) return;
+if(t.template_type==='pdf_based_weekly') openCgWizard('edit', t.job_role||'');   // م24-ج: CG → المعالج
+else templateEditorModal(t);                                                    // section_based → محرّر MVP
+}));
+host.querySelectorAll('[data-tm-copy]').forEach(b=>b.addEventListener('click',()=>tmCopy((window._tmCache||[]).find(x=>x.id==b.dataset.tmCopy))));
+host.querySelectorAll('[data-tm-status]').forEach(b=>b.addEventListener('click',()=>{const p=b.dataset.tmStatus.split('|'); tmSetStatus(p[0],p[1]);}));
+host.querySelectorAll('[data-tm-del]').forEach(b=>b.addEventListener('click',()=>tmDelete(b.dataset.tmDel)));
+}
+// محرّر MVP (JSON مُتحقَّق عبر create_template/update_template) — النموذج الديناميكي في م24-ج-2
+async function templateEditorModal(existing, forceType) {
+const isEdit = !!existing;
+let tpl=null, deptId='', type=(isEdit?'':(forceType||'')), name='', jobRole='', bodyJson='';
+if (isEdit) {
+try { const { data } = await window.sb.from('evaluation_templates').select('*').eq('id', existing.id).maybeSingle(); tpl=data; } catch(_){}
+if (!tpl) { Toast.error('تعذّر جلب النموذج'); return; }
+deptId=tpl.department_id; type=tpl.template_type; name=tpl.name||''; jobRole=tpl.job_role||'';
+bodyJson=JSON.stringify(type==='section_based'?((tpl.template_jsonb||{}).sections||[]):((tpl.template_jsonb||{}).criteria||[]), null, 2);
+}
+const depts=(window._departments||[]).filter(d=>d.is_active!==false);
+const deptOpts=depts.map(d=>`<option value="${d.id}" ${d.id==deptId?'selected':''}>${Utils.escape(d.name)}</option>`).join('');
+Modal.show(isEdit?'تعديل نموذج':'إضافة نموذج', `
+<div class="form-group"><label class="form-label">الاسم (slug إنجليزي) *</label><input class="form-control" id="tpl-name" value="${Utils.escape(name)}" placeholder="مثال: customer_service" style="direction:ltr;text-align:left"></div>
+<div class="form-group"><label class="form-label">الدور الوظيفي (اختياري)</label><input class="form-control" id="tpl-jr" value="${Utils.escape(jobRole)}" placeholder="slug اختياري" style="direction:ltr;text-align:left"></div>
+<div class="form-group"><label class="form-label">القسم *</label><select class="form-control" id="tpl-dept" ${isEdit?'disabled':''}><option value="">-- اختر --</option>${deptOpts}</select></div>
+<div class="form-group"><label class="form-label">النوع * <span style="font-size:11px;color:var(--muted)">(لا يتغيّر بعد الإنشاء)</span></label><select class="form-control" id="tpl-type" ${(isEdit||forceType)?'disabled':''}><option value="">-- اختر --</option><option value="section_based" ${type==='section_based'?'selected':''}>محزم (بنود)</option><option value="pdf_based_weekly" ${type==='pdf_based_weekly'?'selected':''}>CG (PDF)</option></select></div>
+<div class="form-group"><label class="form-label">بنية النموذج (JSON) *</label>
+<div style="font-size:11px;color:var(--muted);margin-bottom:4px;line-height:1.7">• <b>section_based</b>: مصفوفة أقسام <code>{key,type,title,weight,subsections:[{key,title,weight,items:[{key,label}]}]}</code> — أوزان الأقسام=100، والفرعية داخل كل قسم=100.<br>• <b>pdf</b>: مصفوفة <code>{id,name,weight}</code> — المجموع=100.</div>
+<textarea class="form-control" id="tpl-json" rows="12" style="font-family:monospace;direction:ltr;text-align:left" placeholder="[ ... ]">${Utils.escape(bodyJson)}</textarea></div>`,
+`<button class="btn btn-secondary" onclick="Modal.close()">إلغاء</button><button class="btn btn-primary" id="tpl-save">${isEdit?'حفظ':'إنشاء'}</button>`);
+document.getElementById('tpl-save').addEventListener('click', async ()=>{
+const nm=(document.getElementById('tpl-name').value||'').trim();
+const jr=(document.getElementById('tpl-jr').value||'').trim()||null;
+const dp=isEdit?deptId:parseInt((document.getElementById('tpl-dept').value||'0'));
+const tp=isEdit?type:(forceType||(document.getElementById('tpl-type')||{}).value||'');
+let sections;
+try { sections=JSON.parse(document.getElementById('tpl-json').value||''); } catch(e){ Toast.error('JSON غير صالح: '+(e.message||e)); return; }
+if (!nm) { Toast.error('الاسم مطلوب'); return; }
+if (!isEdit && (!dp||!tp)) { Toast.error('القسم والنوع مطلوبان'); return; }
+const btn=document.getElementById('tpl-save');
+await submitWithFeedback(btn, 'جاري الحفظ...', null, async ()=>{
+const tok=(window.getSessionToken?getSessionToken():null);
+let data, error;
+if (isEdit) ({data,error}=await window.sb.rpc('update_template',{p_session_token:tok,p_id:existing.id,p_name:nm,p_job_role:jr,p_sections:sections}));
+else ({data,error}=await window.sb.rpc('create_template',{p_session_token:tok,p_department_id:dp,p_name:nm,p_job_role:jr,p_template_type:tp,p_sections:sections}));
+const r=(!error&&Array.isArray(data)&&data[0])?data[0]:(data||null);
+if (!r||!r.ok){const m=(r&&r.message)||(error&&error.message)||'تعذّر الحفظ'; if(!handleSessionError(m)) Toast.error(m); return false;}
+try{window._mahzamTpls={};}catch(_){}
+Modal.close(); Toast.success(r.message||'تم'); loadTemplatesCards(); return true;
+});
+});
+}
+async function tmCopy(t){
+if(!t) return;
+const nm=(prompt('اسم النموذج الجديد (slug إنجليزي):','')||'').trim();
+if(!nm) return;
+const jr=(prompt('الدور الوظيفي للنسخة (اختياري — اتركه فارغاً):','')||'').trim()||null;
+const tok=(window.getSessionToken?getSessionToken():null);
+const {data,error}=await window.sb.rpc('copy_template',{p_session_token:tok,p_id:t.id,p_new_name:nm,p_new_job_role:jr});
+const r=(!error&&Array.isArray(data)&&data[0])?data[0]:(data||null);
+if(!r||!r.ok){const m=(r&&r.message)||(error&&error.message)||'تعذّر النسخ'; if(!handleSessionError(m)) Toast.error(m); return;}
+try{window._mahzamTpls={};}catch(_){}
+Toast.success('تم نسخ النموذج'); loadTemplatesCards();
+}
+async function tmSetStatus(id,st){
+if(st==='archived' && !confirm('أرشفة النموذج؟ (لا يظهر في القوائم؛ يمكن تفعيله لاحقاً)')) return;
+const tok=(window.getSessionToken?getSessionToken():null);
+const {data,error}=await window.sb.rpc('set_template_status',{p_session_token:tok,p_id:parseInt(id),p_status:st});
+const r=(!error&&Array.isArray(data)&&data[0])?data[0]:(data||null);
+if(!r||!r.ok){const m=(r&&r.message)||(error&&error.message)||'تعذّر التحديث'; if(!handleSessionError(m)) Toast.error(m); return;}
+try{window._mahzamTpls={};}catch(_){}
+Toast.success(r.message||'تم'); loadTemplatesCards();
+}
+async function tmDelete(id){
+if(!confirm('حذف النموذج نهائياً؟ (لا يمكن التراجع)')) return;
+const tok=(window.getSessionToken?getSessionToken():null);
+const {data,error}=await window.sb.rpc('delete_template',{p_session_token:tok,p_id:parseInt(id)});
+const r=(!error&&Array.isArray(data)&&data[0])?data[0]:(data||null);
+if(!r||!r.ok){const m=(r&&r.message)||(error&&error.message)||'تعذّر الحذف'; if(!handleSessionError(m)) Toast.error(m); return;}
+try{window._mahzamTpls={};}catch(_){}
+Toast.success(r.message||'تم الحذف'); loadTemplatesCards();
+}
+function attachTemplatesTab() {
+loadTemplatesCards();
+['tm-f-dept','tm-f-type','tm-f-status'].forEach(id=>{ const el=document.getElementById(id); if(el) el.addEventListener('change', renderTemplatesCardsFiltered); });
+const add=document.getElementById('tm-add'); if(add) add.addEventListener('click', tmAddNew);
+}
+function tmAddNew() {
+Modal.show('إضافة نموذج — اختر النوع', `<div style="display:flex;gap:12px;flex-wrap:wrap;padding:8px 0">
+<button class="btn btn-primary" id="tm-add-sec" style="flex:1;min-width:150px;padding:16px">📋 نموذج محزم<br><span style="font-size:11px;font-weight:400">أقسام / بنود</span></button>
+<button class="btn btn-primary" id="tm-add-cg" style="flex:1;min-width:150px;padding:16px">📄 نموذج CG<br><span style="font-size:11px;font-weight:400">PDF / معايير</span></button>
+</div>`, `<button class="btn btn-secondary" onclick="Modal.close()">إلغاء</button>`);
+document.getElementById('tm-add-sec').addEventListener('click', ()=>{ Modal.close(); templateEditorModal(null, 'section_based'); });
+document.getElementById('tm-add-cg').addEventListener('click', ()=>{ Modal.close(); openCgWizard('new', null); });
+}
+
 function renderSettingsForm() {
 ensureCriteriaKeys();
 const sectionsHTML = CRITERIA.sections.map(s => `
@@ -6790,10 +6944,11 @@ Toast.success('تم'); await loadDepartments(true); navigate('departments',{tab:
 }).catch(e => Toast.error(e.message));
 }
 function renderTemplatesTab(deptId) {
-return `<div id="tmpl-tree"><div class="card"><div class="card-body">⏳ جارٍ تحميل النماذج…</div></div></div>`;
+return renderTemplatesManagement();   // م24-ج: بطاقات موحّدة (list_templates) بدل الشجرة القديمة
 }
 function cgRoleArabic(jr) { return jr ? ((JOB_ROLES.find(x => x[0] === jr)||[])[1] || jr) : 'النموذج الافتراضي'; }
 async function loadTemplatesTree() {
+return loadTemplatesCards();   // م24-ج: موحّد على بطاقات list_templates (المعالج CG يستدعيه للتحديث)
 const host = document.getElementById('tmpl-tree'); if (!host) return;
 await loadDepartments();
 let tmpls = [];
@@ -7039,7 +7194,7 @@ clearInterval(window._dashTimer);
 window._dashTimer = setInterval(() => { if (currentPage === 'dashboard') loadDashboard(true); else { clearInterval(window._dashTimer); } }, 60000);
 }
 if (page === 'reports') renderReportsCharts();
-if (page === 'departments' && (currentParams.tab || 'depts') === 'templates') loadTemplatesTree();
+if (page === 'departments' && (currentParams.tab || 'depts') === 'templates') attachTemplatesTab();
 if (page === 'cg-week') {
 const ws = currentParams.week || weekStartSaturdayJS();
 loadCgWeekTable(ws);
