@@ -53,8 +53,9 @@ async function bootApp() {
     console.warn('Supabase pull failed at boot, falling back to local cache:', e && e.message);
   }
 
-  // 2) تهيئة قاعدة البيانات (تقرأ localStorage الذي حُدِّث للتو من Supabase).
-  DB.init();
+  // 2) تهيئة DB من localStorage فقط إن لم ينجح السحب — بيانات الذاكرة الكاملة من pullAll
+  //    هي مصدر الحقيقة، ولا تُدهَس بنسخة localStorage المُقلّمة (lite) عند تجاوز الحصّة.
+  if (!(window.SupabaseSync && window.SupabaseSync.ready === true) || !DB.data) DB.init();
 
   // 3) تحديد الوجهة وفق وجود جلسة محفوظة.
   const saved = localStorage.getItem('qe_current_user');

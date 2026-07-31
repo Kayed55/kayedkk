@@ -118,23 +118,38 @@ window.SupabaseSync = {
           // أمان: نقرأ من users_public (view بدون كلمات السر) بدلاً من users
           // كلمات السر يجب ألا تصل للمتصفح أبداً عبر anon key.
           const readFrom = (table === 'users') ? 'users_public' : table;
-          // إعادة محاولة ذكية: حتى 3 محاولات بفاصل 500ms قبل الاستسلام
+          // ترقيم صفحات: PostgREST يسقف الاستجابة (افتراضياً 1000 صف)، فنقرأ على دفعات
+          // بحجم PAGE حتى تُجلب كل الصفوف — وإلا تختفي الصفوف الحديثة (عالية الـid) من الكاش.
+          // ملاحظة: PAGE يجب ألا يتجاوز سقف صفوف الخادم (الافتراضي 1000).
+          const PAGE = 1000, MAX_PAGES = 50;   // سقف علوي: 50k صف — يمنع أي حلقة لانهائية
           let data = null, error = null, status = null;
-          for (let attempt = 1; attempt <= 3; attempt++) {
-            const t0 = Date.now();
-            const res = await window.sb.from(readFrom).select('*').order('id', { ascending: true });
-            data = res.data; error = res.error; status = res.status;
-            const ms = Date.now() - t0;
-            if (!error) { console.log(`  ✓ [pullAll] Table: ${table} (${readFrom}) | Status: ${status} | ${(data||[]).length} rows | ${ms}ms`); break; }
-            console.error(`[pullAll] Table: ${table} | Status: ${status} | Attempt: ${attempt}/3 | Error: ${error.message}`);
-            if (attempt < 3) await new Promise(r => setTimeout(r, 500));
+          let all = [], pages = 0, aborted = false;
+          for (let page = 0; page < MAX_PAGES; page++) {
+            const start = page * PAGE, end = start + PAGE - 1;
+            // إعادة محاولة ذكية داخل كل دفعة: حتى 3 محاولات بفاصل 500ms قبل الاستسلام
+            let pData = null, pErr = null, pStatus = null;
+            for (let attempt = 1; attempt <= 3; attempt++) {
+              const res = await window.sb.from(readFrom).select('*').order('id', { ascending: true }).range(start, end);
+              pData = res.data; pErr = res.error; pStatus = res.status;
+              if (!pErr) break;
+              console.error(`[pullAll] Table: ${table} | Page: ${page} | Status: ${pStatus} | Attempt: ${attempt}/3 | Error: ${pErr.message}`);
+              if (attempt < 3) await new Promise(r => setTimeout(r, 500));
+            }
+            if (pErr) { error = pErr; status = pStatus; aborted = true; break; }
+            const batch = pData || [];
+            all = all.concat(batch);
+            pages++;
+            if (batch.length < PAGE) break;   // آخر دفعة (رجعت أقل من حجم الصفحة)
           }
-          if (error) {
+          if (aborted) {
             // أوقف العملية كلها بدل الكتابة فوق بيانات سليمة ببيانات ناقصة/فارغة
             self._lastPullError = { table: readFrom, status: status, message: error.message, at: new Date().toISOString(), ua: (navigator && navigator.userAgent) || '' };
             console.warn(`⚠️ فشلت قراءة ${table} بعد 3 محاولات — إيقاف السحب`);
             return false;
           }
+          data = all;
+          console.log(`  ✓ [pullAll] Table: ${table} (${readFrom}) | Pages: ${pages} | Total rows: ${all.length}`);
+          if (pages >= MAX_PAGES) console.warn(`⚠️ [pullAll] Table: ${table} — بلغ MAX_PAGES (${MAX_PAGES})؛ قد تكون هناك صفوف إضافية غير مُحمَّلة.`);
           results[table] = data || [];
         }
 
@@ -188,15 +203,19 @@ window.SupabaseSync = {
         }
         if (persisted !== 'full') console.warn('[pullAll] تجاوز حصّة localStorage — خُزّنت نسخة (' + persisted + ')؛ البيانات كاملة في الذاكرة.');
 
-        // إعادة تحميل DB من المُخزَّن (يضبط CRITERIA وبنية البيانات — criteria محفوظة في كل النسخ)
-        if (window.DB && typeof window.DB.init === 'function') window.DB.init();
-        // اضمن أن الذاكرة تحوي البيانات الكاملة الطازجة حتى لو خُزّنت نسخة مُقلّمة
-        if (window.DB && window.DB.data) {
-          const d = window.DB.data;
-          d.users = dbData.users; d.evaluations = dbData.evaluations; d.notifications = dbData.notifications;
-          d.objections = dbData.objections; d.audit_logs = dbData.audit_logs; d.criteria = dbData.criteria;
-          d.nextUserId = dbData.nextUserId; d.nextEvalId = dbData.nextEvalId;
-          d.nextNotifId = dbData.nextNotifId; d.nextObjectionId = dbData.nextObjectionId; d.nextAuditId = dbData.nextAuditId;
+        // مرجع DB: ثابت عام (ليس على window) — نستخدمه المجرّد. (كان window.DB خطأً يجعل
+        // الكتلة كود ميّت، فتبقى الذاكرة على نسخة localStorage المُقلّمة lite.)
+        // أنشئ بنية DB.data إن لم تكن موجودة (أول إقلاع فقط) بلا دهس ذاكرة كاملة قائمة.
+        if (typeof DB !== 'undefined' && DB) {
+          if (typeof DB.init === 'function' && !DB.data) DB.init();
+          // مصدر الحقيقة = الذاكرة: أسند البيانات الكاملة الطازجة (تُدهَس أي نسخة مُقلّمة)
+          const d = DB.data;
+          if (d) {
+            d.users = dbData.users; d.evaluations = dbData.evaluations; d.notifications = dbData.notifications;
+            d.objections = dbData.objections; d.audit_logs = dbData.audit_logs; d.criteria = dbData.criteria;
+            d.nextUserId = dbData.nextUserId; d.nextEvalId = dbData.nextEvalId;
+            d.nextNotifId = dbData.nextNotifId; d.nextObjectionId = dbData.nextObjectionId; d.nextAuditId = dbData.nextAuditId;
+          }
         }
         self._lastPullError = null;
 
