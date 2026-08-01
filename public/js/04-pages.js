@@ -2517,9 +2517,9 @@ ${sectionsHTML}
 
 // ===== الأدوات المشتركة للتفرّع حسب القسم =====
 function weekStartSaturdayJS(dateStr) {
-const d = dateStr ? new Date(dateStr + 'T00:00:00') : new Date();
-const off = (d.getDay() + 1) % 7; // 6=السبت → 0
-d.setDate(d.getDate() - off);
+const d = dateStr ? new Date(dateStr + 'T00:00:00Z') : new Date();  // #33: UTC صريح — مستقل عن TZ
+const off = (d.getUTCDay() + 1) % 7; // 6=السبت → 0
+d.setUTCDate(d.getUTCDate() - off);
 return d.toISOString().substring(0, 10);
 }
 async function loadTemplateFor(deptId) {
@@ -2640,6 +2640,13 @@ document.getElementById('wk-grade').innerHTML = Utils.gradeBadge(score);
 };
 const bindLive = () => { form.querySelectorAll('.wk-dim,[data-kpi]').forEach(el => { el.oninput = updateLive; el.onchange = updateLive; }); };
 const addRow = () => { tbody.insertAdjacentHTML('beforeend', weeklyTaskRowHTML(dims)); bindLive(); };
+// #33: تطبيع بداية الأسبوع إلى السبت فور تغيير التاريخ (شفافية عبر Toast خفيف، لا modal)
+const wkStartEl = form.querySelector('#wk-start'), wkEndEl = form.querySelector('#wk-end');
+if (wkStartEl) wkStartEl.addEventListener('change', () => {
+const norm = weekStartSaturdayJS(wkStartEl.value);
+if (wkStartEl.value && norm !== wkStartEl.value) { wkStartEl.value = norm; Toast.info ? Toast.info('تم تطبيق التاريخ إلى سبت أسبوعك') : Toast.success('تم تطبيق التاريخ إلى سبت أسبوعك'); }
+if (wkEndEl) wkEndEl.value = weekEndStr(norm || wkStartEl.value);
+});
 form.querySelector('#wk-add-task').addEventListener('click', addRow);
 tbody.addEventListener('click', e => { if (e.target.closest('.wk-del-task')) { e.target.closest('tr').remove(); updateLive(); } });
 addRow();
@@ -2650,8 +2657,9 @@ const btn = form.querySelector('button[type=submit]');
 await submitWithFeedback(btn, 'جاري حفظ التقييم الأسبوعي...', null, async () => {
 const tasks = collectWeeklyTasks();
 if (!tasks.length) { Toast.error('أضف مهمة واحدة على الأقل'); return false; }
-const ws = document.getElementById('wk-start').value, we = document.getElementById('wk-end').value;
-if (!ws || !we) { Toast.error('حدّد بداية ونهاية الأسبوع'); return false; }
+const rawWs = document.getElementById('wk-start').value;
+if (!rawWs) { Toast.error('حدّد بداية الأسبوع'); return false; }
+const ws = weekStartSaturdayJS(rawWs), we = weekEndStr(ws);  // #33: تطبيع إلى سبت الأسبوع + نهاية متّسقة
 const kpis = collectWeeklyKpis();
 const tok = window.getSessionToken ? getSessionToken() : null;
 const { data, error } = await window.sb.rpc('create_weekly_evaluation', { p_session_token: tok, p_employee_id: emp.id, p_week_start: ws, p_week_end: we, p_tasks: tasks, p_kpis: kpis });
@@ -2884,7 +2892,7 @@ return (data && data[0]) ? data[0] : null;
 } catch(_) { return null; }
 }
 async function renderPdfEvalInto(body, emp) {
-const ws = (currentParams && currentParams.week) ? currentParams.week : weekStartSaturdayJS();
+const ws = weekStartSaturdayJS((currentParams && currentParams.week) || null);  // #33: تطبيع إلى السبت
 await loadDepartments();
 // Creative Gene يتطلّب مسمى وظيفي (دور) لاختيار النموذج
 if (!emp.job_role) {
@@ -3275,7 +3283,7 @@ if (currentPage==='cg-pending-approval') loadCgPending(); else loadCgMyTeam();
 // ---- شاشة إدارة أسبوع Creative Gene (admin/quality) ----
 function renderCgWeek(weekParam) {
 if (!(currentUser.role === 'admin' || currentUser.role === 'quality_officer')) return '<div class="alert alert-danger">غير مصرح</div>';
-const ws = weekParam || weekStartSaturdayJS();
+const ws = weekStartSaturdayJS(weekParam || null);  // #33: تطبيع إلى السبت
 return `<div class="page-header"><div><div class="page-title">📄 أسبوع Creative Gene</div><div class="page-subtitle">حالة رفع وتقييم الملفات الأسبوعية</div></div></div>
 <div class="card"><div class="card-body"><div class="grid grid-2">
 <div class="form-group"><label class="form-label">بداية الأسبوع (السبت)</label><input type="date" class="form-control" id="cgw-date" value="${ws}"></div>
@@ -7376,7 +7384,7 @@ window._dashTimer = setInterval(() => { if (currentPage === 'dashboard') loadDas
 if (page === 'reports') renderReportsCharts();
 if (page === 'departments' && (currentParams.tab || 'depts') === 'templates') attachTemplatesTab();
 if (page === 'cg-week') {
-const ws = currentParams.week || weekStartSaturdayJS();
+const ws = weekStartSaturdayJS(currentParams.week || null);  // #33: تطبيع إلى السبت
 loadCgWeekTable(ws);
 const di = document.getElementById('cgw-date');
 if (di) di.addEventListener('change', () => navigate('cg-week', { week: di.value }));
