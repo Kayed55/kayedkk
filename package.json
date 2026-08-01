@@ -10,7 +10,8 @@
     "build": "echo 'Static site - public/ is the deploy artifact'",
     "format": "npx prettier --write \"public/**/*.{html,css,js}\" \"*.{json,md}\"",
     "validate": "node scripts/validate.js",
-    "check:rpc": "node scripts/check-rpc-sources.js"
+    "check:rpc": "node scripts/check-rpc-sources.js",
+    "test": "TZ=UTC node scripts/run-tests.js"
   },
   "keywords": [
     "quality",
