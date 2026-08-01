@@ -4,7 +4,7 @@
 -- داخل الدالتين (SECURITY DEFINER تستدعيه بصلاحية المالك رغم REVOKE):
 --   • create_cg_template            — دائماً pdf_based_weekly
 --   • upsert_evaluation_template    — للـ pdf_based_weekly فقط
--- المتنان منسوخان حرفياً من 39_backfill_cg_functions.sql + كتلتا تحقّق قبل الكتابة.
+-- المتنان منسوخان حرفياً من 39_backfill_cg_functions.archived.sql + كتلتا تحقّق قبل الكتابة.
 --
 -- ⚠️ تشديد سلوكي (ليس no-op): يرفض هذا التعديل حفظ نماذج CG بأوزان معايير ≠ 100
 -- أو ببنية ناقصة (id/name مفقود أو معرّف مكرّر) — بيانات كانت تُقبل خادمياً سابقاً.
