@@ -67,7 +67,10 @@ window.SupabaseSync = {
   _appliedSeq: 0,
 
   // قائمة الجداول التي ستتم مزامنتها (الترتيب مهم بسبب foreign keys)
-  TABLES: ['users', 'evaluation_templates', 'evaluations', 'notifications', 'objections', 'audit_logs'],
+  // audit_logs مُزال عمداً: كبير (آلاف الصفوف) وغير مستخدم يومياً — يُجلب عند الطلب في صفحة السجل.
+  TABLES: ['users', 'evaluation_templates', 'evaluations', 'notifications', 'objections'],
+  // جداول تُجلب بأحدث N صفاً فقط (بدل الكل) — تخفيف الحمل مع إبقاء ما يلزم الواجهة.
+  LIMITED_TABLES: { notifications: 300 },
 
   /**
    * إعادة رسم الصفحة الحالية مع debounce لتفادي الرسم المتكرر
@@ -118,6 +121,28 @@ window.SupabaseSync = {
           // أمان: نقرأ من users_public (view بدون كلمات السر) بدلاً من users
           // كلمات السر يجب ألا تصل للمتصفح أبداً عبر anon key.
           const readFrom = (table === 'users') ? 'users_public' : table;
+
+          // جداول محدودة: جلب أحدث N فقط (order id desc + limit) بدل ترقيم الكل — تخفيف الحمل.
+          const limitN = this.LIMITED_TABLES[table];
+          if (limitN) {
+            let lData = null, lErr = null, lStatus = null;
+            for (let attempt = 1; attempt <= 3; attempt++) {
+              const res = await window.sb.from(readFrom).select('*').order('id', { ascending: false }).limit(limitN);
+              lData = res.data; lErr = res.error; lStatus = res.status;
+              if (!lErr) break;
+              console.error(`[pullAll] Table: ${table} | Limited: ${limitN} | Status: ${lStatus} | Attempt: ${attempt}/3 | Error: ${lErr.message}`);
+              if (attempt < 3) await new Promise(r => setTimeout(r, 500));
+            }
+            if (lErr) {
+              self._lastPullError = { table: readFrom, status: lStatus, message: lErr.message, at: new Date().toISOString(), ua: (navigator && navigator.userAgent) || '' };
+              console.warn(`⚠️ فشلت قراءة ${table} بعد 3 محاولات — إيقاف السحب`);
+              return false;
+            }
+            results[table] = lData || [];
+            console.log(`  ✓ [pullAll] Table: ${table} (${readFrom}) | Limited: ${limitN} | Total rows: ${(lData||[]).length}`);
+            continue;
+          }
+
           // ترقيم صفحات: PostgREST يسقف الاستجابة (افتراضياً 1000 صف)، فنقرأ على دفعات
           // بحجم PAGE حتى تُجلب كل الصفوف — وإلا تختفي الصفوف الحديثة (عالية الـid) من الكاش.
           // ملاحظة: PAGE يجب ألا يتجاوز سقف صفوف الخادم (الافتراضي 1000).
@@ -212,9 +237,10 @@ window.SupabaseSync = {
           const d = DB.data;
           if (d) {
             d.users = dbData.users; d.evaluations = dbData.evaluations; d.notifications = dbData.notifications;
-            d.objections = dbData.objections; d.audit_logs = dbData.audit_logs; d.criteria = dbData.criteria;
+            d.objections = dbData.objections; d.criteria = dbData.criteria;
+            // audit_logs لا يُسحب هنا (يُجلب عند الطلب في صفحة السجل) — لا نَدهس ما حمّلته loadAuditLog.
             d.nextUserId = dbData.nextUserId; d.nextEvalId = dbData.nextEvalId;
-            d.nextNotifId = dbData.nextNotifId; d.nextObjectionId = dbData.nextObjectionId; d.nextAuditId = dbData.nextAuditId;
+            d.nextNotifId = dbData.nextNotifId; d.nextObjectionId = dbData.nextObjectionId;
           }
         }
         self._lastPullError = null;
