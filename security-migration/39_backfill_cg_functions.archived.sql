@@ -1,3 +1,6 @@
+-- ARCHIVED: 2026-08-01
+-- Superseded by 41_*.sql (see #19)
+-- This file kept for historical reference only. Do NOT execute.
 -- =========================================================================
 -- 39_backfill_cg_functions.sql  (#21 — استعادة مصدر دوال CG)
 -- توثيق مصدر دالتين موجودتين فعلاً على القاعدة بلا ملف مصدر (repo↔DB desync):
