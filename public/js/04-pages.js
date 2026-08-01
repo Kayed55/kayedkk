@@ -5184,32 +5184,20 @@ return true;
 // ============================================
 // Audit Log - سجل العمليات
 // ============================================
-function renderAuditLog() {
-if (!Perms.can('view_audit_log')) return '<div class="alert alert-danger">غير مصرح بالعرض</div>';
-const logs = DB.getAuditLogs();
-const actionLabels = {
+const AUDIT_ACTION_LABELS = {
 create_evaluation:'إنشاء تقييم', update_evaluation:'تعديل تقييم', delete_evaluation:'حذف تقييم', approve_evaluation:'اعتماد تقييم',
 submit_objection:'تقديم اعتراض', resolve_objection:'البت في اعتراض', review_objection:'مراجعة اعتراض',
 create_user:'إنشاء مستخدم', update_user:'تعديل مستخدم', deactivate_user:'تعطيل مستخدم'
 };
-const actionColors = {
+const AUDIT_ACTION_COLORS = {
 create_evaluation:'#10b981', update_evaluation:'#f59e0b', delete_evaluation:'#ef4444', approve_evaluation:'#06b6d4',
 submit_objection:'#7c3aed', resolve_objection:'#1e40af', review_objection:'#0891b2',
 create_user:'#10b981', update_user:'#f59e0b', deactivate_user:'#ef4444'
 };
-
-const rows = logs.map(l => `<tr data-search="${Utils.escape((l.user_name||'')+' '+(l.action||'')+' '+(l.details||''))}">
-<td>${Utils.formatDateTime(l.timestamp)}</td>
-<td><div style="display:flex;align-items:center;gap:8px"><div class="user-avatar" style="width:28px;height:28px;font-size:11px">${Utils.getInitials(l.user_name)}</div>${Utils.escape(l.user_name)}</div></td>
-<td>${Utils.roleBadge(l.role)}</td>
-<td><span class="badge" style="background:${(actionColors[l.action]||'#64748b')}22;color:${actionColors[l.action]||'#64748b'}">${actionLabels[l.action]||l.action}</span></td>
-<td>${Utils.escape(l.entity_type)}${l.entity_id?' #'+l.entity_id:''}</td>
-<td>${Utils.escape(l.details)}</td>
-</tr>`).join('');
-
-const todayCount = logs.filter(l => new Date(l.timestamp).toDateString() === new Date().toDateString()).length;
-const uniqueUsers = new Set(logs.map(l => l.user_id)).size;
-
+// سجل العمليات: كبير وغير مستخدم يومياً → لا يُسحب في pullAll، بل يُجلب عند فتح الصفحة (loadAuditLog).
+function renderAuditLog() {
+if (!Perms.can('view_audit_log')) return '<div class="alert alert-danger">غير مصرح بالعرض</div>';
+const sc = (id,g1,g2,icon,label)=>`<div class="stat-card" style="background:linear-gradient(135deg,${g1},${g2});color:white"><div class="stat-icon" style="background:rgba(255,255,255,0.25)">${icon}</div><div class="stat-value" id="${id}" style="color:white">…</div><div class="stat-label" style="color:rgba(255,255,255,0.9)">${label}</div></div>`;
 return `
 <div class="page-header">
 <div><div class="page-title">📜 سجل العمليات</div><div class="page-subtitle">سجل كامل بجميع العمليات داخل النظام</div></div>
@@ -5217,9 +5205,9 @@ return `
 </div>
 
 <div class="stats-grid">
-<div class="stat-card" style="background:linear-gradient(135deg,#06579F,#2378c4);color:white"><div class="stat-icon" style="background:rgba(255,255,255,0.25)">📋</div><div class="stat-value" style="color:white">${logs.length}</div><div class="stat-label" style="color:rgba(255,255,255,0.9)">إجمالي العمليات</div></div>
-<div class="stat-card" style="background:linear-gradient(135deg,#10b981,#059669);color:white"><div class="stat-icon" style="background:rgba(255,255,255,0.25)">📅</div><div class="stat-value" style="color:white">${todayCount}</div><div class="stat-label" style="color:rgba(255,255,255,0.9)">عمليات اليوم</div></div>
-<div class="stat-card" style="background:linear-gradient(135deg,#06b6d4,#0891b2);color:white"><div class="stat-icon" style="background:rgba(255,255,255,0.25)">👥</div><div class="stat-value" style="color:white">${uniqueUsers}</div><div class="stat-label" style="color:rgba(255,255,255,0.9)">مستخدمين نشطين</div></div>
+${sc('audit-stat-total','#06579F','#2378c4','📋','إجمالي العمليات')}
+${sc('audit-stat-today','#10b981','#059669','📅','عمليات اليوم')}
+${sc('audit-stat-users','#06b6d4','#0891b2','👥','مستخدمين نشطين')}
 </div>
 
 <div class="card">
@@ -5229,10 +5217,37 @@ return `
 <div style="overflow-x:auto">
 <table class="table" id="audit-table">
 <thead><tr><th>التاريخ والوقت</th><th>المستخدم</th><th>الدور</th><th>العملية</th><th>العنصر</th><th>التفاصيل</th></tr></thead>
-<tbody>${rows || '<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--muted)">لا توجد عمليات مسجلة</td></tr>'}</tbody>
+<tbody id="audit-tbody"><tr><td colspan="6" style="text-align:center;padding:30px;color:var(--muted)">⏳ جارٍ تحميل السجل…</td></tr></tbody>
 </table>
 </div>
 </div>`;
+}
+
+// TODO(phase-2): زر «تحميل المزيد»/ترقيم للسجل عند الحاجة (حالياً أحدث 500).
+async function loadAuditLog() {
+const tbody = document.getElementById('audit-tbody'); if (!tbody) return;
+let logs = [];
+try {
+const { data, error } = await window.sb.from('audit_logs').select('*').order('id', { ascending: false }).limit(500);
+if (error) throw error;
+logs = data || [];
+DB.data.audit_logs = logs;   // للبحث/التصدير (يُحمَّل عند الطلب فقط)
+} catch (e) {
+tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--danger)">تعذّر جلب السجل — أعد المحاولة</td></tr>';
+return;
+}
+tbody.innerHTML = logs.map(l => `<tr data-search="${Utils.escape((l.user_name||'')+' '+(l.action||'')+' '+(l.details||''))}">
+<td>${Utils.formatDateTime(l.timestamp)}</td>
+<td><div style="display:flex;align-items:center;gap:8px"><div class="user-avatar" style="width:28px;height:28px;font-size:11px">${Utils.getInitials(l.user_name)}</div>${Utils.escape(l.user_name)}</div></td>
+<td>${Utils.roleBadge(l.role)}</td>
+<td><span class="badge" style="background:${(AUDIT_ACTION_COLORS[l.action]||'#64748b')}22;color:${AUDIT_ACTION_COLORS[l.action]||'#64748b'}">${AUDIT_ACTION_LABELS[l.action]||l.action}</span></td>
+<td>${Utils.escape(l.entity_type)}${l.entity_id?' #'+l.entity_id:''}</td>
+<td>${Utils.escape(l.details)}</td>
+</tr>`).join('') || '<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--muted)">لا توجد عمليات مسجلة</td></tr>';
+const setTxt=(id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=v; };
+setTxt('audit-stat-total', logs.length);
+setTxt('audit-stat-today', logs.filter(l => new Date(l.timestamp).toDateString() === new Date().toDateString()).length);
+setTxt('audit-stat-users', new Set(logs.map(l => l.user_id)).size);
 }
 
 function exportAuditLogXLSX() {
@@ -7533,6 +7548,7 @@ if (pdf) pdf.addEventListener('click', exportActionsReportPDF);
 }
 
 if (page === 'audit-log') {
+loadAuditLog();   // جلب عند الطلب (audit_logs لم يعد يُسحب في pullAll)
 const s = document.getElementById('audit-search');
 if (s) s.addEventListener('input', () => {
 const q = s.value.toLowerCase();
