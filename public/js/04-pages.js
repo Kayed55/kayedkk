@@ -6364,7 +6364,7 @@ document.getElementById('te-save').addEventListener('click', teSave);
 teRenderTree();
 }
 
-function teBadge(sum){ const ok=teRound(sum)===100; return `<span style="color:${ok?'#16a34a':'#dc2626'};font-weight:800">${teRound(sum)} / 100</span>`; }
+function teBadge(sum, target){ const t=(target==null?100:teRound(target)); const ok=teRound(sum)===t; return `<span style="color:${ok?'#16a34a':'#dc2626'};font-weight:800">${teRound(sum)} / ${t}</span>`; }
 
 function teRenderTree(){
 const st=window._teState; const host=document.getElementById('te-tree'); if(!host) return;
@@ -6400,7 +6400,7 @@ return `<div style="border:1px solid var(--border);border-radius:8px;padding:10p
 <button class="btn btn-sm btn-danger" data-act="del-section" data-s="${si}" type="button">🗑</button>
 </div>
 <div style="${open?'':'display:none'}">
-<div style="display:flex;justify-content:space-between;align-items:center;margin:8px 0;font-size:13px"><span>مجموع أوزان الفرعية</span><span class="te-subsum" data-s="${si}">${teBadge(subSum)}</span></div>
+<div style="display:flex;justify-content:space-between;align-items:center;margin:8px 0;font-size:13px"><span>مجموع أوزان الفرعية (= وزن القسم)</span><span class="te-subsum" data-s="${si}">${teBadge(subSum, s.weight)}</span></div>
 ${subsHtml}${noSubs}
 <div style="display:flex;gap:8px;margin-top:6px">
 <button class="btn btn-sm btn-secondary" data-act="add-sub" data-s="${si}" type="button">➕ قسم فرعي</button>
@@ -6415,7 +6415,7 @@ function teRecalc(){
 const st=window._teState; if(!st) return;
 const secEl=document.getElementById('te-secsum');
 if(secEl) secEl.innerHTML=teBadge(st.sections.reduce((a,s)=>a+(parseFloat(s.weight)||0),0));
-st.sections.forEach((s,si)=>{ const el=document.querySelector('.te-subsum[data-s="'+si+'"]'); if(el) el.innerHTML=teBadge((s.subsections||[]).reduce((a,x)=>a+(parseFloat(x.weight)||0),0)); });
+st.sections.forEach((s,si)=>{ const el=document.querySelector('.te-subsum[data-s="'+si+'"]'); if(el) el.innerHTML=teBadge((s.subsections||[]).reduce((a,x)=>a+(parseFloat(x.weight)||0),0), s.weight); });
 }
 
 function teOnInput(e){
@@ -6433,7 +6433,7 @@ else { sec[f]= f==='weight'?teRound(t.value):t.value; if(f==='weight') teRecalc(
 }
 
 function teRedistSections(){ const st=window._teState; const w=teEqualWeights(st.sections.length); st.sections.forEach((s,i)=>s.weight=w[i]); }
-function teRedistSubs(si){ const st=window._teState; const subs=st.sections[si].subsections||[]; const w=teEqualWeights(subs.length); subs.forEach((s,i)=>s.weight=w[i]); }
+function teRedistSubs(si){ const st=window._teState; const sec=st.sections[si]; const subs=sec.subsections||[]; const n=subs.length; if(!n) return; const W=teRound(sec.weight)||0; const each=teRound(W/n); subs.forEach(s=>s.weight=each); const s2=subs.reduce((a,x)=>a+x.weight,0); subs[n-1].weight=teRound(subs[n-1].weight+(W-s2)); }  // #29: الفرعية تجمع وزن القسم
 
 function teOnClick(e){
 const b=e.target.closest('[data-act]'); if(!b) return;
@@ -6481,7 +6481,7 @@ subs.push({ key:teValidKey(sub.key,'sub_'+(bi+1)), title:(sub.title||'').trim(),
 clean.push({ key:teValidKey(s.key,'section_'+(si+1)), title:s.title.trim(), type:(s.type==='critical'?'critical':'non-critical'), weight:teRound(s.weight), subsections:subs }); }
 const secSum=teRound(clean.reduce((a,s)=>a+s.weight,0));
 if(secSum!==100){ Toast.error('مجموع أوزان الأقسام = '+secSum+'% (يجب أن يكون 100%)'); return; }
-for(const s of clean){ const ss=teRound(s.subsections.reduce((a,x)=>a+x.weight,0)); if(ss!==100){ Toast.error('مجموع أوزان الفرعية في «'+s.title+'» = '+ss+'% (يجب أن يكون 100%)'); return; } }
+for(const s of clean){ const ss=teRound(s.subsections.reduce((a,x)=>a+x.weight,0)); const sw=teRound(s.weight); if(ss!==sw){ Toast.error('مجموع أوزان الفرعية في «'+s.title+'» = '+ss+'% (يجب أن يساوي وزن القسم = '+sw+'%)'); return; } }
 const btn=document.getElementById('te-save');
 await submitWithFeedback(btn, 'جارٍ الحفظ...', null, async ()=>{
 // تحقق خادمي عبر _validate_template_sections (م25) مع fallback خطأ الصلاحية
