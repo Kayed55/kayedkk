@@ -101,21 +101,21 @@ test('العتبة: total==passScore → ناجح (>=)', () => {
   assert.strictEqual(r.percentage, 85); assert.strictEqual(r.grade, 'ناجح');
 });
 
-section('⊘ الباغ المحتمل (#29) — يُفعَّل بعد حسم قناعة الأوزان');
-// (الخيار ج) اختبار مُعطَّل يوثّق التناقض تنفيذياً: قالب م26 (فرعية تجمع 100 لكل قسم) بأقسام
-// متعدّدة + قسم غير حرج. السلوك المطلوب: total <= 100. لكن المحرّكين حالياً يجمعان أوزان
-// الفرعية بلا قياس بوزن القسم → total > 100 (يفشل). مُعطَّل حتى يُحسم Issue #29.
-// عند الحسم: استبدل skip(...) بالكتلة التالية (test) وتأكّد من مرورها:
-//   test('قالب م26 متعدّد الأقسام + غير حرج → total<=100', () => {
-//     const M26 = { answers:{OK:'ok',ERR:'err',NA:'na'}, sections:[
-//       { key:'C', type:'critical', title:'', weight:50, subsections:[{key:'c',title:'',weight:100,items:[{key:'c1',label:''}]}] },
-//       { key:'N', type:'non-critical', title:'', weight:50, subsections:[
-//         {key:'n1',title:'',weight:50,items:[{key:'n1a',label:''}]}, {key:'n2',title:'',weight:50,items:[{key:'n2a',label:''}]} ] } ]};
-//     core.ctx.CRITERIA = M26;
-//     const r = core.exp.calculateScores({ c1:'ok', n1a:'ok', n2a:'ok' }, 85);
-//     assert.ok(r.totalScore <= 100, 'total='+r.totalScore); // حالياً 150 → يفشل حتى إصلاح #29
-//   });
-skip('قالب م26 (فرعية=100 · متعدّد الأقسام · غير حرج) → total<=100', 'بانتظار حسم #29');
+section('قناعة #29 (الخيار 1): قالب صحيح متعدّد الأقسام + غير حرج → total=100');
+// بعد حسم #29 (المُحقّق يطابق المحرّكات: فرعية=وزن القسم)، القالب الصحيح يُحسَب سليماً.
+// (قالب فرعياته=100 مع وزن قسم≠100 يرفضه المُحقّق SQL الآن — لا يصل المحرّك.)
+test('قالب صحيح (فرعية=وزن القسم · قسمان حرجان + غير حرج) → total=100', () => {
+  const OK29 = { answers: { OK: 'ok', ERR: 'err', NA: 'na' }, sections: [
+    { key: 'C1', type: 'critical', title: 'ح1', weight: 30, subsections: [{ key: 'c', title: '', weight: 30, items: [{ key: 'c1', label: 'c1' }] }] },
+    { key: 'C2', type: 'critical', title: 'ح2', weight: 30, subsections: [{ key: 'd', title: '', weight: 30, items: [{ key: 'd1', label: 'd1' }] }] },
+    { key: 'N', type: 'non-critical', title: 'غ', weight: 40, subsections: [
+      { key: 'n1', title: '', weight: 20, items: [{ key: 'n1a', label: 'n1a' }] },
+      { key: 'n2', title: '', weight: 20, items: [{ key: 'n2a', label: 'n2a' }] } ] } ] };
+  core.ctx.CRITERIA = OK29;
+  const r = core.exp.calculateScores({ c1: 'ok', d1: 'ok', n1a: 'ok', n2a: 'ok' }, 85); // 30+30+(20+20)=100
+  assert.strictEqual(r.totalScore, 100);
+  assert.ok(r.totalScore <= 100);
+});
 
 section('Utils.gradeLabel / gradeBadge (عتبة النجاح)');
 const U = core.exp.Utils;
