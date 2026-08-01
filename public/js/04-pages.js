@@ -2786,7 +2786,7 @@ function isCreativeGeneDept(deptId) {
 const d = (window._departments||[]).find(x => x.id === deptId);
 return !!(d && d.code === 'creative_gen');
 }
-function weekEndStr(ws) { const d = new Date(ws + 'T00:00:00'); d.setDate(d.getDate()+6); return d.toISOString().substring(0,10); }
+function weekEndStr(ws) { const d = new Date(ws + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate()+6); return d.toISOString().substring(0,10); }  // #30: UTC صريح — مستقل عن المنطقة الزمنية
 async function fetchCgStatusRow(employeeId, weekStart) {
 try { const { data } = await window.sb.from('creative_gene_weekly_status').select('*').eq('employee_id', employeeId).eq('week_start', weekStart).maybeSingle(); return data || null; }
 catch(_) { return null; }

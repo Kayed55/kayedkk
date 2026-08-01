@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
-// حتمية زمنية: نُثبّت المنطقة على UTC قبل أي عملية Date (weekEndStr حسّاس للـTZ — راجع الملاحظة أدناه).
-process.env.TZ = 'UTC';
+// ملاحظة: بعد إصلاح #30 (weekEndStr بـUTC صريح) لم يعد أي هدف حسّاساً للمنطقة الزمنية،
+// فالسلسلة حتمية بلا تثبيت TZ (مُتحقَّق بتشغيلها تحت TZ=Asia/Riyadh).
 /**
  * اختبارات عدم انحدار خفيفة (م24-هـ) — Node core فقط (بلا npm).
  *
@@ -156,10 +156,8 @@ test('teRound: أرقام عادية', () => {
   assert.strictEqual(pages.exp.teRound('abc'), 0);
 });
 
-// ملاحظة: weekEndStr يبني Date بمنتصف ليل محلي ثم toISOString (UTC) → النتيجة حسّاسة
-// للمنطقة الزمنية (في توقيت موجب ترجع يوماً للخلف). الاختبارات مُثبّتة على TZ=UTC أعلاه.
-// (بَق طفيف محتمل — لم نُصلحه في هذا النطاق؛ يستحق ملاحظة/Issue لاحقاً.)
-section('weekEndStr (نهاية أسبوع CG = البداية +6 أيام · تحت TZ=UTC)');
+// weekEndStr أُصلح في #30 (UTC صريح: 'T00:00:00Z' + setUTCDate) → مستقل عن المنطقة الزمنية.
+section('weekEndStr (نهاية أسبوع CG = البداية +6 أيام · مستقل عن TZ — #30)');
 test("weekEndStr('2026-01-01') = '2026-01-07'", () => { assert.strictEqual(pages.exp.weekEndStr('2026-01-01'), '2026-01-07'); });
 test('weekEndStr يعبر حدود الشهر', () => { assert.strictEqual(pages.exp.weekEndStr('2026-01-28'), '2026-02-03'); });
 

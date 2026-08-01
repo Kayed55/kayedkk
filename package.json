@@ -11,7 +11,7 @@
     "format": "npx prettier --write \"public/**/*.{html,css,js}\" \"*.{json,md}\"",
     "validate": "node scripts/validate.js",
     "check:rpc": "node scripts/check-rpc-sources.js",
-    "test": "TZ=UTC node scripts/run-tests.js"
+    "test": "node scripts/run-tests.js"
   },
   "keywords": [
     "quality",
