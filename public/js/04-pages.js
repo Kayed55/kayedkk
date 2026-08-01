@@ -2175,7 +2175,7 @@ return '—';
 function jobTitleCell(emp) { return (emp && emp.job_title) ? Utils.escape(emp.job_title) : '<span style="color:var(--muted)">—</span>'; }
 function deptBadgeHTML(dept) {
 if (!dept) return '<span style="color:var(--muted)">—</span>';
-const isCg = dept.template_type === 'pdf_based_weekly';
+const isCg = dept.code === 'creative_gen';
 const style = isCg ? 'background:#f3e5f5;color:#7b1fa2' : 'background:#e3f2fd;color:#1976d2';
 return `<span style="${style};padding:2px 8px;border-radius:12px;font-size:12px;white-space:nowrap">${Utils.escape(dept.name)}</span>`;
 }
@@ -2405,7 +2405,7 @@ return `
 </div>`;
 }
 
-function cgDeptId() { const d = (window._departments||[]).find(x => x.template_type === 'pdf_based_weekly'); return d ? d.id : 3; }
+function cgDeptId() { const d = (window._departments||[]).find(x => x.code === 'creative_gen'); if (d) return d.id; console.warn('[cgDeptId] fallback used — _departments not loaded'); return 3; }
 
 // مركز التقييم: قسمان منفصلان بصرياً (محزم / Creative Gene)
 function renderEvalHub() {
@@ -2784,7 +2784,7 @@ return true;
 function cgToken() { return window.getSessionToken ? getSessionToken() : null; }
 function isCreativeGeneDept(deptId) {
 const d = (window._departments||[]).find(x => x.id === deptId);
-return !!(d && d.template_type === 'pdf_based_weekly');
+return !!(d && d.code === 'creative_gen');
 }
 function weekEndStr(ws) { const d = new Date(ws + 'T00:00:00'); d.setDate(d.getDate()+6); return d.toISOString().substring(0,10); }
 async function fetchCgStatusRow(employeeId, weekStart) {
@@ -7115,7 +7115,7 @@ try { const { data } = await window.sb.from('evaluation_templates').select('id,d
 const byDept = {}; tmpls.forEach(t => { (byDept[t.department_id] = byDept[t.department_id]||[]).push(t); });
 let html = '';
 (window._departments||[]).forEach(d => {
-const isCg = d.template_type === 'pdf_based_weekly';
+const isCg = d.code === 'creative_gen';
 const list = (byDept[d.id]||[]).sort((a,b) => (a.job_role?1:0)-(b.job_role?1:0) || String(a.job_role||'').localeCompare(String(b.job_role||'')));
 if (isCg) { html += cgTemplatesCardHTML(d, list); return; }
 // محزم/أخرى: عرض بسيط (النماذج الفعّالة) يقود لإعدادات النموذج
