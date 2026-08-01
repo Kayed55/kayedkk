@@ -9,7 +9,8 @@
     "start": "npx serve public -p 3000",
     "build": "echo 'Static site - public/ is the deploy artifact'",
     "format": "npx prettier --write \"public/**/*.{html,css,js}\" \"*.{json,md}\"",
-    "validate": "node scripts/validate.js"
+    "validate": "node scripts/validate.js",
+    "check:rpc": "node scripts/check-rpc-sources.js"
   },
   "keywords": [
     "quality",
