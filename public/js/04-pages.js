@@ -1387,27 +1387,54 @@ options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ positio
 // ============================================
 // Employees
 // ============================================
-function renderEmployees() {
-let users = DB.data.users.filter(u => u.role === 'employee');
-// Supervisor sees only their team
-if (currentUser.role === 'supervisor') {
-users = users.filter(u => u.supervisor_name === currentUser.full_name);
+// ★ #62: أداة ترقيم عامة قابلة لإعادة الاستخدام (سيُوحَّد #60 عليها في PR refactor منفصل — لا يُلمس الآن)
+function paginate(arr, page, size) {
+  const total = arr.length;
+  const pages = Math.max(1, Math.ceil(total / size));
+  const p = Math.min(Math.max(1, page), pages);   // clamp دفاعي (fall-to-lastPage)
+  const start = (p - 1) * size;
+  return { items: arr.slice(start, start + size), page: p, pages, total };
+}
+function renderPagination(container, opts) {
+  if (!container) return;
+  const { page, total, size, onChange } = opts;
+  const pages = Math.max(1, Math.ceil(total / size));
+  if (pages <= 1) { container.style.display = 'none'; container.innerHTML = ''; return; }
+  container.style.display = '';
+  const from = (page-1)*size + 1, to = Math.min(page*size, total);
+  const info = `<span style="color:var(--muted);font-size:13px">عرض ${from}–${to} من ${total}</span>`;
+  let html;
+  if (window.innerWidth < 640) {   // compact على الموبايل
+    html = `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px;flex-wrap:wrap">${info}<div style="display:flex;align-items:center;gap:8px"><button class="btn btn-sm btn-secondary" data-page="${page-1}" ${page<=1?'disabled':''}>‹</button><span style="font-size:13px">صفحة ${page} / ${pages}</span><button class="btn btn-sm btn-secondary" data-page="${page+1}" ${page>=pages?'disabled':''}>›</button></div></div>`;
+  } else {                          // مرقّم على سطح المكتب (نافذة: الأول/الأخير/±2)
+    const nums = []; let last = 0; const wnd = 2;
+    for (let n=1; n<=pages; n++) {
+      if (n===1 || n===pages || (n>=page-wnd && n<=page+wnd)) {
+        if (last && n-last>1) nums.push('<span style="padding:0 4px;color:var(--muted)">…</span>');
+        nums.push(`<button class="btn btn-sm ${n===page?'btn-primary':'btn-secondary'}" data-page="${n}">${n}</button>`);
+        last = n;
+      }
+    }
+    html = `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px;flex-wrap:wrap">${info}<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><button class="btn btn-sm btn-secondary" data-page="${page-1}" ${page<=1?'disabled':''}>« السابق</button>${nums.join('')}<button class="btn btn-sm btn-secondary" data-page="${page+1}" ${page>=pages?'disabled':''}>التالي »</button></div></div>`;
+  }
+  container.innerHTML = html;
+  container.querySelectorAll('[data-page]').forEach(b => b.addEventListener('click', () => {
+    if (b.disabled) return;
+    const n = parseInt(b.dataset.page, 10);
+    if (!isNaN(n) && typeof onChange === 'function') onChange(n);
+  }));
 }
 
-if (!window._departments) loadDepartments(true).then(() => { if (currentPage === 'employees') navigate('employees'); });
-const supervisors = DB.getSupervisors();
-const supOpts = supervisors.map(s => `<option value="${Utils.escape(s.full_name)}">${Utils.escape(s.full_name)}</option>`).join('');
-const deptOpts = (window._departments||[]).filter(d => d.is_active).map(d => `<option value="${d.id}">${Utils.escape(d.name)}</option>`).join('');
-// ★ #49-p4a: خيارات فلتر النموذج — من النماذج المُسنَدة فعلياً للموظفين المعروضين
-const _empTplIds = [...new Set(users.map(u => u.template_id).filter(x => x != null))];
-const tplFilterOpts = _empTplIds.map(id => { const t = _tplById(id); const lbl = t ? (t.name || t.job_role || ('نموذج #'+id)) : ('نموذج #'+id); return `<option value="${id}">${Utils.escape(lbl)}</option>`; }).join('');
-const _hasNullTpl = users.some(u => u.template_id == null);
+// ★ #62: حالة ترقيم صفحة الموظفين (client-side، 10/صفحة)
+let _empBase = [], _empFiltered = [], _empPage = 1, _empSearchTimer = null;
+const EMP_PAGE_SIZE = 10;
 
-const rows = users.map(u => {
-const avg = DB.getAvgScore(u.id);
-const count = DB.data.evaluations.filter(e => e.employee_id === u.id).length;
-const uDept = (window._departments||[]).find(d => d.id === u.department_id);
-return `<tr data-search="${Utils.escape((u.full_name||'')+' '+(u.employee_number||'')+' '+(u.supervisor_name||'')+' '+(u.email||'')+' '+(u.department||''))}" data-status="${u.is_active?'active':'inactive'}" data-deptid="${u.department_id||''}" data-sup="${Utils.escape(u.supervisor_name||'')}" data-template="${u.template_id||''}">
+// صف موظف واحد (مُستخرَج حرفياً من renderEmployees — بلا closure على متغيّرات محلية؛ globals + u فقط)
+function empRowHTML(u) {
+  const avg = DB.getAvgScore(u.id);
+  const count = DB.data.evaluations.filter(e => e.employee_id === u.id).length;
+  const uDept = (window._departments||[]).find(d => d.id === u.department_id);
+  return `<tr data-search="${Utils.escape((u.full_name||'')+' '+(u.employee_number||'')+' '+(u.supervisor_name||'')+' '+(u.email||'')+' '+(u.department||''))}" data-status="${u.is_active?'active':'inactive'}" data-deptid="${u.department_id||''}" data-sup="${Utils.escape(u.supervisor_name||'')}" data-template="${u.template_id||''}">
 <td><strong>${Utils.escape(u.employee_number||'-')}</strong></td>
 <td><div style="display:flex;align-items:center;gap:10px"><div class="user-avatar">${Utils.getInitials(u.full_name)}</div><div>${Utils.escape(u.full_name)}</div></div></td>
 <td><div style="font-size:13px;direction:ltr;text-align:right">${Utils.escape(u.email||'-')}</div></td>
@@ -1424,7 +1451,60 @@ ${currentUser.role === 'admin' ? `<button class="btn btn-sm btn-info" data-reset
 ${currentUser.role === 'admin' ? `<button class="btn btn-sm" data-delete-user="${u.id}" title="حذف نهائي — لا يمكن التراجع" style="background:#b91c1c;color:#fff">🗑</button>` : ''}
 </td>
 </tr>`;
-}).join('');
+}
+// إعادة رسم tbody الصفحة الحالية + أزرار الترقيم (يُستدعى من البحث/الفلترة ونقر الصفحات)
+function paintEmpPage() {
+  const tbody = document.querySelector('#emp-table tbody');
+  if (!tbody) return;
+  const r = paginate(_empFiltered, _empPage, EMP_PAGE_SIZE);
+  _empPage = r.page;
+  tbody.innerHTML = r.items.length
+    ? r.items.map(empRowHTML).join('')
+    : '<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--muted)">لا توجد نتائج مطابقة</td></tr>';
+  renderPagination(document.getElementById('emp-pagination'), {
+    page: _empPage, total: _empFiltered.length, size: EMP_PAGE_SIZE,
+    onChange: (n) => { _empPage = n; paintEmpPage(); }
+  });
+}
+// فلترة على البيانات (6 معايير — parity حرفي مع filterEmps السابقة) ثم إعادة للصفحة 1
+function applyEmpFilters() {
+  const g = id => (document.getElementById(id)?.value || '').trim();
+  const qn = g('emp-search-name').toLowerCase();
+  const qnum = g('emp-search-num').toLowerCase();
+  const qsup = g('emp-search-sup');
+  const qdept = g('emp-search-dept');
+  const qtpl = g('emp-search-template');
+  const qstatus = g('emp-search-status');
+  _empFiltered = _empBase.filter(u =>
+    (!qn     || (u.full_name||'').toLowerCase().includes(qn)) &&
+    (!qnum   || (u.employee_number||'').toLowerCase().includes(qnum)) &&
+    (!qsup   || (u.supervisor_name||'') === qsup) &&
+    (!qdept  || String(u.department_id||'') === qdept) &&
+    (!qtpl   || (qtpl==='none' ? u.template_id==null : String(u.template_id||'') === qtpl)) &&
+    (!qstatus|| (u.is_active?'active':'inactive') === qstatus));
+  _empPage = 1;
+  paintEmpPage();
+}
+
+function renderEmployees() {
+let users = DB.data.users.filter(u => u.role === 'employee');
+// Supervisor sees only their team
+if (currentUser.role === 'supervisor') {
+users = users.filter(u => u.supervisor_name === currentUser.full_name);
+}
+
+if (!window._departments) loadDepartments(true).then(() => { if (currentPage === 'employees') navigate('employees'); });
+const supervisors = DB.getSupervisors();
+const supOpts = supervisors.map(s => `<option value="${Utils.escape(s.full_name)}">${Utils.escape(s.full_name)}</option>`).join('');
+const deptOpts = (window._departments||[]).filter(d => d.is_active).map(d => `<option value="${d.id}">${Utils.escape(d.name)}</option>`).join('');
+// ★ #49-p4a: خيارات فلتر النموذج — من النماذج المُسنَدة فعلياً للموظفين المعروضين
+const _empTplIds = [...new Set(users.map(u => u.template_id).filter(x => x != null))];
+const tplFilterOpts = _empTplIds.map(id => { const t = _tplById(id); const lbl = t ? (t.name || t.job_role || ('نموذج #'+id)) : ('نموذج #'+id); return `<option value="${id}">${Utils.escape(lbl)}</option>`; }).join('');
+const _hasNullTpl = users.some(u => u.template_id == null);
+
+// ★ #62: الأساس بعد فلترة الوصول (المشرف يرى فريقه فقط) — يحفظ ترتيب DB.data.users؛ ثم عرض الصفحة الأولى (10)
+_empBase = users; _empFiltered = _empBase; _empPage = 1;
+const rows = paginate(_empFiltered, 1, EMP_PAGE_SIZE).items.map(empRowHTML).join('');
 
 const subtitle = currentUser.role === 'supervisor' ? 'موظفو فريقك التابعون لإشرافك' : 'إدارة بيانات الموظفين لمتابعة تقييماتهم';
 const noteIfNoSup = (currentUser.role === 'admin' || currentUser.role === 'quality_officer') && supervisors.length === 0
@@ -1465,6 +1545,7 @@ ${noteIfNoSup}
 <tbody>${rows || '<tr><td colspan="10" style="text-align:center;padding:30px;color:var(--muted)">لا يوجد موظفون</td></tr>'}</tbody>
 </table>
 </div>
+<div id="emp-pagination"></div>
 </div>`;
 }
 
@@ -7495,8 +7576,8 @@ navigate('view-evaluation', { id: parseInt(el.dataset.navEval) });
 });
 });
 
-// Navigation: data-view-emp works globally (dashboard, employees, KPIs)
-document.querySelectorAll('[data-view-emp]').forEach(el => {
+// Navigation: data-view-emp works globally (dashboard, KPIs) — ★ #62: يُستثنى #emp-table (يُدار بتفويض tbody؛ يمنع double-fire)
+[...document.querySelectorAll('[data-view-emp]')].filter(el => !el.closest('#emp-table')).forEach(el => {
 el.addEventListener('click', e => { e.stopPropagation(); navigate('view-employee', { id: parseInt(el.dataset.viewEmp) }); });
 });
 
@@ -7646,7 +7727,8 @@ return true;
 }
 
 if (page === 'users' || page === 'employees') {
-document.querySelectorAll('[data-delete-user]').forEach(b => b.addEventListener('click', e => {
+// ★ #62: يُستثنى #emp-table (يُدار بتفويض tbody)؛ صفحة users تبقى على الربط المباشر
+[...document.querySelectorAll('[data-delete-user]')].filter(b => !b.closest('#emp-table')).forEach(b => b.addEventListener('click', e => {
 e.stopPropagation();
 deleteUserFlow(parseInt(b.dataset.deleteUser));
 }));
@@ -7710,52 +7792,25 @@ navigate('edit-evaluation', { id: parseInt(b.dataset.editEval) });
 }));
 
 if (page === 'employees') {
-const filterEmps = () => {
-const qn = (document.getElementById('emp-search-name')?.value || '').trim().toLowerCase();
-const qnum = (document.getElementById('emp-search-num')?.value || '').trim().toLowerCase();
-const qsup = (document.getElementById('emp-search-sup')?.value || '').trim();
-const qdept = (document.getElementById('emp-search-dept')?.value || '').trim();
-const qtpl = (document.getElementById('emp-search-template')?.value || '').trim();   // ★ #49-p4a
-const qstatus = (document.getElementById('emp-search-status')?.value || '').trim();
-document.querySelectorAll('#emp-table tbody tr').forEach(tr => {
-const cells = tr.querySelectorAll('td');
-if (cells.length < 4) return;
-const num = (cells[0].textContent || '').toLowerCase();
-const name = (cells[1].textContent || '').toLowerCase();
-const sup = tr.dataset.sup || '';
-const dept = tr.dataset.deptid || '';
-const tpl = tr.dataset.template || '';   // ★ #49-p4a
-const status = tr.dataset.status || '';
-const okName = !qn || name.includes(qn);
-const okNum = !qnum || num.includes(qnum);
-const okSup = !qsup || sup === qsup;
-const okDept = !qdept || dept === qdept;
-const okTpl = !qtpl || (qtpl === 'none' ? tpl === '' : tpl === qtpl);   // ★ #49-p4a: 'none' = بدون نموذج (قيادة)
-const okStatus = !qstatus || status === qstatus;
-tr.style.display = (okName && okNum && okSup && okDept && okTpl && okStatus) ? '' : 'none';
-});
-};
+// ★ #62: فلترة على البيانات (6 معايير) بدل toggle-display — تملأ tbody + الترقيم للحالة الحالية
+applyEmpFilters();
 document.querySelectorAll('.emp-filter').forEach(inp => {
-inp.addEventListener('input', filterEmps);
-inp.addEventListener('change', filterEmps);
+if (inp.tagName === 'SELECT') inp.addEventListener('change', applyEmpFilters);                       // فوري للقوائم
+else inp.addEventListener('input', () => { clearTimeout(_empSearchTimer); _empSearchTimer = setTimeout(applyEmpFilters, 150); });  // debounce للنصّ (name/num)
 });
 const clrEmp = document.getElementById('emp-clear');
 if (clrEmp) clrEmp.addEventListener('click', () => {
 ['emp-search-name','emp-search-num','emp-search-sup','emp-search-dept','emp-search-template','emp-search-status'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-filterEmps();
+applyEmpFilters();
 });
-document.querySelectorAll('[data-view-emp]').forEach(b => b.addEventListener('click', e => {
-e.stopPropagation();
-navigate('view-employee', { id: parseInt(b.dataset.viewEmp) });
-}));
-document.querySelectorAll('[data-edit-emp]').forEach(b => b.addEventListener('click', e => {
-e.stopPropagation();
-showEmployeeModal(parseInt(b.dataset.editEmp));
-}));
-document.querySelectorAll('[data-reset-pw]').forEach(b => b.addEventListener('click', e => {
-e.stopPropagation();
-showResetPasswordModal(parseInt(b.dataset.resetPw));
-}));
+// ★ #62: تفويض واحد على tbody لإجراءات الصف الأربعة (يصمد عبر repaint، صفر مستمعات مكرّرة) — يحلّ محل الروابط المباشرة (7747/7751/7755)
+const _empTb = document.querySelector('#emp-table tbody');
+if (_empTb) _empTb.addEventListener('click', e => {
+const v = e.target.closest('[data-view-emp]'); if (v) { e.stopPropagation(); navigate('view-employee', { id: parseInt(v.dataset.viewEmp) }); return; }
+const ed = e.target.closest('[data-edit-emp]'); if (ed) { e.stopPropagation(); showEmployeeModal(parseInt(ed.dataset.editEmp)); return; }
+const rp = e.target.closest('[data-reset-pw]'); if (rp) { e.stopPropagation(); showResetPasswordModal(parseInt(rp.dataset.resetPw)); return; }
+const dl = e.target.closest('[data-delete-user]'); if (dl) { e.stopPropagation(); deleteUserFlow(parseInt(dl.dataset.deleteUser)); return; }
+});
 const addBtn = document.getElementById('add-emp-btn');
 if (addBtn) addBtn.addEventListener('click', () => showEmployeeModal());
 }
