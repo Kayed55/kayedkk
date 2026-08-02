@@ -1592,8 +1592,46 @@ async function onEmpDeptChange() {
   const _d = (document.getElementById('ef-deptid')||{}).value;   // ★ #46: تحميل نماذج القسم الجديد + تصفير الاختيار
   await populateEfTemplate(_d, null);
 }
+// ★ #46b (PR2): dropdown نماذج موحّد لنموذج المستخدم (usr) — يظهر فقط لـ role=employee + قسم + وجود نماذج
+async function populateUsrTemplate(deptId, currentTemplateId) {
+  const wrap = document.getElementById('usr-template-wrap'), sel = document.getElementById('usr-template'), hint = document.getElementById('usr-template-hint');
+  if (!sel || !wrap) return;
+  const roleEl = document.getElementById('usr-role');
+  const role = roleEl ? roleEl.value : '';
+  if (role !== 'employee' || !deptId) { wrap.style.display = 'none'; sel.innerHTML = ''; sel.dataset.state = 'none'; if (hint) hint.innerHTML = ''; return; }
+  wrap.style.display = '';
+  sel.innerHTML = '<option value="">— جاري التحميل… —</option>'; sel.dataset.state = 'loading';
+  const tpls = await loadTemplatesForSelect(deptId, true);
+  if (tpls === null) {
+    sel.innerHTML = '<option value="">تعذّر التحميل</option>'; sel.dataset.state = 'error';
+    if (hint) hint.innerHTML = `<span style="color:var(--danger)">⚠️ تعذّر تحميل النماذج — <a href="#" onclick="populateUsrTemplate('${Utils.escape(String(deptId))}', ${currentTemplateId!=null?currentTemplateId:'null'});return false;">إعادة المحاولة</a></span>`;
+    return;
+  }
+  if (!tpls.length) {
+    sel.innerHTML = '<option value="">— لا نماذج —</option>'; sel.dataset.state = 'empty';
+    if (hint) hint.innerHTML = '<span style="color:var(--danger)">⚠️ لا نماذج لهذا القسم — أنشئ نموذجاً من «إدارة النماذج» قبل ربط الموظف.</span>';
+    return;
+  }
+  sel.dataset.state = 'ok';
+  const cur = currentTemplateId != null ? String(currentTemplateId) : '';
+  const inList = cur && tpls.some(t => String(t.id) === cur);
+  let opts = '<option value="">— اختر النموذج —</option>' + tpls.map(t => `<option value="${t.id}" ${String(t.id)===cur?'selected':''}>${Utils.escape(t.name || t.job_role || ('نموذج #'+t.id))}</option>`).join('');
+  if (cur && !inList) opts = `<option value="${Utils.escape(cur)}" selected>النموذج الحالي #${Utils.escape(cur)} (مؤرشف)</option>` + opts;
+  sel.innerHTML = opts;
+  updateUsrTemplateHint();
+}
+function updateUsrTemplateHint() {
+  const sel = document.getElementById('usr-template'), hint = document.getElementById('usr-template-hint');
+  if (!sel || !hint || sel.dataset.state === 'empty' || sel.dataset.state === 'error') return;
+  const opt = sel.options[sel.selectedIndex];
+  if (sel.value && opt && opt.text.indexOf('(مؤرشف)') >= 0) hint.innerHTML = '<span style="color:#b45309">⚠️ النموذج المرتبط مؤرشف — يُنصح باختيار نموذج نشط بديل (سيُبقى الحالي إن لم تُغيّره).</span>';
+  else if (sel.value) hint.innerHTML = '<span style="color:var(--success)">✅ سيُربط الموظف بهذا النموذج (يُشتقّ المسمّى التقني منه).</span>';
+  else hint.innerHTML = '<span style="color:var(--muted)">اختر النموذج الذي يُقيَّم الموظف وفقه.</span>';
+}
 async function onUserDeptChange() {
-await populateJobRole((document.getElementById('usr-deptid')||{}).value, 'usr-jobrole', 'usr-jobrole-wrap', 'usr-jobrole-hint', null, null);
+  const _d = (document.getElementById('usr-deptid')||{}).value;   // ★ #46b: dropdown نماذج موحّد + تصفير عند تغيير القسم/الدور
+  const sel = document.getElementById('usr-template'); if (sel) sel.value = '';
+  await populateUsrTemplate(_d, null);
 }
 async function showEmployeeModal(editId=null) {
 const ed = editId ? DB.getUser(editId) : null;
@@ -1897,7 +1935,7 @@ const body = `<form id="usr-form">
 <div class="form-group"><label class="form-label">📧 البريد الإلكتروني *</label><input type="email" class="form-control" id="usr-email" required value="${ed?Utils.escape(ed.email||''):''}"></div>
 <div class="form-group"><label class="form-label">📱 رقم الجوال</label><input class="form-control" id="usr-phone" value="${ed?Utils.escape(ed.phone||''):''}"></div>
 <div class="form-group"><label class="form-label">القسم <span style="font-size:11px;color:var(--muted)">(إلزامي لغير المدير/الجودة)</span></label><select class="form-control" id="usr-deptid" onchange="onUserDeptChange()"><option value="">-- بلا قسم --</option>${deptOptsU}</select></div>
-<div class="form-group" id="usr-jobrole-wrap" style="${ed && ed.department_id === _cgIdU ? '' : 'display:none'}"><label class="form-label">المسمى الوظيفي التقني (الدور) *</label><select class="form-control" id="usr-jobrole" onchange="updateJobRoleHint((document.getElementById('usr-deptid')||{}).value,'usr-jobrole','usr-jobrole-hint',null)"><option value="">-- اختر --</option></select><div id="usr-jobrole-hint" style="font-size:12px;margin-top:5px"></div></div>
+<div class="form-group" id="usr-template-wrap" style="${ed && ed.role==='employee' && ed.department_id ? '' : 'display:none'}"><label class="form-label">نموذج التقييم * <span style="font-size:11px;color:var(--muted)">(للموظف — يُشتقّ منه المسمّى التقني)</span></label><select class="form-control" id="usr-template" onchange="updateUsrTemplateHint()"><option value="">— اختر النموذج —</option></select><div id="usr-template-hint" style="font-size:12px;margin-top:5px"></div></div>
 <div class="form-group"><label class="form-label">الوصف الوظيفي</label><input class="form-control" id="usr-pos" value="${ed?Utils.escape(ed.position||''):''}"></div>
 <div class="form-group"><label class="form-label">نوع الحساب *</label>
 <select class="form-control" id="usr-role" ${ed?'disabled':''} onchange="onUserDeptChange(); document.getElementById('usr-sup-wrap').style.display = this.value==='employee'?'block':'none'; document.getElementById('usr-num-wrap').style.display = this.value==='employee'?'block':'none'">
@@ -1925,8 +1963,8 @@ ${!ed ? `<div style="background:#eff6ff;padding:10px;border-radius:8px;font-size
 const footer = `<button class="btn btn-secondary" onclick="Modal.close()">إلغاء</button><button class="btn btn-primary" id="usr-save">${ed?'حفظ':'إضافة'}</button>`;
 Modal.show(ed?'تعديل بيانات المستخدم':'إضافة مستخدم جديد', body, footer);
 
-// م15: تعبئة المسميات ديناميكياً من النماذج
-populateJobRole(ed ? ed.department_id : '', 'usr-jobrole', 'usr-jobrole-wrap', 'usr-jobrole-hint', null, ed ? (ed.job_role||null) : null);
+// ★ #46b (PR2): تعبئة dropdown النماذج الموحّد للمستخدم + pre-select template_id (يظهر لموظف فقط)
+populateUsrTemplate(ed ? ed.department_id : '', ed ? (ed.template_id||null) : null);
 
 document.getElementById('usr-save').addEventListener('click', async (e) => {
 const btn = e.currentTarget;
@@ -1940,7 +1978,13 @@ const department_id = document.getElementById('usr-deptid').value ? parseInt(doc
 const _deptObjU = (window._departments||[]).find(d => d.id === department_id);
 const department = _deptObjU ? _deptObjU.name : '';
 const _isCgU = isCreativeGeneDept(department_id);
-const job_role = _isCgU ? (document.getElementById('usr-jobrole').value || null) : null;
+// ★ #46b (PR2): النموذج بدل job_role (للموظف) — الخادم يشتقّ job_role من p_template_id
+const _uTplSel = document.getElementById('usr-template');
+const _uTplState = _uTplSel ? (_uTplSel.dataset.state||'') : '';
+const _uTplVal = _uTplSel ? _uTplSel.value : '';
+const _uTplOpt = _uTplSel ? _uTplSel.options[_uTplSel.selectedIndex] : null;
+const _uTplArchived = !!(_uTplOpt && _uTplOpt.text.indexOf('(مؤرشف)') >= 0);
+const template_id = (_uTplVal && !_uTplArchived) ? parseInt(_uTplVal) : null;   // المؤرشف الحالي → null (يحفظ الرابط)
 const employee_number = (document.getElementById('usr-num')||{}).value || '';
 const supervisor_name = (document.getElementById('usr-sup')||{}).value || '';
 const supObj = supervisor_name ? DB.data.users.find(s => s.full_name === supervisor_name && ['supervisor','admin'].includes(s.role)) : null;
@@ -1948,7 +1992,12 @@ const supervisor_id = supObj ? supObj.id : null;
 if (!full_name || !email) { Toast.error('يرجى تعبئة الحقول المطلوبة'); return false; }
 if (!Utils.validateEmail(email)) { Toast.error('بريد إلكتروني غير صالح'); return false; }
 if (['supervisor','manager','employee'].includes(role) && !department_id) { Toast.error('القسم إلزامي لدور المشرف/الموظف'); return false; }
-if (_isCgU && !job_role) { Toast.error('المسمى الوظيفي إلزامي لموظفي Creative Gene'); return false; }
+// ★ #46b (PR2): إلزام النموذج للموظف حسب حالة القائمة
+if (role === 'employee' && department_id) {
+if (_uTplState === 'error') { Toast.error('تعذّر تحميل نماذج القسم — أعد المحاولة قبل الحفظ'); return false; }
+if (_uTplState === 'empty') { Toast.error('لا نماذج لهذا القسم — أنشئ نموذجاً من «إدارة النماذج» أولاً'); return false; }
+if (_uTplState === 'ok' && !_uTplVal) { Toast.error('الرجاء اختيار نموذج التقييم للموظف'); return false; }
+}
 if (role === 'employee' && !supervisor_name && !_isCgU) { Toast.error('يجب اختيار المشرف للموظف'); return false; }
 
 const token = (window.getSessionToken ? window.getSessionToken() : null);
@@ -1960,7 +2009,7 @@ p_session_token: token, p_user_id: editId,
 p_full_name: full_name, p_email: email, p_phone: phone, p_department: department, p_position: position,
 p_employee_number: ed.role === 'employee' ? employee_number : null,
 p_supervisor_id: supervisor_id,
-p_department_id: department_id, p_job_role: job_role
+p_department_id: department_id, p_template_id: template_id   // ★ #46b: الخادم يشتقّ job_role
 });
 const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر الحفظ'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
@@ -1984,7 +2033,7 @@ p_session_token: token, p_full_name: full_name, p_email: email, p_username: user
 p_department: department, p_position: position, p_phone: phone,
 p_employee_number: role === 'employee' ? employee_number : null,
 p_supervisor_id: supervisor_id,
-p_department_id: department_id, p_job_role: job_role
+p_department_id: department_id, p_template_id: template_id   // ★ #46b: الخادم يشتقّ job_role
 });
 const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر إنشاء المستخدم'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
