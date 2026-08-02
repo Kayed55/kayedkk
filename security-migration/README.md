@@ -79,3 +79,16 @@ fallback `(dept, job_role)` في ملفَّي 48/49، فتقييماتهم تع�
 لـ`admin_create_user`/`admin_update_user` (نفس نمط ملف 47: DROP+CREATE+اشتقاق) +
 توحيد dropdown النماذج في usr form. **لا يُنفَّذ قبل إثبات الحاجة الفعلية**
 (هل تُستخدَم usr form فعلاً لإنشاء موظفين بنماذج؟ — يُحسَم في Phase 5).
+
+### TODO #48-ui (تنظيف واجهة — مؤجَّل، غير حرج)
+
+بعد Phases 3-A/3-B (PRs #46/#47) بقيت بنود تجميلية/تنظيفية في `public/js/04-pages.js`:
+
+1. **dead code:** `populateMahzamTemplates` + `loadMahzamTemplates` + `jobOpts`/`CG_JOB_ROLES`
+   لم تعد مُستخدَمة في مسار ef بعد توحيد dropdown النماذج (#46). (`populateJobRole`/
+   `updateJobRoleHint`/`loadJobRolesByDept` تبقى — يستخدمها usr form).
+2. **بادج «النموذج المُسنَد»** في ملف الموظف (page-subtitle، admin/quality/supervisor + mahzam فقط)
+   ما زال يعرض `job_role` الخام (slug) بدل تسمية بشرية — سياق admin-facing أقل حرجاً من
+   عمود المسمّى الرئيسي (الذي عولج في #47).
+
+**لا يُنفَّذ قبل Phase 5** (قد يكشف E2E مواقع UI خفية إضافية تُدمج في نفس التنظيف).
