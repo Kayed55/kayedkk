@@ -33,6 +33,11 @@
     stats: { events: 0, bytes: 0, peakPerSec: 0, _windowStart: 0, _windowCount: 0 },
 
     start() {
+      // ★ hotfix (PR #57): تعطيل مؤقت — عاصفة pullAll على كل حدث Realtime تستنزف connection pool.
+      //   كل حدث على أي من 9 جداول → pullAll كامل لكل عميل → استنزاف pool + فشل schema cache (503).
+      //   الاستعادة/الإصلاح الجذري (pullTable + تقليل قنوات + backoff) في PR #58.
+      console.info("Realtime disabled - temp hotfix for pool exhaustion");
+      return;
       if (this.started) return;
       // ننتظر جاهزية sb + طبقة المزامنة
       if (!window.sb || !window.SupabaseSync || !window.SupabaseSync.pullAll) {
