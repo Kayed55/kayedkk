@@ -12,12 +12,13 @@
 // ============================================
 // حساب الدرجات
 // ============================================
-function calculateScores(items, passScore = 85) {
-const A = CRITERIA.answers;
+function calculateScores(items, passScore = 85, tplJson) {
+const C = tplJson || CRITERIA;   // ★ #59: نموذج مُمرَّر (param اختياري) — متوافق رجعياً (الافتراضي = CRITERIA العام)
+const A = C.answers;
 const sectionScores = {};
 const errors = [];
 
-CRITERIA.sections.forEach(s => {
+C.sections.forEach(s => {
 if (s.type === 'critical') {
 // كل البنود في القسم: لو فيه أي خطأ → 0، وإلا → كامل الوزن
 let hasError = false;

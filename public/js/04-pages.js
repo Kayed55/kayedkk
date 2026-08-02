@@ -2516,9 +2516,10 @@ ${employees.length ? '' : '<div class="alert alert-info" style="margin-top:10px"
 }
 
 // جسم النموذج القطاعي (محزم) — نفس تجربة التقييم الحالية بدون بطاقة الموظف/التاريخ (أصبحت مشتركة)
-function renderSectionEvalBody() {
-const A = CRITERIA.answers;
-const sectionsHTML = CRITERIA.sections.map(s => `
+function renderSectionEvalBody(tplJson) {
+const C = tplJson || CRITERIA;   // ★ #59: نموذج الموظف المُمرَّر (fallback للعام — توافق)
+const A = C.answers;
+const sectionsHTML = C.sections.map(s => `
 <div class="card">
 <div class="card-header">
 <div class="card-title">${Utils.escape(s.title)} ${s.type === 'critical' ? '<span class="badge badge-danger" style="margin-right:8px">حرج</span>' : ''}</div>
@@ -2596,19 +2597,31 @@ if (!empId) { body.innerHTML = '<div class="alert alert-info">اختر المو�
 const emp = DB.getUser(empId);
 await loadDepartments();
 const dept = (emp && emp.department_id) ? (window._departments || []).find(d => d.id === emp.department_id) : null;
-const type = dept ? dept.template_type : 'section_based';
-if (type === 'task_based_weekly') {
+const depType = dept ? dept.template_type : 'section_based';
+// ★ #59: task_based_weekly يبقى على المسار القديم بالكامل (loadTemplateFor) — مؤجَّل لـPR #60 (get_template_for_department desync)
+if (depType === 'task_based_weekly') {
 body.innerHTML = '<div class="card"><div class="card-body">⏳ جارٍ تحميل النموذج…</div></div>';
-const tpl = await loadTemplateFor(dept.id);
-if (!tpl || !tpl.ok || !tpl.exists) { body.innerHTML = '<div class="alert alert-danger">لا يوجد نموذج لهذا القسم</div>'; return; }
-body.innerHTML = renderWeeklyEvalBody(dept, emp, tpl.template);
-attachWeeklyHandlers(dept, emp, tpl.template);
-} else if (type === 'pdf_based_weekly') {
-body.innerHTML = '<div class="card"><div class="card-body">⏳ جارٍ التحميل…</div></div>';
-await renderPdfEvalInto(body, emp);
+const dtpl = await loadTemplateFor(dept.id);
+if (!dtpl || !dtpl.ok || !dtpl.exists) { body.innerHTML = '<div class="alert alert-danger">لا يوجد نموذج لهذا القسم</div>'; return; }
+body.innerHTML = renderWeeklyEvalBody(dept, emp, dtpl.template);
+attachWeeklyHandlers(dept, emp, dtpl.template);
+return;
+}
+// ★ #59: section_based + pdf_based_weekly → المصدر الوحيد = emp.template_id (النوع من النموذج لا القسم)
+if (!emp || emp.template_id == null) {
+body.innerHTML = `<div class="card"><div class="card-body"><div class="alert alert-danger">لم يتم تعيين نموذج للموظف — عيّنه من إدارة الموظفين.</div><button class="btn btn-primary" onclick="navigate('employees')">الذهاب لإدارة الموظفين</button></div></div>`;
+return;
+}
+body.innerHTML = '<div class="card"><div class="card-body">⏳ جارٍ تحميل النموذج…</div></div>';
+const tpl = await fetchTemplateById(emp.template_id);
+if (!tpl) { body.innerHTML = '<div class="alert alert-danger">النموذج المربوط غير موجود أو غير نشط. راجع الربط من إدارة الموظفين.</div>'; return; }
+console.info('[renderEvalBodyForEmployee] routed by:', tpl.template_type, 'template_id:', emp.template_id);   // ★ #59 tracing
+if (tpl.template_type === 'pdf_based_weekly') {
+await renderPdfEvalInto(body, emp, tpl);
 } else {
-body.innerHTML = renderSectionEvalBody();
-attachSectionEvalHandlers();
+if (tpl.template_type && tpl.template_type !== 'section_based') console.warn('[renderEvalBodyForEmployee] unknown template_type, defaulting to section:', tpl.template_type);   // ★ (أ)
+body.innerHTML = renderSectionEvalBody(tpl.template_jsonb);
+attachSectionEvalHandlers(tpl.template_jsonb);
 }
 }
 function weeklyTaskRowHTML(dims) {
@@ -2733,11 +2746,12 @@ return true;
 });
 }
 
-function collectItems() {
+function collectItems(tplJson) {
+const C = tplJson || CRITERIA;   // ★ #59: بنود نموذج الموظف المُمرَّر
 const items = {};
-CRITERIA.sections.forEach(s => s.subsections.forEach(sub => sub.items.forEach(it => {
+C.sections.forEach(s => s.subsections.forEach(sub => sub.items.forEach(it => {
 const r = document.querySelector(`input[name="item-${it.key}"]:checked`);
-items[it.key] = r ? r.value : CRITERIA.answers.OK;
+items[it.key] = r ? r.value : C.answers.OK;
 })));
 return items;
 }
@@ -2750,13 +2764,13 @@ if (currentParams && currentParams.emp) { empSel.value = String(currentParams.em
 if (empSel.value) renderEvalBodyForEmployee(parseInt(empSel.value));
 }
 
-function attachSectionEvalHandlers() {
+function attachSectionEvalHandlers(tplJson) {
 const form = document.getElementById('new-eval-form');
 if (!form) return;
 
 const updateLive = () => {
-const items = collectItems();
-const r = calculateScores(items);
+const items = collectItems(tplJson);
+const r = calculateScores(items, 85, tplJson);
 document.getElementById('live-score').textContent = `${r.totalScore} / 100`;
 document.getElementById('live-grade').innerHTML = Utils.gradeBadge(r.percentage);
 };
@@ -2770,8 +2784,8 @@ await submitWithFeedback(btn, 'جاري حفظ التقييم...', null, async (
 const empId = parseInt(document.getElementById('ef-employee').value);
 if (!empId) { Toast.error('يرجى اختيار الموظف'); return false; }
 
-const items = collectItems();
-const r = calculateScores(items);
+const items = collectItems(tplJson);
+const r = calculateScores(items, 85, tplJson);
 
 const observed = document.getElementById('ef-observed').value;
 const observedOther = (document.getElementById('ef-observed-other')||{}).value || '';
@@ -2951,11 +2965,13 @@ return (data && data[0]) ? data[0] : null;
 } catch(_) { return null; }
 }
 // ★ #56: جلب النموذج بالـid مباشرة (مصدر الحقيقة = users.template_id) — يتفادى لبس تعدّد نماذج الدور
-async function fetchCgTemplateById(id) {
+// ★ #59: جلب أي نموذج بالـid (محايد للنوع) — المصدر الوحيد للحقيقة = users.template_id
+async function fetchTemplateById(id) {
 if (id == null) return null;
 try { const { data } = await window.sb.from('evaluation_templates').select('*').eq('id', id).limit(1); return (data && data[0]) ? data[0] : null; }
 catch(_) { return null; }
 }
+function fetchCgTemplateById(id) { return fetchTemplateById(id); }   // ★ #59 alias — صفر كسر لمستدعيات CG
 async function renderPdfEvalInto(body, emp) {
 const ws = weekStartSaturdayJS((currentParams && currentParams.week) || null);  // #33: تطبيع إلى السبت
 await loadDepartments();
@@ -6054,8 +6070,8 @@ const btn = form.querySelector('button[type=submit]');
 await submitWithFeedback(btn, 'جاري حفظ التعديلات...', null, async () => {
 const empId = parseInt(document.getElementById('ef-employee').value);
 if (!empId) { Toast.error('يرجى اختيار الموظف'); return false; }
-const items = collectItems();
-const r = calculateScores(items);
+const items = collectItems(tplJson);
+const r = calculateScores(items, 85, tplJson);
 
 const observed = document.getElementById('ef-observed').value;
 const observedOther = (document.getElementById('ef-observed-other')||{}).value || '';
