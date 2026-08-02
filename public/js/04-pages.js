@@ -1422,12 +1422,16 @@ if (!window._departments) loadDepartments(true).then(() => { if (currentPage ===
 const supervisors = DB.getSupervisors();
 const supOpts = supervisors.map(s => `<option value="${Utils.escape(s.full_name)}">${Utils.escape(s.full_name)}</option>`).join('');
 const deptOpts = (window._departments||[]).filter(d => d.is_active).map(d => `<option value="${d.id}">${Utils.escape(d.name)}</option>`).join('');
+// ★ #49-p4a: خيارات فلتر النموذج — من النماذج المُسنَدة فعلياً للموظفين المعروضين
+const _empTplIds = [...new Set(users.map(u => u.template_id).filter(x => x != null))];
+const tplFilterOpts = _empTplIds.map(id => { const t = _tplById(id); const lbl = t ? (t.name || t.job_role || ('نموذج #'+id)) : ('نموذج #'+id); return `<option value="${id}">${Utils.escape(lbl)}</option>`; }).join('');
+const _hasNullTpl = users.some(u => u.template_id == null);
 
 const rows = users.map(u => {
 const avg = DB.getAvgScore(u.id);
 const count = DB.data.evaluations.filter(e => e.employee_id === u.id).length;
 const uDept = (window._departments||[]).find(d => d.id === u.department_id);
-return `<tr data-search="${Utils.escape((u.full_name||'')+' '+(u.employee_number||'')+' '+(u.supervisor_name||'')+' '+(u.email||'')+' '+(u.department||''))}" data-status="${u.is_active?'active':'inactive'}" data-deptid="${u.department_id||''}" data-sup="${Utils.escape(u.supervisor_name||'')}">
+return `<tr data-search="${Utils.escape((u.full_name||'')+' '+(u.employee_number||'')+' '+(u.supervisor_name||'')+' '+(u.email||'')+' '+(u.department||''))}" data-status="${u.is_active?'active':'inactive'}" data-deptid="${u.department_id||''}" data-sup="${Utils.escape(u.supervisor_name||'')}" data-template="${u.template_id||''}">
 <td><strong>${Utils.escape(u.employee_number||'-')}</strong></td>
 <td><div style="display:flex;align-items:center;gap:10px"><div class="user-avatar">${Utils.getInitials(u.full_name)}</div><div>${Utils.escape(u.full_name)}</div></div></td>
 <td><div style="font-size:13px;direction:ltr;text-align:right">${Utils.escape(u.email||'-')}</div></td>
@@ -1467,6 +1471,9 @@ ${noteIfNoSup}
 </select>
 <select class="form-control emp-filter" id="emp-search-dept">
 <option value="">🏢 جميع الأقسام</option>${deptOpts}
+</select>
+<select class="form-control emp-filter" id="emp-search-template">
+<option value="">📄 جميع النماذج</option>${tplFilterOpts}${_hasNullTpl ? '<option value="none">— بدون نموذج —</option>' : ''}
 </select>
 <select class="form-control emp-filter" id="emp-search-status">
 <option value="">📋 الحالة (الكل)</option>
@@ -7695,6 +7702,7 @@ const qn = (document.getElementById('emp-search-name')?.value || '').trim().toLo
 const qnum = (document.getElementById('emp-search-num')?.value || '').trim().toLowerCase();
 const qsup = (document.getElementById('emp-search-sup')?.value || '').trim();
 const qdept = (document.getElementById('emp-search-dept')?.value || '').trim();
+const qtpl = (document.getElementById('emp-search-template')?.value || '').trim();   // ★ #49-p4a
 const qstatus = (document.getElementById('emp-search-status')?.value || '').trim();
 document.querySelectorAll('#emp-table tbody tr').forEach(tr => {
 const cells = tr.querySelectorAll('td');
@@ -7703,13 +7711,15 @@ const num = (cells[0].textContent || '').toLowerCase();
 const name = (cells[1].textContent || '').toLowerCase();
 const sup = tr.dataset.sup || '';
 const dept = tr.dataset.deptid || '';
+const tpl = tr.dataset.template || '';   // ★ #49-p4a
 const status = tr.dataset.status || '';
 const okName = !qn || name.includes(qn);
 const okNum = !qnum || num.includes(qnum);
 const okSup = !qsup || sup === qsup;
 const okDept = !qdept || dept === qdept;
+const okTpl = !qtpl || (qtpl === 'none' ? tpl === '' : tpl === qtpl);   // ★ #49-p4a: 'none' = بدون نموذج (قيادة)
 const okStatus = !qstatus || status === qstatus;
-tr.style.display = (okName && okNum && okSup && okDept && okStatus) ? '' : 'none';
+tr.style.display = (okName && okNum && okSup && okDept && okTpl && okStatus) ? '' : 'none';
 });
 };
 document.querySelectorAll('.emp-filter').forEach(inp => {
@@ -7718,7 +7728,7 @@ inp.addEventListener('change', filterEmps);
 });
 const clrEmp = document.getElementById('emp-clear');
 if (clrEmp) clrEmp.addEventListener('click', () => {
-['emp-search-name','emp-search-num','emp-search-sup','emp-search-dept','emp-search-status'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+['emp-search-name','emp-search-num','emp-search-sup','emp-search-dept','emp-search-template','emp-search-status'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
 filterEmps();
 });
 document.querySelectorAll('[data-view-emp]').forEach(b => b.addEventListener('click', e => {
