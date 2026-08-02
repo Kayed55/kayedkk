@@ -58,3 +58,24 @@ Run):
 
 كل ملف مغلّف في معاملة (`begin; … commit;`)، وكل دوال RPC تُنشأ بـ
 `create or replace` فآمنة لإعادة التشغيل (idempotent).
+
+---
+
+## ربط الموظف بالنموذج (RFC #38) — حالة الـRPCs
+
+المرحلة 2 أضافت `users.template_id` (ملف 46) و`p_template_id` لـ:
+
+- ✅ `create_employee` / `update_employee_profile` (ملف 47) — مسار **نموذج الموظف (ef)**.
+- ✅ `create_evaluation` (ملف 48) / `create_weekly_evaluation` (ملف 49) — اختيار القالب عبر `users.template_id` مع fallback `(dept, job_role)`.
+
+### ⚠️ desync مؤقّت — نموذج المستخدم (usr form)
+
+نموذج **«إضافة/تعديل مستخدم»** (`showUserModal`) يستدعي `admin_create_user` /
+`admin_update_user` — وهاتان **لم تُضَف لهما `p_template_id` بعد**، فما زالتا تمرّران
+`p_job_role`. هذا **آمن وظيفياً**: الموظفون المُنشَؤون عبر usr form يعتمدون على
+fallback `(dept, job_role)` في ملفَّي 48/49، فتقييماتهم تعمل دون `template_id`.
+
+**TODO #46b (مؤجَّل — يُراجَع بعد Phase 5 / اختبار E2E):** إضافة `p_template_id`
+لـ`admin_create_user`/`admin_update_user` (نفس نمط ملف 47: DROP+CREATE+اشتقاق) +
+توحيد dropdown النماذج في usr form. **لا يُنفَّذ قبل إثبات الحاجة الفعلية**
+(هل تُستخدَم usr form فعلاً لإنشاء موظفين بنماذج؟ — يُحسَم في Phase 5).

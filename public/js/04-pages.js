@@ -1536,10 +1536,61 @@ if (titleId) { const t = document.getElementById(titleId); if (t && !t.value.tri
 hint.innerHTML = `<span style="color:var(--danger)">⚠️ المسمى الحالي لا يرتبط بأي نموذج نشط — الرجاء اختيار مسمى صحيح.</span>`;
 }
 }
+// ★ #46 (Phase 3-A): dropdown نماذج موحّد لنموذج الموظف (ef) — يحلّ محلّ ef-jobrole + ef-mahzam-tpl
+async function loadTemplatesForSelect(deptId, force) {
+  deptId = parseInt(deptId);
+  if (!deptId) return [];
+  window._efTpls = window._efTpls || {};
+  if (window._efTpls[deptId] !== undefined && !force) return window._efTpls[deptId];
+  const tok = window.getSessionToken ? getSessionToken() : null;
+  for (let attempt = 0; attempt < 2; attempt++) {   // retry واحد تلقائي
+    try {
+      const { data, error } = await window.sb.rpc('list_templates', { p_session_token: tok, p_department_id: deptId });
+      if (error) throw error;
+      const rows = (Array.isArray(data) ? data : []).filter(t => t.status === 'active');
+      window._efTpls[deptId] = rows;
+      return rows;
+    } catch (_) { /* يُعاد مرّة */ }
+  }
+  window._efTpls[deptId] = null;   // null = خطأ شبكة (مميّز عن [] = لا نماذج)
+  return null;
+}
+async function populateEfTemplate(deptId, currentTemplateId) {
+  const wrap = document.getElementById('ef-template-wrap'), sel = document.getElementById('ef-template'), hint = document.getElementById('ef-template-hint');
+  if (!sel || !wrap) return;
+  if (!deptId) { wrap.style.display = 'none'; sel.innerHTML = ''; sel.dataset.state = 'none'; if (hint) hint.innerHTML = ''; return; }
+  wrap.style.display = '';
+  sel.innerHTML = '<option value="">— جاري التحميل… —</option>'; sel.dataset.state = 'loading';
+  const tpls = await loadTemplatesForSelect(deptId, true);
+  if (tpls === null) {   // خطأ شبكة → زر إعادة + block save
+    sel.innerHTML = '<option value="">تعذّر التحميل</option>'; sel.dataset.state = 'error';
+    if (hint) hint.innerHTML = `<span style="color:var(--danger)">⚠️ تعذّر تحميل النماذج — <a href="#" onclick="populateEfTemplate('${Utils.escape(String(deptId))}', ${currentTemplateId!=null?currentTemplateId:'null'});return false;">إعادة المحاولة</a></span>`;
+    return;
+  }
+  if (!tpls.length) {   // لا نماذج → رسالة + block save
+    sel.innerHTML = '<option value="">— لا نماذج —</option>'; sel.dataset.state = 'empty';
+    if (hint) hint.innerHTML = '<span style="color:var(--danger)">⚠️ لا نماذج لهذا القسم — أنشئ نموذجاً من «إدارة النماذج» قبل ربط الموظف.</span>';
+    return;
+  }
+  sel.dataset.state = 'ok';
+  const cur = currentTemplateId != null ? String(currentTemplateId) : '';
+  const inList = cur && tpls.some(t => String(t.id) === cur);
+  let opts = '<option value="">— اختر النموذج —</option>' + tpls.map(t => `<option value="${t.id}" ${String(t.id)===cur?'selected':''}>${Utils.escape(t.name || t.job_role || ('نموذج #'+t.id))}</option>`).join('');
+  if (cur && !inList) opts = `<option value="${Utils.escape(cur)}" selected>النموذج الحالي #${Utils.escape(cur)} (مؤرشف)</option>` + opts;   // نموذج مرتبط لكنه غير نشط/مؤرشف
+  sel.innerHTML = opts;
+  updateEfTemplateHint();
+}
+function updateEfTemplateHint() {
+  const sel = document.getElementById('ef-template'), hint = document.getElementById('ef-template-hint');
+  if (!sel || !hint || sel.dataset.state === 'empty' || sel.dataset.state === 'error') return;
+  const opt = sel.options[sel.selectedIndex];
+  if (sel.value && opt && opt.text.indexOf('(مؤرشف)') >= 0) hint.innerHTML = '<span style="color:#b45309">⚠️ النموذج المرتبط مؤرشف — يُنصح باختيار نموذج نشط بديل من القائمة (سيُبقى الرابط الحالي إن لم تُغيّره).</span>';
+  else if (sel.value) hint.innerHTML = '<span style="color:var(--success)">✅ سيُربط الموظف بهذا النموذج (يُشتقّ المسمّى التقني منه تلقائياً).</span>';
+  else hint.innerHTML = '<span style="color:var(--muted)">اختر النموذج الذي يُقيَّم الموظف وفقه.</span>';
+}
 async function onEmpDeptChange() {
-const _d = (document.getElementById('ef-deptid')||{}).value;
-await populateJobRole(_d, 'ef-jobrole', 'ef-jobrole-wrap', 'ef-jobrole-hint', 'ef-jobtitle', null);
-await populateMahzamTemplates(_d, null);   // م23-ج
+  const _d = (document.getElementById('ef-deptid')||{}).value;   // ★ #46: تحميل نماذج القسم الجديد + تصفير الاختيار
+  await populateEfTemplate(_d, null);
 }
 async function onUserDeptChange() {
 await populateJobRole((document.getElementById('usr-deptid')||{}).value, 'usr-jobrole', 'usr-jobrole-wrap', 'usr-jobrole-hint', null, null);
@@ -1572,8 +1623,7 @@ const body = `<form id="emp-form">
 <div class="form-group"><label class="form-label">الوصف الوظيفي *</label><input class="form-control" id="ef-pos" required value="${ed?Utils.escape(ed.position||''):'موظف خدمة'}"></div>
 <div class="form-group"><label class="form-label">👨‍💼 المشرف</label>${supDropdown}</div>
 <div class="form-group"><label class="form-label">القسم * <span style="font-size:11px;color:var(--muted)">(يحدّد نموذج التقييم)</span></label><select class="form-control" id="ef-deptid" required onchange="onEmpDeptChange()"><option value="">-- اختر القسم --</option>${deptOpts}</select></div>
-<div class="form-group" id="ef-jobrole-wrap" style="${ed && ed.department_id === _cgId ? '' : 'display:none'}"><label class="form-label">المسمى الوظيفي التقني (الدور) * <span style="font-size:11px;color:var(--muted)">(يحدّد نموذج التقييم)</span></label><select class="form-control" id="ef-jobrole" onchange="updateJobRoleHint((document.getElementById('ef-deptid')||{}).value,'ef-jobrole','ef-jobrole-hint','ef-jobtitle')"><option value="">-- اختر المسمى --</option></select><div id="ef-jobrole-hint" style="font-size:12px;margin-top:5px"></div></div>
-<div class="form-group" id="ef-mahzam-tpl-wrap" style="${ed && isMahzamDept(ed.department_id) ? '' : 'display:none'}"><label class="form-label">النموذج <span style="font-size:11px;color:var(--muted)">(يحدّد بنود التقييم لموظف محزم)</span></label><select class="form-control" id="ef-mahzam-tpl"><option value="">النموذج الافتراضي</option></select><div id="ef-mahzam-tpl-hint" style="font-size:12px;margin-top:5px"></div></div>
+<div class="form-group" id="ef-template-wrap" style="${ed && ed.department_id ? '' : 'display:none'}"><label class="form-label">نموذج التقييم * <span style="font-size:11px;color:var(--muted)">(يُقيَّم الموظف وفقه — يُشتقّ منه المسمّى التقني)</span></label><select class="form-control" id="ef-template" onchange="updateEfTemplateHint()"><option value="">— اختر النموذج —</option></select><div id="ef-template-hint" style="font-size:12px;margin-top:5px"></div></div>
 <div class="form-group"><label class="form-label">المسمى الوظيفي المرئي <span style="font-size:11px;color:var(--muted)">(يظهر في القوائم والتقارير)</span></label><input class="form-control" id="ef-jobtitle" value="${ed?Utils.escape(ed.job_title||''):''}" placeholder="مثال: مصمم جرافيك"></div>
 ${!ed ? `<div style="background:#eff6ff;padding:10px;border-radius:8px;font-size:12px;color:var(--primary-dark)">🔐 ستُولَّد كلمة مرور مؤقتة تلقائياً وتُرسَل لبريد الموظف وتُعرَض لك بعد الإضافة.</div>` : ''}
 </div>
@@ -1584,9 +1634,8 @@ ${!ed ? `<div style="background:#f1f5f9;padding:10px;border-radius:8px;font-size
 const footer = `<button class="btn btn-secondary" onclick="Modal.close()">إلغاء</button><button class="btn btn-primary" id="ef-save">${ed?'حفظ':'إضافة'}</button>`;
 Modal.show(ed?'تعديل بيانات الموظف':'إضافة موظف جديد', body, footer);
 
-// م15: تعبئة المسميات ديناميكياً من النماذج (مع تحديد المسمى الحالي عند التعديل)
-populateJobRole(ed ? ed.department_id : '', 'ef-jobrole', 'ef-jobrole-wrap', 'ef-jobrole-hint', 'ef-jobtitle', ed ? (ed.job_role||null) : null);
-populateMahzamTemplates(ed ? ed.department_id : '', ed ? (ed.job_role||null) : null);   // م23-ج
+// ★ #46 (Phase 3-A): تعبئة dropdown النماذج الموحّد + pre-select users.template_id عند التعديل
+populateEfTemplate(ed ? ed.department_id : '', ed ? (ed.template_id||null) : null);
 
 document.getElementById('ef-save').addEventListener('click', async (e) => {
 const btn = e.currentTarget;
@@ -1603,12 +1652,14 @@ const department_id = document.getElementById('ef-deptid').value ? parseInt(docu
 const deptObj = (window._departments || []).find(d => d.id === department_id);
 const department = deptObj ? deptObj.name : '';
 const _isCg = isCreativeGeneDept(department_id);
-const _isMahzam = isMahzamDept(department_id);   // م23-ج
-const _mahzamTplRaw = (document.getElementById('ef-mahzam-tpl')||{}).value;
-const _mahzamTplVal = (_mahzamTplRaw || '').trim();
-const job_role = _isCg
-  ? (document.getElementById('ef-jobrole').value || null)
-  : (_isMahzam ? (_mahzamTplVal === '' ? null : _mahzamTplVal) : null);
+// ★ #46 (Phase 3-A): النموذج الموحّد بدل job_role — الخادم يشتقّ job_role من p_template_id
+const _tplSel = document.getElementById('ef-template');
+const _tplState = _tplSel ? (_tplSel.dataset.state||'') : '';
+const _tplSelVal = _tplSel ? _tplSel.value : '';
+const _tplOpt = _tplSel ? _tplSel.options[_tplSel.selectedIndex] : null;
+const _tplIsArchived = !!(_tplOpt && _tplOpt.text.indexOf('(مؤرشف)') >= 0);
+// نمرّر template_id لنموذج نشط مختار فقط؛ إبقاء المؤرشف الحالي = null (يحفظ الرابط دون إعادة اشتقاق على is_active)
+const template_id = (_tplSelVal && !_tplIsArchived) ? parseInt(_tplSelVal) : null;
 const job_title = ((document.getElementById('ef-jobtitle')||{}).value || '').trim();
 
 if (!full_name || !employee_number || !position || !email) {
@@ -1616,7 +1667,10 @@ Toast.error('يرجى تعبئة جميع الحقول المطلوبة');
 return false;
 }
 if (!department_id) { Toast.error('الرجاء اختيار القسم'); return false; }
-if (_isCg && !job_role) { Toast.error('الرجاء اختيار المسمى الوظيفي (الدور) لموظف Creative Gene'); return false; }
+// ★ #46 (Phase 3-A): إلزام النموذج حسب حالة القائمة
+if (_tplState === 'error') { Toast.error('تعذّر تحميل نماذج القسم — أعد المحاولة قبل الحفظ'); return false; }
+if (_tplState === 'empty') { Toast.error('لا نماذج لهذا القسم — أنشئ نموذجاً من «إدارة النماذج» أولاً'); return false; }
+if (_tplState === 'ok' && !_tplSelVal) { Toast.error('الرجاء اختيار نموذج التقييم للموظف'); return false; }
 if (!supervisor_name && _isCg) {
 if (!confirm('⚠️ لم يتم تعيين مشرف. الإجراءات على هذا الموظف ستكون من admin فقط.\n\nهل تريد المتابعة؟')) return false;
 }
@@ -1634,7 +1688,7 @@ p_session_token: _tok, p_user_id: editId,
 p_full_name: full_name, p_email: email, p_employee_number: employee_number,
 p_position: position, p_department: department, p_phone: phone,
 p_supervisor_id: supervisor_id, p_supervisor_name: supervisor_name,
-p_department_id: department_id, p_job_role: job_role
+p_department_id: department_id, p_template_id: template_id   // ★ #46: الخادم يشتقّ job_role (بدل p_job_role)
 });
 const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر الحفظ'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
@@ -1652,7 +1706,7 @@ const { data, error } = await window.sb.rpc('create_employee', {
 p_session_token: _tok, p_full_name: full_name, p_email: email, p_employee_number: employee_number,
 p_position: position, p_department: department, p_phone: phone,
 p_supervisor_id: supervisor_id, p_supervisor_name: supervisor_name,
-p_department_id: department_id, p_job_role: job_role
+p_department_id: department_id, p_template_id: template_id   // ★ #46: الخادم يشتقّ job_role (بدل p_job_role)
 });
 const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر إضافة الموظف'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
