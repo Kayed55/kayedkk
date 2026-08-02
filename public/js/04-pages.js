@@ -6070,8 +6070,8 @@ const btn = form.querySelector('button[type=submit]');
 await submitWithFeedback(btn, 'جاري حفظ التعديلات...', null, async () => {
 const empId = parseInt(document.getElementById('ef-employee').value);
 if (!empId) { Toast.error('يرجى اختيار الموظف'); return false; }
-const items = collectItems(tplJson);
-const r = calculateScores(items, 85, tplJson);
+const items = collectItems();
+const r = calculateScores(items);
 
 const observed = document.getElementById('ef-observed').value;
 const observedOther = (document.getElementById('ef-observed-other')||{}).value || '';
