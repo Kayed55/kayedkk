@@ -2622,7 +2622,7 @@ return `<td><input type="number" min="${dm.min!=null?dm.min:0}" max="${dm.max!=n
 return `<tr><td><input type="text" class="form-control wk-taskname" placeholder="اسم المهمة" style="min-width:140px"></td>${cells}<td><button type="button" class="btn btn-sm btn-danger wk-del-task">✕</button></td></tr>`;
 }
 function renderWeeklyEvalBody(dept, emp, template) {
-const job = emp.job_role;
+const job = (_tplById(emp.template_id)||{}).job_role || emp.job_role;   // ★ #56: الدور من النموذج المربوط (اتّساق مع الخادم) — fallback job_role
 const jobLabel = ROLE_NAMES[job] || job || '—';
 const dims = (template.task_scoring && template.task_scoring.dimensions) || [];
 const kpis = (template.role_kpis && template.role_kpis[job]) || [];
@@ -2690,7 +2690,7 @@ function attachWeeklyHandlers(dept, emp, template) {
 const form = document.getElementById('weekly-eval-form');
 if (!form) return;
 const dims = (template.task_scoring && template.task_scoring.dimensions) || [];
-const kpiDefs = (template.role_kpis && template.role_kpis[emp.job_role]) || [];
+const kpiDefs = (template.role_kpis && template.role_kpis[(_tplById(emp.template_id)||{}).job_role || emp.job_role]) || [];   // ★ #56: الدور من النموذج المربوط
 const tbody = form.querySelector('#wk-tasks tbody');
 const updateLive = () => {
 const score = computeTaskBasedPreview(collectWeeklyTasks(), collectWeeklyKpis(), kpiDefs);
@@ -2950,23 +2950,28 @@ const { data } = await q.limit(1);
 return (data && data[0]) ? data[0] : null;
 } catch(_) { return null; }
 }
+// ★ #56: جلب النموذج بالـid مباشرة (مصدر الحقيقة = users.template_id) — يتفادى لبس تعدّد نماذج الدور
+async function fetchCgTemplateById(id) {
+if (id == null) return null;
+try { const { data } = await window.sb.from('evaluation_templates').select('*').eq('id', id).limit(1); return (data && data[0]) ? data[0] : null; }
+catch(_) { return null; }
+}
 async function renderPdfEvalInto(body, emp) {
 const ws = weekStartSaturdayJS((currentParams && currentParams.week) || null);  // #33: تطبيع إلى السبت
 await loadDepartments();
-// Creative Gene يتطلّب مسمى وظيفي (دور) لاختيار النموذج
-if (!emp.job_role) {
+// ★ #56: مصدر الحقيقة = emp.template_id (لا job_role) — يتفادى اختيار نموذج خاطئ عند تعدّد نماذج الدور
+if (emp.template_id == null) {
 body.innerHTML = `<div class="card"><div class="card-body">
-<div class="alert alert-danger">لا يمكن إنشاء التقييم — الموظف <strong>${Utils.escape(emp.full_name)}</strong> بلا مسمى وظيفي. الرجاء تعيين المسمى أولاً من إدارة الموظفين.</div>
+<div class="alert alert-danger">لا يوجد نموذج مربوط بالموظف <strong>${Utils.escape(emp.full_name)}</strong>. الرجاء ربط نموذج تقييم من إدارة الموظفين قبل إنشاء التقييم.</div>
 <button class="btn btn-primary" onclick="navigate('employees')">الذهاب لإدارة الموظفين</button>
 </div></div>`;
 return;
 }
-let tpl = await fetchCgRoleTemplate(emp.job_role); let usedDefault = false;
-if (!tpl) { tpl = await fetchCgRoleTemplate(null); usedDefault = true; }
-if (!tpl) { body.innerHTML = '<div class="alert alert-danger">لا يوجد نموذج لهذا المسمى ولا نموذج افتراضي</div>'; return; }
+let tpl = await fetchCgTemplateById(emp.template_id); const usedDefault = false;
+if (!tpl) { body.innerHTML = '<div class="alert alert-danger">النموذج المربوط بالموظف غير موجود أو غير نشط. راجع ربط النموذج من إدارة الموظفين.</div>'; return; }
 const criteria = (tpl.template_jsonb && tpl.template_jsonb.criteria) || [];
 const actionTypes = (tpl.template_jsonb && Array.isArray(tpl.template_jsonb.allowed_action_types) && tpl.template_jsonb.allowed_action_types.length) ? tpl.template_jsonb.allowed_action_types : ['warning','training','praise','other'];
-const roleLabel = ((JOB_ROLES.find(x => x[0] === emp.job_role)||[])[1]) || emp.job_role;
+const roleLabel = (tpl.template_jsonb && tpl.template_jsonb.job_title) || tpl.name || ((JOB_ROLES.find(x => x[0] === tpl.job_role)||[])[1]) || tpl.job_role || 'النموذج';   // ★ #56: من النموذج المربوط
 const tplLabel = usedDefault ? 'النموذج الافتراضي' : ('نموذج ' + roleLabel);
 const row = await fetchCgStatusRow(emp.id, ws);
 body.innerHTML = pdfEvalFormHTML(emp, ws, row, criteria, roleLabel, tplLabel, actionTypes);
