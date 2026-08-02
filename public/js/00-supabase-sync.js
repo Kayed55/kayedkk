@@ -196,6 +196,7 @@ window.SupabaseSync = {
           evaluations: results.evaluations || [],
           notifications: results.notifications || [],
           objections: results.objections || [],
+          evaluation_templates: results.evaluation_templates || [],   // ★ #58: تخزينها لـ_tplById (كانت تُشتَقّ منها criteria فقط)
           audit_logs: results.audit_logs || [],
           criteria: criteria || (window.DEFAULT_CRITERIA ? JSON.parse(JSON.stringify(window.DEFAULT_CRITERIA)) : {}),
           nextUserId: Math.max(0, ...(results.users || []).map(u => u.id)) + 1,
@@ -238,6 +239,7 @@ window.SupabaseSync = {
           if (d) {
             d.users = dbData.users; d.evaluations = dbData.evaluations; d.notifications = dbData.notifications;
             d.objections = dbData.objections; d.criteria = dbData.criteria;
+            d.evaluation_templates = dbData.evaluation_templates;   // ★ #58: يُفعّل _tplById (تسميات النماذج في العرض/الفلتر)
             // audit_logs لا يُسحب هنا (يُجلب عند الطلب في صفحة السجل) — لا نَدهس ما حمّلته loadAuditLog.
             d.nextUserId = dbData.nextUserId; d.nextEvalId = dbData.nextEvalId;
             d.nextNotifId = dbData.nextNotifId; d.nextObjectionId = dbData.nextObjectionId;
@@ -259,6 +261,60 @@ window.SupabaseSync = {
     // ننظّف pendingPull فقط إن كان لا يزال يشير لهذه العملية (يحمي عمليات force المتزامنة)
     p.then(function(){}, function(){}).then(function(){ if (self.pendingPull === p) self.pendingPull = null; });
     return p;
+  },
+
+  /**
+   * ★ #58: سحب جدول واحد فقط (بدل pullAll الكامل) — يستخدمه Realtime لتقليل الحِمل
+   * من O(كل الجداول) إلى O(جدول واحد). يحدّث الذاكرة (DB.data) فقط؛ لا يُعيد الحفظ لـ
+   * localStorage (خفّة — الذاكرة مصدر الحقيقة، والحفظ الكامل يتم في pullAll عند الإقلاع).
+   * حارس _pullSeq يمنع كتابة سحب قديم فوق أحدث.
+   */
+  async pullTable(table) {
+    if (!window.sb || !this.TABLES.includes(table)) return false;
+    const self = this;
+    const seq = ++this._pullSeq;
+    const readFrom = (table === 'users') ? 'users_public' : table;
+    const limitN = this.LIMITED_TABLES[table];
+    let rows = null;
+    try {
+      if (limitN) {
+        const res = await window.sb.from(readFrom).select('*').order('id', { ascending: false }).limit(limitN);
+        if (res.error) throw res.error;
+        rows = res.data || [];
+      } else {
+        const PAGE = 1000, MAX_PAGES = 50; let all = [];
+        for (let page = 0; page < MAX_PAGES; page++) {
+          const start = page * PAGE, end = start + PAGE - 1;
+          const res = await window.sb.from(readFrom).select('*').order('id', { ascending: true }).range(start, end);
+          if (res.error) throw res.error;
+          const batch = res.data || [];
+          all = all.concat(batch);
+          if (batch.length < PAGE) break;
+        }
+        rows = all;
+      }
+    } catch (e) {
+      self._lastPullError = { table: readFrom, message: (e && e.message) || String(e), at: new Date().toISOString() };
+      console.warn('[pullTable] فشل سحب ' + table + ': ' + ((e && e.message) || e));
+      return false;
+    }
+    if (seq < self._appliedSeq) { console.log('  ⏭️ [pullTable] تجاهل سحب قديم (seq ' + seq + ' < ' + self._appliedSeq + ')'); return true; }
+    self._appliedSeq = seq;
+    if (typeof DB !== 'undefined' && DB && DB.data) {
+      const d = DB.data;
+      if (table === 'users') { d.users = rows; d.nextUserId = Math.max(0, ...rows.map(u => u.id || 0)) + 1; }
+      else if (table === 'evaluations') { d.evaluations = rows; d.nextEvalId = Math.max(0, ...rows.map(e => e.id || 0)) + 1; }
+      else if (table === 'notifications') { d.notifications = rows; d.nextNotifId = Math.max(0, ...rows.map(n => n.id || 0)) + 1; }
+      else if (table === 'objections') { d.objections = rows; d.nextObjectionId = Math.max(0, ...rows.map(o => o.id || 0)) + 1; }
+      else if (table === 'evaluation_templates') {
+        d.evaluation_templates = rows;
+        const row = rows.find(r => r.template_type === 'section_based' && r.is_active) || rows.find(r => r.template_type === 'section_based');
+        if (row) d.criteria = row.template_jsonb;
+      }
+    }
+    self._lastPullError = null;
+    console.log('  ✓ [pullTable] ' + table + ' (' + rows.length + ' صف)');
+    return true;
   },
 
   /**

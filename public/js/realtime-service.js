@@ -2,8 +2,9 @@
  * نظام الجودة — شركة محزم
  * RealtimeService: إدارة مركزية لاشتراكات Supabase Realtime (postgres_changes).
  *
- * النهج: عند أي حدث (INSERT/UPDATE/DELETE) على جدول مبثوث → إعادة سحب مُدمجة
- * (debounce) عبر SupabaseSync.pullAll(true) ثم إعادة رسم الصفحة الحالية فقط.
+ * النهج (#58): عند أي حدث (INSERT/UPDATE/DELETE) على جدول مبثوث → سحب مُدمج (debounce)
+ * للجدول المتغيّر فقط عبر SupabaseSync.pullTable(table) ثم إعادة رسم الصفحة الحالية.
+ * (قناة واحدة مدموجة لكل الجداول + cooldown على catch-up لتفادي عاصفة استنزاف الـpool.)
  * هذا idempotent (لا تطبيق مزدوج) ويعتمد حارس التسلسل _appliedSeq لمنع
  * كتابة سحب قديم فوق بيانات أحدث.
  *
@@ -24,6 +25,9 @@
     selfWriteMs: 600,           // نافذة تجاهل وميض إعادة الرسم بعد كتابة محلية
 
     channels: [],
+    ENABLED: true,        // ★ #58: حارس تعطيل سريع (rollback فوري: RealtimeService.ENABLED=false ثم reload)
+    _lastCatchup: 0,      // ★ #58: cooldown على catch-up بعد إعادة الاتصال (يمنع عاصفة أثناء التذبذب)
+    _pendingTables: null, // ★ #58: الجداول المتغيّرة المُنتظِرة للسحب المُدمج
     started: false,
     status: 'connecting',       // connecting | connected | disconnected
     _timer: null,
@@ -33,11 +37,8 @@
     stats: { events: 0, bytes: 0, peakPerSec: 0, _windowStart: 0, _windowCount: 0 },
 
     start() {
-      // ★ hotfix (PR #57): تعطيل مؤقت — عاصفة pullAll على كل حدث Realtime تستنزف connection pool.
-      //   كل حدث على أي من 9 جداول → pullAll كامل لكل عميل → استنزاف pool + فشل schema cache (503).
-      //   الاستعادة/الإصلاح الجذري (pullTable + تقليل قنوات + backoff) في PR #58.
-      console.info("Realtime disabled - temp hotfix for pool exhaustion");
-      return;
+      // ★ #58: استُعيد Realtime بذكاء (pullTable + قناة مدموجة + cooldown). تعطيل فوري: ENABLED=false ثم reload.
+      if (!this.ENABLED) { console.info('RealtimeService معطّل (ENABLED=false)'); return; }
       if (this.started) return;
       // ننتظر جاهزية sb + طبقة المزامنة
       if (!window.sb || !window.SupabaseSync || !window.SupabaseSync.pullAll) {
@@ -51,14 +52,14 @@
     },
 
     _subscribeAll() {
+      // ★ #58: قناة واحدة مدموجة (WebSocket واحد) بعدّة listeners بدل 9 قنوات — تقليل ضغط اتصالات Realtime.
+      let ch = window.sb.channel('rt-all');
       this.TABLES.forEach(table => {
-        const ch = window.sb
-          .channel('rt-' + table)
-          .on('postgres_changes', { event: '*', schema: 'public', table: table },
-            (payload) => this._onEvent(table, payload))
-          .subscribe((status) => this._onStatus(table, status));
-        this.channels.push(ch);
+        ch = ch.on('postgres_changes', { event: '*', schema: 'public', table: table },
+          (payload) => this._onEvent(table, payload));
       });
+      ch.subscribe((status) => this._onStatus(status));
+      this.channels = [ch];
     },
 
     _onEvent(table, payload) {
@@ -77,9 +78,16 @@
     // إعادة سحب مُدمجة ثم إعادة رسم الصفحة الحالية فقط (نافذة الدمج حسب الجدول)
     _scheduleRefresh(table) {
       const delay = (table && this.debounceByTable[table]) || this.debounceMs;
+      if (table) { this._pendingTables = this._pendingTables || new Set(); this._pendingTables.add(table); }
       clearTimeout(this._timer);
       this._timer = setTimeout(async () => {
-        try { await window.SupabaseSync.pullAll(true); } catch (_) {}
+        // ★ #58: سحب الجداول المتغيّرة فقط (pullTable) بدل pullAll الكامل — كسر عاصفة الحِمل.
+        const MANAGED = (window.SupabaseSync && SupabaseSync.TABLES) || [];
+        const pend = Array.from(this._pendingTables || []); this._pendingTables = new Set();
+        try {
+          for (const t of pend) { if (MANAGED.indexOf(t) >= 0) { try { await window.SupabaseSync.pullTable(t); } catch (_) {} } }
+          // جداول غير مُدارة (CG/objection_comments) → لا سحب؛ صفحات CG تجلب بياناتها عند الطلب، وإعادة الرسم أدناه تكفي.
+        } catch (_) {}
         try {
           if (typeof navigate === 'function' && typeof currentPage !== 'undefined'
               && currentPage && currentPage !== 'login') {
@@ -89,14 +97,26 @@
       }, delay);
     },
 
-    _onStatus(table, status) {
-      // SUBSCRIBED | CLOSED | CHANNEL_ERROR | TIMED_OUT
+    _onStatus(status) {
+      // SUBSCRIBED | CLOSED | CHANNEL_ERROR | TIMED_OUT  (قناة واحدة مدموجة)
       if (status === 'SUBSCRIBED') {
         const reconnected = (this.status === 'disconnected');
         this.status = 'connected';
         this._renderIndicator();
-        // عند إعادة الاتصال: snapshot كامل يدمج ما فات أثناء الانقطاع
-        if (reconnected) { console.log('🔁 إعادة اتصال Realtime — جلب snapshot'); this._scheduleRefresh(); }
+        // ★ #58: catch-up كامل بعد انقطاع، مع cooldown 10s يمنع عاصفة أثناء التذبذب.
+        //   (supabase-js يتكفّل بإعادة اتصال السوكِت بـbackoff داخلي؛ هنا نحدّ من كلفة الـcatch-up فقط.)
+        if (reconnected) {
+          const now = Date.now();
+          if (now - (this._lastCatchup || 0) > 10000) {
+            this._lastCatchup = now;
+            console.log('🔁 إعادة اتصال Realtime — pullAll catch-up');
+            clearTimeout(this._timer);
+            this._timer = setTimeout(async () => {
+              try { await window.SupabaseSync.pullAll(true); } catch (_) {}
+              try { if (typeof navigate === 'function' && typeof currentPage !== 'undefined' && currentPage && currentPage !== 'login') navigate(currentPage, (typeof currentParams !== 'undefined' ? currentParams : {})); } catch (_) {}
+            }, this.debounceMs);
+          } else { console.log('⏳ تخطّي catch-up (cooldown 10s) — تذبذب اتصال'); }
+        }
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
         this.status = 'disconnected';
         this._renderIndicator();
