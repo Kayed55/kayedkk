@@ -2238,27 +2238,29 @@ const isCg = dept.code === 'creative_gen';
 const style = isCg ? 'background:#f3e5f5;color:#7b1fa2' : 'background:#e3f2fd;color:#1976d2';
 return `<span style="${style};padding:2px 8px;border-radius:12px;font-size:12px;white-space:nowrap">${Utils.escape(dept.name)}</span>`;
 }
-function renderEvaluations() {
-const isEmp = currentUser.role === 'employee';
-const isSup = currentUser.role === 'supervisor';
-let evals = DB.getEvaluations(isEmp ? { employee_id: currentUser.id } : {});
-const deptF = currentParams.dept ? parseInt(currentParams.dept) : null;
-if (deptF) evals = evals.filter(e => { const u = DB.getUser(e.employee_id); return u && u.department_id == deptF; });
-if (!window._departments && !isEmp) loadDepartments(true).then(() => { if (currentPage === 'evaluations') navigate('evaluations', currentParams); });
-let deptFilterHTML = '';
-if (!isEmp) {
-let depts = (window._departments||[]).filter(d => d.is_active);
-if (isSup) { const myD = new Set(DB.getUsers({role:'employee'}).filter(e => e.supervisor_id===currentUser.id || e.supervisor_name===currentUser.full_name).map(e => e.department_id)); depts = depts.filter(d => myD.has(d.id)); }
-const opts = depts.map(d => `<option value="${d.id}" ${deptF===d.id?'selected':''}>${Utils.escape(d.name)}</option>`).join('');
-deptFilterHTML = `<select class="form-control" id="eval-dept-filter" style="max-width:220px"><option value="">جميع الأقسام</option>${opts}</select>`;
+// ★ #61: Pagination للتقييمات (client-side, 10/صفحة) — طبقة عرض فقط، صفر مساس بـDB/API
+let _evalBase = [];        // بعد فلتر الدور+القسم+الترتيب DESC (نسخ سطحية + _haystack)
+let _evalFiltered = [];    // بعد البحث النصّي
+let _evalPage = 1;
+let _evalSearchTimer = null;
+const EVAL_PAGE_SIZE = 10;
+
+// نصّ البحث لكل تقييم — نفس أعمدة الجدول الـ8 (parity)، بلا chrome ثابت
+function evalHaystack(e) {
+  const emp = DB.getUser(e.employee_id) || {};
+  const evr = DB.getUser(e.evaluator_id) || {};
+  const dept = emp.department_id ? (window._departments||[]).find(d => d.id === emp.department_id) : null;
+  const grade = (e.percentage >= (e.pass_score_snapshot ?? 85)) ? 'ناجح' : 'راسب';
+  return ['#'+e.id, emp.full_name||'', emp.job_title||'', dept?dept.name:'', Utils.formatDate(e.evaluation_date), evr.full_name||'', (e.total_score)+'/100', grade, (e.percentage)+'%'].join(' ').toLowerCase();
 }
-const rows = evals.map(e => {
-const emp = DB.getUser(e.employee_id);
-const evr = DB.getUser(e.evaluator_id);
-const dept = emp ? (window._departments||[]).find(d => d.id === emp.department_id) : null;
-const canEdit = Perms.can('edit_evaluation');
-const canDelete = Perms.can('delete_evaluation');
-return `<tr>
+// صف واحد (مُستخرَج — نفس القالب السابق حرفياً)
+function evalRowHTML(e) {
+  const emp = DB.getUser(e.employee_id);
+  const evr = DB.getUser(e.evaluator_id);
+  const dept = emp ? (window._departments||[]).find(d => d.id === emp.department_id) : null;
+  const canEdit = Perms.can('edit_evaluation');
+  const canDelete = Perms.can('delete_evaluation');
+  return `<tr>
 <td>#${e.id}</td>
 <td>${e.communication_type==='chat'?'<span title="محادثة">💬</span> ':e.communication_type==='call'?'<span title="اتصال">📞</span> ':''}${Utils.escape(emp?emp.full_name:'-')}</td>
 <td>${emp&&emp.job_title?Utils.escape(emp.job_title):'<span style="color:var(--muted)">—</span>'}</td>
@@ -2275,7 +2277,59 @@ ${canEdit ? ((!e.template_type || e.template_type === 'section_based' || e.templ
 ${canDelete ? `<button class="btn btn-sm btn-danger" data-del-eval="${e.id}">حذف</button>` : ''}
 </td>
 </tr>`;
-}).join('');
+}
+// أزرار الترقيم (مرقّمة على سطح المكتب، compact على الموبايل — تُحسَب عند كل paint)
+function evalPaginationHTML(page, pages, total) {
+  const from = (page-1)*EVAL_PAGE_SIZE + 1, to = Math.min(page*EVAL_PAGE_SIZE, total);
+  const info = `<span style="color:var(--muted);font-size:13px">عرض ${from}–${to} من ${total}</span>`;
+  if (window.innerWidth < 640) {
+    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px;flex-wrap:wrap">${info}<div style="display:flex;align-items:center;gap:8px"><button class="btn btn-sm btn-secondary" data-evpage="${page-1}" ${page<=1?'disabled':''}>‹</button><span style="font-size:13px">صفحة ${page} / ${pages}</span><button class="btn btn-sm btn-secondary" data-evpage="${page+1}" ${page>=pages?'disabled':''}>›</button></div></div>`;
+  }
+  const nums = []; let last = 0; const wnd = 2;
+  for (let n=1; n<=pages; n++) {
+    if (n===1 || n===pages || (n>=page-wnd && n<=page+wnd)) {
+      if (last && n-last>1) nums.push('<span style="padding:0 4px;color:var(--muted)">…</span>');
+      nums.push(`<button class="btn btn-sm ${n===page?'btn-primary':'btn-secondary'}" data-evpage="${n}">${n}</button>`);
+      last = n;
+    }
+  }
+  return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px;flex-wrap:wrap">${info}<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><button class="btn btn-sm btn-secondary" data-evpage="${page-1}" ${page<=1?'disabled':''}>« السابق</button>${nums.join('')}<button class="btn btn-sm btn-secondary" data-evpage="${page+1}" ${page>=pages?'disabled':''}>التالي »</button></div></div>`;
+}
+// إعادة رسم tbody الصفحة الحالية + أزرار الترقيم (يُستدعى من البحث ونقر الصفحات)
+function paintEvalPage() {
+  const tb = document.querySelector('#eval-table tbody');
+  const pg = document.getElementById('eval-pagination');
+  if (!tb) return;
+  const total = _evalFiltered.length;
+  if (total === 0) { tb.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--muted)">لا توجد نتائج مطابقة</td></tr>'; if (pg) { pg.style.display='none'; pg.innerHTML=''; } return; }
+  const pages = Math.ceil(total / EVAL_PAGE_SIZE);
+  if (_evalPage > pages) _evalPage = pages;
+  if (_evalPage < 1) _evalPage = 1;
+  const start = (_evalPage-1) * EVAL_PAGE_SIZE;
+  tb.innerHTML = _evalFiltered.slice(start, start+EVAL_PAGE_SIZE).map(evalRowHTML).join('');
+  if (pg) { if (pages <= 1) { pg.style.display='none'; pg.innerHTML=''; } else { pg.style.display=''; pg.innerHTML = evalPaginationHTML(_evalPage, pages, total); } }
+}
+
+function renderEvaluations() {
+const isEmp = currentUser.role === 'employee';
+const isSup = currentUser.role === 'supervisor';
+let evals = DB.getEvaluations(isEmp ? { employee_id: currentUser.id } : {});
+const deptF = currentParams.dept ? parseInt(currentParams.dept) : null;
+if (deptF) evals = evals.filter(e => { const u = DB.getUser(e.employee_id); return u && u.department_id == deptF; });
+if (!window._departments && !isEmp) loadDepartments(true).then(() => { if (currentPage === 'evaluations') navigate('evaluations', currentParams); });
+let deptFilterHTML = '';
+if (!isEmp) {
+let depts = (window._departments||[]).filter(d => d.is_active);
+if (isSup) { const myD = new Set(DB.getUsers({role:'employee'}).filter(e => e.supervisor_id===currentUser.id || e.supervisor_name===currentUser.full_name).map(e => e.department_id)); depts = depts.filter(d => myD.has(d.id)); }
+const opts = depts.map(d => `<option value="${d.id}" ${deptF===d.id?'selected':''}>${Utils.escape(d.name)}</option>`).join('');
+deptFilterHTML = `<select class="form-control" id="eval-dept-filter" style="max-width:220px"><option value="">جميع الأقسام</option>${opts}</select>`;
+}
+// ★ #61: بناء _evalBase مع _haystack مرة واحدة (O(n)) + عرض الصفحة الأولى فقط (10 صفوف)
+_evalBase = evals.map(e => Object.assign({}, e, { _haystack: evalHaystack(e) }));
+_evalFiltered = _evalBase;
+_evalPage = 1;
+const _totalPages = Math.ceil(_evalFiltered.length / EVAL_PAGE_SIZE);
+const rows = _evalFiltered.slice(0, EVAL_PAGE_SIZE).map(evalRowHTML).join('');
 
 const _deptObj = deptF ? (window._departments||[]).find(d => d.id === deptF) : null;
 const _title = _deptObj ? `تقييمات ${Utils.escape(_deptObj.name)} (${evals.length})` : `التقييمات (${evals.length})`;
@@ -2300,6 +2354,7 @@ ${deptF ? '' : deptFilterHTML}
 <tbody>${rows || '<tr><td colspan="9" style="text-align:center;padding:20px">لا توجد تقييمات</td></tr>'}</tbody>
 </table>
 </div>
+<div id="eval-pagination" style="${_totalPages>1?'':'display:none'}">${_totalPages>1?evalPaginationHTML(1,_totalPages,_evalFiltered.length):''}</div>
 </div>`;
 }
 
@@ -7433,7 +7488,7 @@ Toast.success('تم حفظ الأهداف'); if (window._templates) delete windo
 function attachPageHandlers(page) {
 // حمّل الأقسام مرّة واحدة لتظهر بنود Creative Gene الصحيحة في القائمة (عزل مشرفي محزم)
 if (!window._departments) { loadDepartments(true).then(() => { if (typeof navigate === 'function' && currentPage === page) navigate(page, currentParams); }); }
-document.querySelectorAll('[data-nav-eval]').forEach(el => {
+[...document.querySelectorAll('[data-nav-eval]')].filter(el => !el.closest('#eval-table')).forEach(el => {   // ★ #61: eval-table يُدار بالتفويض (منع double-fire)
 el.addEventListener('click', e => {
 if (e.target.dataset && (e.target.dataset.delEval || e.target.dataset.viewEmp)) return;
 navigate('view-evaluation', { id: parseInt(el.dataset.navEval) });
@@ -7648,8 +7703,8 @@ const exp = document.getElementById('audit-export');
 if (exp) exp.addEventListener('click', exportAuditLogXLSX);
 }
 
-// زر تعديل التقييم - عام لكل الصفحات
-document.querySelectorAll('[data-edit-eval]').forEach(b => b.addEventListener('click', e => {
+// زر تعديل التقييم - عام لكل الصفحات (★ #61: باستثناء eval-table المُدار بالتفويض)
+[...document.querySelectorAll('[data-edit-eval]')].filter(b => !b.closest('#eval-table')).forEach(b => b.addEventListener('click', e => {
 e.stopPropagation();
 navigate('edit-evaluation', { id: parseInt(b.dataset.editEval) });
 }));
@@ -7733,11 +7788,14 @@ if (pdfBtn) pdfBtn.addEventListener('click', exportMonthlyReportPDF);
 
 if (page === 'evaluations') {
 const s = document.getElementById('eval-search');
-if (s) s.addEventListener('input', () => {
-const q = s.value.toLowerCase();
-document.querySelectorAll('#eval-table tbody tr').forEach(tr => {
-tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none';
-});
+if (s) s.addEventListener('input', () => {   // ★ #61: debounce 150ms + data-filter على _haystack (بدل toggle DOM)
+clearTimeout(_evalSearchTimer);
+_evalSearchTimer = setTimeout(() => {
+const q = (s.value||'').toLowerCase().trim();
+_evalFiltered = q ? _evalBase.filter(e => e._haystack.includes(q)) : _evalBase;
+_evalPage = 1;
+paintEvalPage();
+}, 150);
 });
 const df = document.getElementById('eval-dept-filter');
 if (df) df.addEventListener('change', () => {
@@ -7745,11 +7803,22 @@ const params = Object.assign({}, currentParams);
 if (df.value) params.dept = parseInt(df.value); else delete params.dept;
 navigate('evaluations', params);
 });
-document.querySelectorAll('[data-del-eval]').forEach(b => b.addEventListener('click', async e => {
-e.stopPropagation();
-// حافظ على فلتر القسم الحالي بعد الحذف (وإلا عادت الشاشة تعرض كل الأقسام)
-await handleDeleteEval(b, 'evaluations', currentParams.dept != null ? { dept: currentParams.dept } : {});
-}));
+// ★ #61: تفويض على tbody لإجراءات الصف (يبقى عبر repaint، صفر مستمعات مكرّرة) — يحلّ محل الروابط المباشرة
+const _tb = document.querySelector('#eval-table tbody');
+if (_tb) _tb.addEventListener('click', async (ev) => {
+const del = ev.target.closest('[data-del-eval]');
+if (del) { ev.stopPropagation(); await handleDeleteEval(del, 'evaluations', currentParams.dept != null ? { dept: currentParams.dept } : {}); return; }
+const edit = ev.target.closest('[data-edit-eval]');
+if (edit) { ev.stopPropagation(); navigate('edit-evaluation', { id: parseInt(edit.dataset.editEval) }); return; }
+const nav = ev.target.closest('[data-nav-eval]');
+if (nav) { ev.stopPropagation(); navigate('view-evaluation', { id: parseInt(nav.dataset.navEval) }); return; }
+});
+// ★ #61: تفويض على حاوية الترقيم
+const _pg = document.getElementById('eval-pagination');
+if (_pg) _pg.addEventListener('click', (ev) => {
+const b = ev.target.closest('[data-evpage]'); if (!b || b.disabled) return;
+const n = parseInt(b.dataset.evpage); if (!isNaN(n)) { _evalPage = n; paintEvalPage(); }
+});
 const xls = document.getElementById('exp-xlsx');
 if (xls) xls.addEventListener('click', exportListXLSX);
 const pdf = document.getElementById('exp-pdf');
