@@ -1431,7 +1431,7 @@ return `<tr data-search="${Utils.escape((u.full_name||'')+' '+(u.employee_number
 <td><strong>${Utils.escape(u.employee_number||'-')}</strong></td>
 <td><div style="display:flex;align-items:center;gap:10px"><div class="user-avatar">${Utils.getInitials(u.full_name)}</div><div>${Utils.escape(u.full_name)}</div></div></td>
 <td><div style="font-size:13px;direction:ltr;text-align:right">${Utils.escape(u.email||'-')}</div></td>
-<td>${u.job_title?Utils.escape(u.job_title):(u.position?'<span style="color:var(--muted)">'+Utils.escape(u.position)+'</span>':'—')}</td>
+<td>${empRoleDisplay(u)}</td>
 <td>${deptBadgeHTML(uDept)}</td>
 <td>👨‍💼 ${Utils.escape(u.supervisor_name||'-')}</td>
 <td>${u.is_active ? '<span class="badge badge-success">✓ نشط</span>' : '<span class="badge badge-danger">✗ غير نشط</span>'}</td>
@@ -2170,7 +2170,7 @@ const supActionsHTML = supActions.length ? supActions.map(a => `<tr>
 
 return `
 <div class="page-header">
-<div><div class="page-title">${Utils.escape(emp.full_name)}</div><div class="page-subtitle">المسمى: ${emp.job_title?Utils.escape(emp.job_title):'—'} | القسم: ${(() => { const d=(window._departments||[]).find(x=>x.id===emp.department_id); return d?Utils.escape(d.name):Utils.escape(emp.department||'—'); })()} | المشرف: ${Utils.escape(emp.supervisor_name||'-')}${(['admin','quality_officer','supervisor'].includes(currentUser.role) && isMahzamDept(emp.department_id)) ? ' | النموذج المُسنَد: '+Utils.escape(emp.job_role||'النموذج الافتراضي') : ''}</div></div>
+<div><div class="page-title">${Utils.escape(emp.full_name)}</div><div class="page-subtitle">المسمى: ${empRoleDisplay(emp)} | القسم: ${(() => { const d=(window._departments||[]).find(x=>x.id===emp.department_id); return d?Utils.escape(d.name):Utils.escape(emp.department||'—'); })()} | المشرف: ${Utils.escape(emp.supervisor_name||'-')}${(['admin','quality_officer','supervisor'].includes(currentUser.role) && isMahzamDept(emp.department_id)) ? ' | النموذج المُسنَد: '+Utils.escape(emp.job_role||'النموذج الافتراضي') : ''}</div></div>
 <button class="btn btn-secondary" data-nav="employees">← رجوع</button>
 </div>
 <div class="stats-grid">
@@ -2226,7 +2226,19 @@ return 'النموذج الافتراضي';
 }
 return '—';
 }
-function jobTitleCell(emp) { return (emp && emp.job_title) ? Utils.escape(emp.job_title) : '<span style="color:var(--muted)">—</span>'; }
+// ★ #47 (Phase 3-B): المسمّى المعروض = override يدوي (job_title) ← تسمية النموذج المرتبط ← شرطة (ق2)
+function _tplById(id) { const a = (window.DB && DB.data && DB.data.evaluation_templates) || []; return id == null ? null : (a.find(t => t.id === id) || null); }
+function empRoleDisplay(emp) {
+  if (emp && emp.job_title && emp.job_title.trim()) return Utils.escape(emp.job_title.trim());   // override يدوي يفوز
+  const t = _tplById(emp && emp.template_id);
+  if (t) {
+    const tj = (t.template_jsonb && typeof t.template_jsonb === 'object') ? t.template_jsonb : {};
+    const label = (tj.job_title && tj.job_title.trim()) || t.name || (t.job_role ? (typeof cgRoleArabic === 'function' ? cgRoleArabic(t.job_role) : t.job_role) : '');
+    if (label) return Utils.escape(label);
+  }
+  return '<span style="color:var(--muted)">—</span>';   // قيادة/غير مربوط → شرطة (لا يختفي الصف)
+}
+function jobTitleCell(emp) { return empRoleDisplay(emp); }   // ★ #47: توحيد على empRoleDisplay
 function deptBadgeHTML(dept) {
 if (!dept) return '<span style="color:var(--muted)">—</span>';
 const isCg = dept.code === 'creative_gen';
