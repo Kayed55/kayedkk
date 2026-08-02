@@ -61,34 +61,82 @@ Run):
 
 ---
 
-## ربط الموظف بالنموذج (RFC #38) — حالة الـRPCs
+## ربط الموظف بالنموذج (RFC #38) — ✅ مكتمل
 
-المرحلة 2 أضافت `users.template_id` (ملف 46) و`p_template_id` لـ:
+الهدف: ربط كل موظف بنموذج تقييم مباشر (`users.template_id`)، وتوحيد إدخال النموذج في
+الواجهة، واشتقاق «المسمّى الوظيفي» من النموذج، وفلترة الموظفين بالنموذج — مع الحفاظ الكامل
+على البيانات التاريخية (`template_snapshot` في التقييمات).
 
-- ✅ `create_employee` / `update_employee_profile` (ملف 47) — مسار **نموذج الموظف (ef)**.
-- ✅ `create_evaluation` (ملف 48) / `create_weekly_evaluation` (ملف 49) — اختيار القالب عبر `users.template_id` مع fallback `(dept, job_role)`.
+### رحلة الـPRs (#42 → #53)
 
-### ⚠️ desync مؤقّت — نموذج المستخدم (usr form)
+| PR | المرحلة | الوصف |
+|---|---|---|
+| #42 | Phase 1 | `users.template_id` (FK) + backfill (56 مرتبط، 4 قيادة NULL) |
+| #43 | Phase 2a | `p_template_id` في `create_employee`/`update_employee_profile` (ef) |
+| #44 | Phase 2b | `create_weekly_evaluation` يختار عبر template_id (+ fallback) |
+| #45 | Phase 2b | `create_evaluation` يختار عبر template_id (+ fallback، فرعا CG+mahzam) |
+| #46 | Phase 3-A | dropdown نماذج موحّد في نموذج الموظف (ef) |
+| #47 | Phase 3-B | عرض المسمّى مشتقّاً من النموذج (`empRoleDisplay`) |
+| #49 | #46b-SQL | `p_template_id` في `admin_create_user`/`admin_update_user` (+ إصلاح ثغرة PUBLIC + باغ فحص القسم) |
+| #50 | #46b-UI | dropdown نماذج موحّد في نموذج المستخدم (usr) |
+| #51 | Phase 4-A | فلتر «النموذج» في جدول الموظفين |
+| #52 | #48-ui | إزالة الكود الميت (~69 سطراً) + بادج slug → اسم النموذج |
+| **#53** | **إصلاح جذري** | **كشف `template_id` في `users_public` view** |
 
-نموذج **«إضافة/تعديل مستخدم»** (`showUserModal`) يستدعي `admin_create_user` /
-`admin_update_user` — وهاتان **لم تُضَف لهما `p_template_id` بعد**، فما زالتا تمرّران
-`p_job_role`. هذا **آمن وظيفياً**: الموظفون المُنشَؤون عبر usr form يعتمدون على
-fallback `(dept, job_role)` في ملفَّي 48/49، فتقييماتهم تعمل دون `template_id`.
+### 🎯 SQL 51 (PR #53) — الإصلاح الجذري
 
-**TODO #46b (مؤجَّل — يُراجَع بعد Phase 5 / اختبار E2E):** إضافة `p_template_id`
-لـ`admin_create_user`/`admin_update_user` (نفس نمط ملف 47: DROP+CREATE+اشتقاق) +
-توحيد dropdown النماذج في usr form. **لا يُنفَّذ قبل إثبات الحاجة الفعلية**
-(هل تُستخدَم usr form فعلاً لإنشاء موظفين بنماذج؟ — يُحسَم في Phase 5).
+pullAll يقرأ view `public.users_public` (لا جدول `users`). الـview (ملف 26) كان يُعدّد
+24 عموداً صراحةً **بلا `template_id`** → `DB.data.users.template_id` = `undefined` →
+كسر **صامت** لثلاث ميزات دفعةً: فلتر النموذج (F1) + العرض المشتقّ (#47 سقط لـjob_title/«—»)
++ pre-select في نماذج ef/usr. الإصلاح: `CREATE OR REPLACE VIEW` يُلحق `template_id`.
+**الكود العميل كان صحيحاً طوال الوقت** — كشفَ السببَ انضباطُ `pg_get_viewdef` (لا تخمين إصلاح عميل).
 
-### TODO #48-ui (تنظيف واجهة — مؤجَّل، غير حرج)
+### جدول المراحل
 
-بعد Phases 3-A/3-B (PRs #46/#47) بقيت بنود تجميلية/تنظيفية في `public/js/04-pages.js`:
+| Phase | النطاق | الحالة |
+|---|---|---|
+| 1 | عمود + backfill | ✅ مطبّق (56/4) |
+| 2a | RPCs الموظف (ef) | ✅ مطبّق |
+| 2b | RPCs التقييم (create_evaluation/weekly) | ✅ مطبّق |
+| 3-A | dropdown ef | ✅ منشور |
+| 3-B | العرض المشتقّ | ✅ منشور |
+| #46b | RPCs + UI المستخدم (usr) | ✅ مطبّق/منشور |
+| 4-A | فلتر الموظفين | ✅ منشور |
+| #48-ui | تنظيف dead code | ✅ منشور |
+| إصلاح 51 | users_public view | ✅ مطبّق |
+| 5 (E2E) | subset حرج | ⏳ مؤجّل للمراقبة الإنتاجية |
 
-1. **dead code:** `populateMahzamTemplates` + `loadMahzamTemplates` + `jobOpts`/`CG_JOB_ROLES`
-   لم تعد مُستخدَمة في مسار ef بعد توحيد dropdown النماذج (#46). (`populateJobRole`/
-   `updateJobRoleHint`/`loadJobRolesByDept` تبقى — يستخدمها usr form).
-2. **بادج «النموذج المُسنَد»** في ملف الموظف (page-subtitle، admin/quality/supervisor + mahzam فقط)
-   ما زال يعرض `job_role` الخام (slug) بدل تسمية بشرية — سياق admin-facing أقل حرجاً من
-   عمود المسمّى الرئيسي (الذي عولج في #47).
+---
 
-**لا يُنفَّذ قبل Phase 5** (قد يكشف E2E مواقع UI خفية إضافية تُدمج في نفس التنظيف).
+## Backlog مؤجَّل (RFC #38)
+
+- **اختبارات E2E يدوية غير منفَّذة:** T2/T4 (ef) · U1-U3 (usr) · D1/D3 (عرض) · F2-F4 (فلتر).
+  (T1 نجح؛ T3/U4/F1/D2 مؤجّلة للمراقبة الإنتاجية بعد إصلاح 51.)
+- **Q2-evals + Q3-وسم + #50-p4c:** فلتر التقييمات بالنموذج + وسم «النموذج وقت التقييم»
+  من `template_snapshot` — يتطلّب عمود `evaluations.template_id` (schema change). **مؤجّل حتى الحاجة**
+  (evaluations تحفظ snapshot audit-safe؛ الرؤية الحالية سليمة).
+- **Phase 6:** أرشفة/إسقاط عمود `users.job_role` — **فقط بعد استقرار الإنتاج** والتأكّد أن
+  `job_role` المُشتقّ يغطّي كل مسارات الحساب (`compute_task_based`/`role_kpis`).
+
+---
+
+## دروس مستفادة (RFC #38)
+
+1. **Silent rollback (SQL 48/49 أول مرة):** التنفيذ لم يكتمل رغم BEGIN/COMMIT دون خطأ ظاهر.
+   → **لزوم استعلام تحقّق بعد كل SQL** (has_param/pub/anon أو matches_repo) قبل التقدّم.
+2. **View column omission (SQL 51):** `users_public` view لم يعكس عمود جدول جديد → كسر صامت.
+   → **قيمة انضباط `pg_get_functiondef`/`pg_get_viewdef`** (لا تخمين لمتون حيّة؛ كشف السبب الجذري).
+3. **PARAMETER مقابل internal read:** الدوال التي **يختار** فيها المستخدم النموذج (create/update
+   employee، admin_*) تأخذ `p_template_id` معاملاً؛ الدوال التي **تقرأه** من الموظف
+   (create_evaluation/weekly) تقرأ `users.template_id` داخلياً بلا معامل.
+4. **DROP+CREATE مقابل CREATE OR REPLACE:** إضافة معامل تُغيّر التوقيع → CREATE OR REPLACE
+   يُنشئ overload ثانياً (لبس «not unique») → لزم DROP+CREATE (+ REVOKE/GRANT لأن DROP يعيد
+   الصلاحيات للافتراضي). أمّا تغيير جسم دالة بنفس التوقيع (48/49) أو view → CREATE OR REPLACE يكفي.
+
+---
+
+## توصيات المراقبة الإنتاجية (RFC #38)
+
+- راقب **أخطاء Console** في صفحتَي الموظفين والمستخدمين (خاصةً بعد نشر إصلاح 51).
+- **أوّل bug ينبثق من F1/T3/U4** → أعد تشغيل الاختبار المتعلّق فوراً (كانت محجوبة بـ51).
+- تحقّق دوري: `DB.data.users.filter(u=>u.template_id!=null).length` يعطي رقماً حقيقياً (لا يساوي إجمالي الموظفين — ذلك يعني عودة بق الـview).
