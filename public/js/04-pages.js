@@ -236,31 +236,7 @@ return d ? d.id : 2;
 }
 // م23-ج: كشف قسم محزم (code موثوق) + جلب قوالبه المتعددة (list_mahzam_templates) مع كاش
 function isMahzamDept(deptId){ const d=(window._departments||[]).find(x=>x.id===parseInt(deptId)); return !!(d && d.code==='mahzam'); }
-async function loadMahzamTemplates(deptId){
-deptId = parseInt(deptId);
-if (!deptId) return [];
-window._mahzamTpls = window._mahzamTpls || {};
-if (window._mahzamTpls[deptId]) return window._mahzamTpls[deptId];
-try {
-// م24-ج: list_templates العام (يستثني الأرشيف)؛ نأخذ النشطة لقائمة اختيار الموظف
-const { data } = await window.sb.rpc('list_templates', { p_session_token:(window.getSessionToken?getSessionToken():null), p_department_id: deptId });
-const rows = (Array.isArray(data)?data:[]).filter(t => t.status === 'active');
-window._mahzamTpls[deptId] = rows;
-return rows;
-} catch(_) { return []; }
-}
-async function populateMahzamTemplates(deptId, currentJobRole){
-const wrap=document.getElementById('ef-mahzam-tpl-wrap'), sel=document.getElementById('ef-mahzam-tpl'), hint=document.getElementById('ef-mahzam-tpl-hint');
-if (!sel || !wrap) return;
-if (!isMahzamDept(deptId)) { wrap.style.display='none'; return; }
-wrap.style.display='';
-const tpls = await loadMahzamTemplates(deptId);
-const named = tpls.filter(t => t.job_role);
-let opts = '<option value="">النموذج الافتراضي</option>' + named.map(t => `<option value="${Utils.escape(t.job_role)}" ${t.job_role===currentJobRole?'selected':''}>${Utils.escape(t.job_role)}</option>`).join('');
-if (currentJobRole && !named.some(t => t.job_role===currentJobRole)) opts = `<option value="${Utils.escape(currentJobRole)}" selected>${Utils.escape(currentJobRole)} (قديم — بلا نموذج)</option>` + opts;
-sel.innerHTML = opts;
-if (hint) hint.innerHTML = '<span style="color:var(--muted)">النموذج الافتراضي = بنود محزم الأساسية</span>';
-}
+// ★ #48-ui: أُزيلت loadMahzamTemplates + populateMahzamTemplates (dead بعد #46 — توحيد dropdown النماذج ef-template)
 // حفظ نموذج بنود محزم عبر upsert_evaluation_template (المصدر الوحيد للحقيقة) — يُرجع true عند النجاح
 async function saveCriteriaViaRPC() {
 if (window.sb && window.sb.rpc) {
@@ -1506,43 +1482,7 @@ async function loadDepartments(force) {
   return window._departments;
 }
 
-// ===== المسميات الوظيفية الديناميكية (م15) — تُجلَب من evaluation_templates حسب القسم =====
-window._jrCache = window._jrCache || {};
-async function loadJobRolesByDept(deptId) {
-if (!deptId) return [];
-deptId = parseInt(deptId);
-if (window._jrCache[deptId]) return window._jrCache[deptId];
-try { const { data } = await window.sb.rpc('list_job_roles_by_department', { p_session_token: cgToken(), p_department_id: deptId }); window._jrCache[deptId] = data || []; }
-catch (_) { window._jrCache[deptId] = []; }
-return window._jrCache[deptId];
-}
-function jrLabel(r) { return (r.job_title && r.job_title.trim()) ? r.job_title : (cgRoleArabic(r.job_role) || r.job_role); }
-async function populateJobRole(deptId, selId, wrapId, hintId, titleId, currentRole) {
-const sel = document.getElementById(selId), wrap = document.getElementById(wrapId), hint = document.getElementById(hintId);
-if (!sel) return;
-const roles = await loadJobRolesByDept(deptId);
-if (!roles.length) { if (wrap) wrap.style.display = 'none'; sel.innerHTML = '<option value="">-- لا مسميات لهذا القسم --</option>'; if (hint) hint.innerHTML = ''; return; }
-if (wrap) wrap.style.display = '';
-const has = currentRole && roles.some(r => r.job_role === currentRole);
-let opts = '<option value="">-- اختر المسمى --</option>' + roles.map(r => `<option value="${Utils.escape(r.job_role)}" ${r.job_role===currentRole?'selected':''}>${Utils.escape(jrLabel(r))}</option>`).join('');
-if (currentRole && !has) opts = `<option value="${Utils.escape(currentRole)}" selected>${Utils.escape(cgRoleArabic(currentRole)||currentRole)} (قديم — بلا نموذج)</option>` + opts;
-sel.innerHTML = opts;
-updateJobRoleHint(deptId, selId, hintId, titleId);
-}
-function updateJobRoleHint(deptId, selId, hintId, titleId) {
-const sel = document.getElementById(selId), hint = document.getElementById(hintId);
-if (!hint || !sel) return;
-const roles = window._jrCache[parseInt(deptId)] || [];
-const val = sel.value;
-if (!val) { hint.innerHTML = ''; return; }
-const m = roles.find(r => r.job_role === val);
-if (m) {
-hint.innerHTML = `<span style="color:var(--success)">✅ النموذج المرتبط: <b>${Utils.escape(m.template_name || jrLabel(m))}</b></span>`;
-if (titleId) { const t = document.getElementById(titleId); if (t && !t.value.trim()) t.value = jrLabel(m); }
-} else {
-hint.innerHTML = `<span style="color:var(--danger)">⚠️ المسمى الحالي لا يرتبط بأي نموذج نشط — الرجاء اختيار مسمى صحيح.</span>`;
-}
-}
+// ★ #48-ui: أُزيلت loadJobRolesByDept/jrLabel/populateJobRole/updateJobRoleHint (dead بعد #46/#50 — ef+usr يستخدمان dropdown النماذج الموحّد)
 // ★ #46 (Phase 3-A): dropdown نماذج موحّد لنموذج الموظف (ef) — يحلّ محلّ ef-jobrole + ef-mahzam-tpl
 async function loadTemplatesForSelect(deptId, force) {
   deptId = parseInt(deptId);
@@ -1644,9 +1584,7 @@ async function showEmployeeModal(editId=null) {
 const ed = editId ? DB.getUser(editId) : null;
 const depts = (await loadDepartments()).filter(d => d.is_active);
 const deptOpts = depts.map(d => `<option value="${d.id}" ${ed && ed.department_id === d.id ? 'selected' : ''}>${Utils.escape(d.name)}</option>`).join('');
-const _cgId = cgDeptId();
-const CG_JOB_ROLES = JOB_ROLES.filter(([v]) => v !== 'quality_agent');
-const jobOpts = CG_JOB_ROLES.map(([v,l]) => `<option value="${v}" ${ed && ed.job_role === v ? 'selected' : ''}>${l}</option>`).join('');
+// ★ #48-ui: أُزيلت _cgId/CG_JOB_ROLES/jobOpts (dead بعد #46 — لا حقل job_role في نموذج الموظف)
 const supervisors = DB.data.users.filter(u => ['supervisor','admin'].includes(u.role) && u.is_active !== false).sort((a,b) => (a.full_name||'').localeCompare(b.full_name||'','ar'));
 const currentSup = ed ? (ed.supervisor_name||'') : '';
 const supOpts = supervisors.map(s => `<option value="${Utils.escape(s.full_name)}" ${s.full_name===currentSup?'selected':''}>${Utils.escape(s.full_name)} (${Utils.escape(s.role==='admin'?'مدير':'مشرف')})</option>`).join('');
@@ -1928,8 +1866,7 @@ const ed = editId ? DB.getUser(editId) : null;
 if (currentUser.role==='quality_officer' && ed && ed.role==='admin') { Toast.error('لا يمكن لموظف الجودة تعديل حسابات الأدمن'); return; }
 const depts = (await loadDepartments()).filter(d => d.is_active);
 const deptOptsU = depts.map(d => `<option value="${d.id}" ${ed && ed.department_id === d.id ? 'selected' : ''}>${Utils.escape(d.name)}</option>`).join('');
-const cgJobOptsU = JOB_ROLES.filter(([v]) => v !== 'quality_agent').map(([v,l]) => `<option value="${v}" ${ed && ed.job_role === v ? 'selected' : ''}>${l}</option>`).join('');
-const _cgIdU = cgDeptId();
+// ★ #48-ui: أُزيلت cgJobOptsU/_cgIdU (dead بعد #50 — لا حقل job_role في نموذج المستخدم)
 const supervisors = DB.data.users.filter(u => ['supervisor','admin'].includes(u.role) && u.is_active !== false);
 const supOpts = supervisors.map(s => `<option value="${Utils.escape(s.full_name)}" ${ed && ed.supervisor_name===s.full_name?'selected':''}>${Utils.escape(s.full_name)} (${Utils.escape(s.role==='admin'?'مدير':'مشرف')})</option>`).join('');
 
@@ -2226,7 +2163,7 @@ const supActionsHTML = supActions.length ? supActions.map(a => `<tr>
 
 return `
 <div class="page-header">
-<div><div class="page-title">${Utils.escape(emp.full_name)}</div><div class="page-subtitle">المسمى: ${empRoleDisplay(emp)} | القسم: ${(() => { const d=(window._departments||[]).find(x=>x.id===emp.department_id); return d?Utils.escape(d.name):Utils.escape(emp.department||'—'); })()} | المشرف: ${Utils.escape(emp.supervisor_name||'-')}${(['admin','quality_officer','supervisor'].includes(currentUser.role) && isMahzamDept(emp.department_id)) ? ' | النموذج المُسنَد: '+Utils.escape(emp.job_role||'النموذج الافتراضي') : ''}</div></div>
+<div><div class="page-title">${Utils.escape(emp.full_name)}</div><div class="page-subtitle">المسمى: ${empRoleDisplay(emp)} | القسم: ${(() => { const d=(window._departments||[]).find(x=>x.id===emp.department_id); return d?Utils.escape(d.name):Utils.escape(emp.department||'—'); })()} | المشرف: ${Utils.escape(emp.supervisor_name||'-')}${(['admin','quality_officer','supervisor'].includes(currentUser.role) && isMahzamDept(emp.department_id)) ? ' | النموذج المُسنَد: '+Utils.escape((()=>{ const t=_tplById(emp.template_id); return t ? (t.name||t.job_role||'النموذج الافتراضي') : 'النموذج الافتراضي'; })()) : ''}</div></div>
 <button class="btn btn-secondary" data-nav="employees">← رجوع</button>
 </div>
 <div class="stats-grid">
