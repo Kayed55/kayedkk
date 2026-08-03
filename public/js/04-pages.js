@@ -2359,36 +2359,19 @@ ${canDelete ? `<button class="btn btn-sm btn-danger" data-del-eval="${e.id}">ح�
 </td>
 </tr>`;
 }
-// أزرار الترقيم (مرقّمة على سطح المكتب، compact على الموبايل — تُحسَب عند كل paint)
-function evalPaginationHTML(page, pages, total) {
-  const from = (page-1)*EVAL_PAGE_SIZE + 1, to = Math.min(page*EVAL_PAGE_SIZE, total);
-  const info = `<span style="color:var(--muted);font-size:13px">عرض ${from}–${to} من ${total}</span>`;
-  if (window.innerWidth < 640) {
-    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px;flex-wrap:wrap">${info}<div style="display:flex;align-items:center;gap:8px"><button class="btn btn-sm btn-secondary" data-evpage="${page-1}" ${page<=1?'disabled':''}>‹</button><span style="font-size:13px">صفحة ${page} / ${pages}</span><button class="btn btn-sm btn-secondary" data-evpage="${page+1}" ${page>=pages?'disabled':''}>›</button></div></div>`;
-  }
-  const nums = []; let last = 0; const wnd = 2;
-  for (let n=1; n<=pages; n++) {
-    if (n===1 || n===pages || (n>=page-wnd && n<=page+wnd)) {
-      if (last && n-last>1) nums.push('<span style="padding:0 4px;color:var(--muted)">…</span>');
-      nums.push(`<button class="btn btn-sm ${n===page?'btn-primary':'btn-secondary'}" data-evpage="${n}">${n}</button>`);
-      last = n;
-    }
-  }
-  return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px;flex-wrap:wrap">${info}<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><button class="btn btn-sm btn-secondary" data-evpage="${page-1}" ${page<=1?'disabled':''}>« السابق</button>${nums.join('')}<button class="btn btn-sm btn-secondary" data-evpage="${page+1}" ${page>=pages?'disabled':''}>التالي »</button></div></div>`;
-}
-// إعادة رسم tbody الصفحة الحالية + أزرار الترقيم (يُستدعى من البحث ونقر الصفحات)
+// ★ #64: تُوحِّد الترقيم على الأداة العامة (paginate + renderPagination من #62) — أُزيلت evalPaginationHTML المكرّرة
 function paintEvalPage() {
   const tb = document.querySelector('#eval-table tbody');
-  const pg = document.getElementById('eval-pagination');
   if (!tb) return;
-  const total = _evalFiltered.length;
-  if (total === 0) { tb.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--muted)">لا توجد نتائج مطابقة</td></tr>'; if (pg) { pg.style.display='none'; pg.innerHTML=''; } return; }
-  const pages = Math.ceil(total / EVAL_PAGE_SIZE);
-  if (_evalPage > pages) _evalPage = pages;
-  if (_evalPage < 1) _evalPage = 1;
-  const start = (_evalPage-1) * EVAL_PAGE_SIZE;
-  tb.innerHTML = _evalFiltered.slice(start, start+EVAL_PAGE_SIZE).map(evalRowHTML).join('');
-  if (pg) { if (pages <= 1) { pg.style.display='none'; pg.innerHTML=''; } else { pg.style.display=''; pg.innerHTML = evalPaginationHTML(_evalPage, pages, total); } }
+  const r = paginate(_evalFiltered, _evalPage, EVAL_PAGE_SIZE);
+  _evalPage = r.page;
+  tb.innerHTML = r.items.length
+    ? r.items.map(evalRowHTML).join('')
+    : '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--muted)">لا توجد نتائج مطابقة</td></tr>';
+  renderPagination(document.getElementById('eval-pagination'), {
+    page: _evalPage, total: _evalFiltered.length, size: EVAL_PAGE_SIZE,
+    onChange: (n) => { _evalPage = n; paintEvalPage(); }
+  });
 }
 
 function renderEvaluations() {
@@ -2409,7 +2392,6 @@ deptFilterHTML = `<select class="form-control" id="eval-dept-filter" style="max-
 _evalBase = evals.map(e => Object.assign({}, e, { _haystack: evalHaystack(e) }));
 _evalFiltered = _evalBase;
 _evalPage = 1;
-const _totalPages = Math.ceil(_evalFiltered.length / EVAL_PAGE_SIZE);
 const rows = _evalFiltered.slice(0, EVAL_PAGE_SIZE).map(evalRowHTML).join('');
 
 const _deptObj = deptF ? (window._departments||[]).find(d => d.id === deptF) : null;
@@ -2435,7 +2417,7 @@ ${deptF ? '' : deptFilterHTML}
 <tbody>${rows || '<tr><td colspan="9" style="text-align:center;padding:20px">لا توجد تقييمات</td></tr>'}</tbody>
 </table>
 </div>
-<div id="eval-pagination" style="${_totalPages>1?'':'display:none'}">${_totalPages>1?evalPaginationHTML(1,_totalPages,_evalFiltered.length):''}</div>
+<div id="eval-pagination"></div>
 </div>`;
 }
 
@@ -2734,11 +2716,16 @@ const emp = DB.getUser(empId);
 await loadDepartments();
 const dept = (emp && emp.department_id) ? (window._departments || []).find(d => d.id === emp.department_id) : null;
 const depType = dept ? dept.template_type : 'section_based';
-// ★ #59: task_based_weekly يبقى على المسار القديم بالكامل (loadTemplateFor) — مؤجَّل لـPR #60 (get_template_for_department desync)
+// ★ #63: task_based_weekly = 0 قوالب في DB (مسار قديم/ميت عملياً) — حماية دفاعية: تحذير + fallback صلب
 if (depType === 'task_based_weekly') {
+console.warn('[renderEvalBodyForEmployee] task_based_weekly path (legacy — 0 templates in DB) dept:', dept.id, 'emp:', empId);
 body.innerHTML = '<div class="card"><div class="card-body">⏳ جارٍ تحميل النموذج…</div></div>';
 const dtpl = await loadTemplateFor(dept.id);
-if (!dtpl || !dtpl.ok || !dtpl.exists) { body.innerHTML = '<div class="alert alert-danger">لا يوجد نموذج لهذا القسم</div>'; return; }
+if (!dtpl || !dtpl.ok || !dtpl.exists || !dtpl.template || !dtpl.template.task_scoring) {
+console.warn('[renderEvalBodyForEmployee] لا يوجد نموذج أسبوعي صالح للقسم', dept.id, '— عرض fallback');
+body.innerHTML = '<div class="card"><div class="card-body"><div class="alert alert-warning">لا يوجد نموذج أسبوعي صالح لهذا القسم. تواصل مع المسؤول لإعداد النموذج قبل التقييم.</div></div></div>';
+return;
+}
 body.innerHTML = renderWeeklyEvalBody(dept, emp, dtpl.template);
 attachWeeklyHandlers(dept, emp, dtpl.template);
 return;
@@ -7842,6 +7829,7 @@ if (pdfBtn) pdfBtn.addEventListener('click', exportMonthlyReportPDF);
 }
 
 if (page === 'evaluations') {
+paintEvalPage();   // ★ #64: يملأ tbody + الترقيم ويربط أزرار الصفحات ذاتياً (renderPagination)
 const s = document.getElementById('eval-search');
 if (s) s.addEventListener('input', () => {   // ★ #61: debounce 150ms + data-filter على _haystack (بدل toggle DOM)
 clearTimeout(_evalSearchTimer);
@@ -7868,12 +7856,7 @@ if (edit) { ev.stopPropagation(); navigate('edit-evaluation', { id: parseInt(edi
 const nav = ev.target.closest('[data-nav-eval]');
 if (nav) { ev.stopPropagation(); navigate('view-evaluation', { id: parseInt(nav.dataset.navEval) }); return; }
 });
-// ★ #61: تفويض على حاوية الترقيم
-const _pg = document.getElementById('eval-pagination');
-if (_pg) _pg.addEventListener('click', (ev) => {
-const b = ev.target.closest('[data-evpage]'); if (!b || b.disabled) return;
-const n = parseInt(b.dataset.evpage); if (!isNaN(n)) { _evalPage = n; paintEvalPage(); }
-});
+// ★ #64: أزرار الترقيم تُربط ذاتياً داخل renderPagination (onChange) — لا حاجة لتفويض data-evpage
 const xls = document.getElementById('exp-xlsx');
 if (xls) xls.addEventListener('click', exportListXLSX);
 const pdf = document.getElementById('exp-pdf');
