@@ -22,7 +22,7 @@
 const SUPABASE_CONFIG = {
   url: 'https://hobhajqtgcyctfmcxkel.supabase.co',         // ← من Settings → API → Project URL
   anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhvYmhhanF0Z2N5Y3RmbWN4a2VsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4ODkzMDIsImV4cCI6MjA5NzQ2NTMwMn0.mTWqRmUyxShOSbwpnlHcmRU3FZ_KQ8OSLyG6sQzgmBY',                // ← من Settings → API → anon public key
-  syncInterval: 30000,                                  // مزامنة احتياطية كل 30 ثانية
+  syncInterval: 120000,                                 // ★ #65-hotfix: 30s→120s (تقليل حِمل CPU الدوري 4×؛ Realtime يغطّي الحيّ)
   enableAutoSync: true,                                 // فعّل/عطّل المزامنة الدورية
   enableRealtime: true,                                 // فعّل/عطّل Realtime subscriptions
   uiRefreshDebounce: 250                                // تأخير إعادة رسم الواجهة (ms)

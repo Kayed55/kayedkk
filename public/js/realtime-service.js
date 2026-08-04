@@ -19,7 +19,8 @@
 (function () {
   const RealtimeService = {
     // الجداول المبثوثة — A: evaluations | B: evaluation_templates | C: users, objections, objection_comments, notifications
-    TABLES: ['evaluations', 'evaluation_templates', 'creative_gene_weekly_status', 'creative_gene_objections', 'creative_gene_actions', 'users', 'objections', 'objection_comments', 'notifications'],
+    // ★ #65-hotfix: 9→4 جداول أساسية (خفض كلفة RLS-eval لـpostgres_changes ~60%). المُسقَطة (templates/creative_gene_*/objection_comments) نادرة التغيّر وتُجلب عند الطلب أو عبر pullAll الدوري.
+    TABLES: ['evaluations', 'users', 'notifications', 'objections'],
     debounceMs: 150,                                  // الافتراضي
     debounceByTable: { evaluation_templates: 250 },   // القالب يأتي على دفعات → نافذة أوسع
     selfWriteMs: 600,           // نافذة تجاهل وميض إعادة الرسم بعد كتابة محلية
