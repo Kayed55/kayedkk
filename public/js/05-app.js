@@ -42,34 +42,80 @@ function reportClientError(msg, where) {
 window.addEventListener('error', function(e){ reportClientError(e.message || 'error', (e.filename||'') + ':' + (e.lineno||'')); });
 window.addEventListener('unhandledrejection', function(e){ reportClientError((e.reason && e.reason.message) || e.reason || 'unhandledrejection', 'promise'); });
 
+// ★ #66: SWR عند الإقلاع — ارسم فوراً من كاش localStorage ثم حدّث بالخلفية (يزيل round-trip الحاجب من سيدني).
 async function bootApp() {
-  // 1) انتظر اكتمال جلب البيانات من Supabase (إن كان مُهيّأ) قبل تهيئة DB.
-  //    pullAll() آمنة للنداء المتزامن لأنها تستخدم pendingPull للتمييز.
-  try {
-    if (window.sb && window.SupabaseSync && typeof window.SupabaseSync.pullAll === 'function') {
-      await window.SupabaseSync.pullAll();
+  const _t0 = (window.performance && performance.now) ? performance.now() : 0;
+  const hasCache = !!localStorage.getItem('qe_system_v6');
+  DB.init();   // تهيئة تزامنية من localStorage (دافئة لو hasCache)
+
+  if (hasCache && DB.data) {
+    // ✅ Warm: رسم فوري من الكاش، ثم سحب خلفي غير حاجب.
+    routeInitial();
+    if (window.__CACHE_DEBUG__ && _t0) console.log('⚡ [boot] warm render خلال ' + Math.round(performance.now() - _t0) + 'ms (من الكاش)');
+    backgroundSync();
+  } else {
+    // ❄️ Cold (مستخدم جديد / بلا كاش): سلوك اليوم — overlay ثم انتظار السحب ثم الرسم.
+    _showBootOverlay();
+    try {
+      if (window.sb && window.SupabaseSync && typeof window.SupabaseSync.pullAll === 'function') {
+        await window.SupabaseSync.pullAll();
+      }
+    } catch (e) {
+      console.warn('Supabase pull failed at boot, falling back to local cache:', e && e.message);
     }
-  } catch (e) {
-    console.warn('Supabase pull failed at boot, falling back to local cache:', e && e.message);
+    if (!(window.SupabaseSync && window.SupabaseSync.ready === true) || !DB.data) DB.init();
+    _hideBootOverlay();
+    routeInitial();
+    if (window.__CACHE_DEBUG__ && _t0) console.log('❄️ [boot] cold render خلال ' + Math.round(performance.now() - _t0) + 'ms (بعد السحب)');
   }
+}
 
-  // 2) تهيئة DB من localStorage فقط إن لم ينجح السحب — بيانات الذاكرة الكاملة من pullAll
-  //    هي مصدر الحقيقة، ولا تُدهَس بنسخة localStorage المُقلّمة (lite) عند تجاوز الحصّة.
-  if (!(window.SupabaseSync && window.SupabaseSync.ready === true) || !DB.data) DB.init();
-
-  // 3) تحديد الوجهة وفق وجود جلسة محفوظة.
+// تحديد الوجهة وفق وجود جلسة محفوظة (منطق الإقلاع الأصلي — يُعاد استخدامه في المسارين).
+function routeInitial() {
   const saved = localStorage.getItem('qe_current_user');
   if (saved) {
-    try {
-      currentUser = JSON.parse(saved);
-      navigate('dashboard');
-    } catch (e) {
-      navigate('login');
-    }
+    try { currentUser = JSON.parse(saved); navigate('dashboard'); }
+    catch (e) { navigate('login'); }
   } else {
     navigate('login');
   }
 }
+
+// ★ #66: سحب خلفي غير حاجب + مؤشّر «جاري التحديث…» (Read-path فقط — لا يمسّ مسار الكتابة).
+async function backgroundSync() {
+  if (!(window.sb && window.SupabaseSync && typeof window.SupabaseSync.pullAll === 'function')) return;
+  _showUpdatingBar();
+  try {
+    const ok = await window.SupabaseSync.pullAll();
+    if (ok !== false && window.SupabaseSync.scheduleUIRefresh) window.SupabaseSync.scheduleUIRefresh();
+    _hideUpdatingBar();
+  } catch (e) {
+    console.warn('[backgroundSync] فشل التحديث الخلفي — يبقى الكاش، سيُعاد في الدورة (120s):', e && e.message);
+    _hideUpdatingBar();   // إخفاء صامت — لا رسالة خطأ مقلقة
+  }
+}
+
+// --- مؤشّر «جاري التحديث…» (شريط علوي 3px) + معالجة offline (إضافة 1) ---
+function _showUpdatingBar() {
+  const bar = document.getElementById('updating-bar');
+  if (!bar) return;
+  const offline = (navigator && navigator.onLine === false);
+  const txt = bar.querySelector('#updating-text');
+  if (txt) txt.textContent = offline ? 'غير متصل — يُعرض من الكاش' : 'جاري التحديث…';
+  bar.style.background = offline ? 'rgba(245,158,11,.75)' : 'rgba(59,130,246,.6)';   // كهرماني عند offline، أزرق فاتح عند الاتصال
+  bar.style.display = 'block';
+  // إجبار reflow قبل ضبط الشفافية ليعمل الانتقال
+  void bar.offsetWidth;
+  bar.style.opacity = '1';
+}
+function _hideUpdatingBar() {
+  const bar = document.getElementById('updating-bar');
+  if (!bar) return;
+  bar.style.opacity = '0';                       // fade-out 300ms عبر CSS transition
+  setTimeout(() => { bar.style.display = 'none'; }, 320);
+}
+function _showBootOverlay() { const o = document.getElementById('boot-overlay'); if (o) o.style.display = 'flex'; }
+function _hideBootOverlay() { const o = document.getElementById('boot-overlay'); if (o) o.style.display = 'none'; }
 
 // تشغيل بعد جاهزية DOM فقط — لتفادي race condition مع 00-supabase-sync.js
 if (document.readyState === 'loading') {

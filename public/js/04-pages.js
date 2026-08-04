@@ -6708,6 +6708,7 @@ const r=(!error&&Array.isArray(data)&&data[0])?data[0]:(data||null);
 if(!r||!r.ok){ const m=(r&&r.message)||(error&&error.message)||'تعذّر الحفظ'; if(!handleSessionError(m)) Toast.error(m); return false; }
 try{window._mahzamTpls={};}catch(_){}
 st.dirty=false;
+if (window.SupabaseSync) SupabaseSync.invalidateTTL('evaluation_templates');   // ★ #66
 Modal.close(); Toast.success('تم حفظ النموذج «'+nm+'»'); loadTemplatesCards(); return true;
 });
 }
@@ -7117,6 +7118,7 @@ const { data, error } = await window.sb.rpc('upsert_evaluation_template', { p_se
 const r = Array.isArray(data)?data[0]:data;
 if (error || !r || !r.ok) { const m=(r&&r.message)||(error&&error.message)||'تعذّر الحفظ'; if(!handleSessionError(m)) Toast.error(m); return false; }
 if (window._templates) delete window._templates[cgDeptId()]; if (window._jrCache) delete window._jrCache[cgDeptId()];
+if (window.SupabaseSync) SupabaseSync.invalidateTTL('evaluation_templates');   // ★ #66
 Toast.success('تم حفظ نموذج Creative Gene'); return true;
 });
 });
@@ -7507,6 +7509,7 @@ else { ({data,error} = await window.sb.rpc('create_cg_template',{ p_session_toke
 const r = Array.isArray(data)?data[0]:data;
 if(error || !r || !r.ok){ const m=(r&&r.message)||(error&&error.message)||'تعذّر الحفظ'; if(!handleSessionError(m)) Toast.error(m); return false; }
 if(window._templates) delete window._templates[cgDeptId()]; if(window._jrCache) delete window._jrCache[cgDeptId()];
+if (window.SupabaseSync) SupabaseSync.invalidateTTL('evaluation_templates');   // ★ #66
 Modal.close(); Toast.success(w.mode==='edit'?'تم تحديث النموذج (يُطبَّق على التقييمات الجديدة فقط)':'تم إنشاء النموذج بنجاح'); loadTemplatesTree(); return true;
 });
 }
@@ -7549,6 +7552,7 @@ try {
 const { data, error } = await window.sb.rpc('upsert_evaluation_template', { p_session_token: tok, p_department_id: deptId, p_template: tj, p_template_type: 'task_based_weekly' });
 const r = Array.isArray(data) ? data[0] : data;
 if (error || !r || !r.ok) { const m=(r&&r.message)||(error&&error.message)||'خطأ'; if(!handleSessionError(m)) Toast.error(m); return; }
+if (window.SupabaseSync) SupabaseSync.invalidateTTL('evaluation_templates');   // ★ #66
 Toast.success('تم حفظ الأهداف'); if (window._templates) delete window._templates[deptId]; navigate('departments',{tab:'templates',dept:deptId});
 } catch (e) { Toast.error(e.message); }
 }

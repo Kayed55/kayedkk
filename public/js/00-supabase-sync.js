@@ -71,6 +71,12 @@ window.SupabaseSync = {
   TABLES: ['users', 'evaluation_templates', 'evaluations', 'notifications', 'objections'],
   // جداول تُجلب بأحدث N صفاً فقط (بدل الكل) — تخفيف الحمل مع إبقاء ما يلزم الواجهة.
   LIMITED_TABLES: { notifications: 300 },
+  // ★ #66: TTL لكل جدول (بمفتاح readFrom) — يتخطّى الجلب الدوري إن كان الكاش طازجاً؛ force يتجاوزه دائماً.
+  //   evaluation_templates ليس في Realtime (#65) → invalidateTTL يدوي عند حفظ القالب (04-pages.js).
+  //   users_public حيّ عبر Realtime (#65) → TTL يقلّل تكرار autosync فقط.
+  TTL_TABLES: { evaluation_templates: 24 * 60 * 60 * 1000, users_public: 60 * 60 * 1000 },
+  _ttlFresh(name, ttlMs) { const t = +localStorage.getItem('qe_ttl_' + name) || 0; return (Date.now() - t) < ttlMs; },
+  invalidateTTL(name) { try { localStorage.removeItem('qe_ttl_' + name); if (window.__CACHE_DEBUG__) console.log('🗑️ [ttl-invalidate] ' + name); } catch (_) {} },
 
   /**
    * إعادة رسم الصفحة الحالية مع debounce لتفادي الرسم المتكرر
@@ -122,6 +128,14 @@ window.SupabaseSync = {
           // كلمات السر يجب ألا تصل للمتصفح أبداً عبر anon key.
           const readFrom = (table === 'users') ? 'users_public' : table;
 
+          // ★ #66: تخطّي الجلب إن كان TTL طازجاً والبيانات موجودة في الذاكرة (إلا مع force) — cache-hit.
+          const ttlMs = this.TTL_TABLES[readFrom];
+          if (!force && ttlMs && this._ttlFresh(readFrom, ttlMs) && DB.data && Array.isArray(DB.data[table]) && DB.data[table].length) {
+            results[table] = DB.data[table];
+            if (window.__CACHE_DEBUG__) console.log('  ⚡ [cache-hit] ' + table + ' (TTL طازج) — تخطّي الجلب');
+            continue;
+          }
+
           // جداول محدودة: جلب أحدث N فقط (order id desc + limit) بدل ترقيم الكل — تخفيف الحمل.
           const limitN = this.LIMITED_TABLES[table];
           if (limitN) {
@@ -139,6 +153,7 @@ window.SupabaseSync = {
               return false;
             }
             results[table] = lData || [];
+            if (ttlMs) localStorage.setItem('qe_ttl_' + readFrom, String(Date.now()));   // ★ #66
             console.log(`  ✓ [pullAll] Table: ${table} (${readFrom}) | Limited: ${limitN} | Total rows: ${(lData||[]).length}`);
             continue;
           }
@@ -176,6 +191,7 @@ window.SupabaseSync = {
           console.log(`  ✓ [pullAll] Table: ${table} (${readFrom}) | Pages: ${pages} | Total rows: ${all.length}`);
           if (pages >= MAX_PAGES) console.warn(`⚠️ [pullAll] Table: ${table} — بلغ MAX_PAGES (${MAX_PAGES})؛ قد تكون هناك صفوف إضافية غير مُحمَّلة.`);
           results[table] = data || [];
+          if (ttlMs) localStorage.setItem('qe_ttl_' + readFrom, String(Date.now()));   // ★ #66
         }
 
         // مصدر CRITERIA الآن = نموذج قسم محزم (section_based) من evaluation_templates
@@ -469,27 +485,29 @@ window.SupabaseSync = {
   }
 };
 
+// ★ #66: أدوات تصحيح الكاش (DevTools)
+window.__CACHE_DEBUG__ = window.__CACHE_DEBUG__ || false;   // فعّله: window.__CACHE_DEBUG__ = true
+window.__CLEAR_CACHE__ = function () {
+  try {
+    Object.keys(localStorage).filter(k => k.indexOf('qe_ttl_') === 0).forEach(k => localStorage.removeItem(k));
+    localStorage.removeItem('qe_system_v6');
+    console.log('🧹 تم مسح الكاش (qe_ttl_* + qe_system_v6). أعد التحميل.');
+  } catch (e) { console.warn(e); }
+};
+
 // ============================================
-// Bootstrap: تشغيل المزامنة عند تحميل الصفحة
+// Bootstrap: إعداد المزامنة عند تحميل الصفحة
+// ★ #66: السحب الأولي يُدار في bootApp (SWR: رسم من الكاش ثم سحب خلفي) — هنا الإعداد فقط، بلا سحب حاجب مزدوج.
 // ============================================
 window.addEventListener('DOMContentLoaded', async () => {
   if (!window.sb) {
     console.log('ℹ️ Supabase غير مهيأ - النظام يعمل بـ localStorage فقط');
     return;
   }
-
-  // 1. اسحب البيانات من Supabase أولاً (لتجاوز ما في localStorage)
-  await window.SupabaseSync.pullAll();
-
-  // 2. اربط hook لدفع كل تعديل لاحق إلى Supabase
+  // اربط hook لدفع كل تعديل لاحق إلى Supabase
   window.SupabaseSync.hookDBSave();
-
-  // 3. فعّل Realtime عبر RealtimeService الجديد (يحلّ محلّ setupRealtime المضمّن لتفادي اشتراك مزدوج)
+  // فعّل Realtime عبر RealtimeService (لا يعتمد على اكتمال السحب)
   if (window.RealtimeService && window.RealtimeService.start) window.RealtimeService.start();
-
-  // 4. شغّل المزامنة الدورية الاحتياطية
+  // شغّل المزامنة الدورية الاحتياطية (كل 120s — #65)
   window.SupabaseSync.startAutoSync();
-
-  // 5. إعادة رسم الصفحة الحالية بعد المزامنة الأولى
-  window.SupabaseSync.scheduleUIRefresh();
 });
