@@ -33,6 +33,17 @@
   <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 </head>
 <body>
+  <!-- ★ #66: مؤشّر التحديث الخلفي (SWR) — شريط علوي 3px + معالجة offline -->
+  <div id="updating-bar" style="position:fixed;top:0;left:0;right:0;height:3px;z-index:9998;display:none;opacity:0;transition:opacity .3s ease;background:rgba(59,130,246,.6)">
+    <span id="updating-text" style="position:absolute;top:5px;right:12px;font-size:11px;color:#2563eb;font-family:'Cairo',sans-serif;background:#fff;padding:1px 9px;border-radius:0 0 7px 7px;box-shadow:0 1px 4px rgba(0,0,0,.12)">جاري التحديث…</span>
+  </div>
+  <!-- ★ #66: overlay الإقلاع البارد (مستخدم جديد / بلا كاش) — يحافظ على سلوك اليوم -->
+  <div id="boot-overlay" style="position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px;background:#f8fafc;font-family:'Cairo',sans-serif">
+    <div style="width:44px;height:44px;border:4px solid #dbeafe;border-top-color:#3b82f6;border-radius:50%;animation:qe-spin 1s linear infinite"></div>
+    <div style="color:#64748b;font-size:14px">جاري التحميل…</div>
+  </div>
+  <style>@keyframes qe-spin{to{transform:rotate(360deg)}}</style>
+
   <!-- Container for the app (populated dynamically by the router) -->
   <div id="app">
     <noscript>
@@ -53,13 +64,13 @@
       04-pages.js    → جميع الصفحات + PDF/Excel exports
       05-app.js      → التشغيل وبدء الجلسة
   -->
-  <script src="/js/00-supabase-sync.js?v=95"></script>
+  <script src="/js/00-supabase-sync.js?v=96"></script>
   <script src="/js/01-constants.js?v=82"></script>
   <script src="/js/02-db.js?v=82"></script>
   <script src="/js/03-core.js?v=91"></script>
   <script src="/js/services/email-service.js?v=82"></script>
-  <script src="/js/04-pages.js?v=94"></script>
-  <script src="/js/05-app.js?v=82"></script>
+  <script src="/js/04-pages.js?v=96"></script>
+  <script src="/js/05-app.js?v=96"></script>
   <script src="/js/realtime-service.js?v=95"></script>
 </body>
 </html>
