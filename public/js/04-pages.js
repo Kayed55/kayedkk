@@ -3531,13 +3531,22 @@ return `<div class="card"><div class="card-body" style="padding:0;overflow-x:aut
 async function loadCgWeekTable(ws) {
 const host = document.getElementById('cgw-table');
 if (!host) return;
+let rows = null; const objMap = {}, actMap = {};
+// ★ #67-C: RPC مُدمج واحد (status+objections+actions) — 3 round-trips → 1. عند أي فشل (RPC غير موجود بعد/خطأ) نسقط للمسار القديم (أمان النشر + rollback).
+try {
+const { data, error } = await window.sb.rpc('get_cg_week_bundle', { p_session_token: cgToken(), p_week_start: ws });
+if (!error && data && Array.isArray(data.status)) {
+rows = data.status;
+(data.objections||[]).forEach(o => objMap[o.evaluation_id] = o);
+(data.actions||[]).forEach(a => actMap[a.evaluation_id] = a);
+}
+} catch(_){}
+if (rows === null) {
+// fallback: المسار القديم (get_creative_gene_status + 2 selects) — يعمل قبل تطبيق SQL 51 أو عند rollback
 const { data, error } = await window.sb.rpc('get_creative_gene_status', { p_session_token: cgToken(), p_week_start: ws });
 if (error) { const m=error.message||'تعذّر التحميل'; if(!handleSessionError(m)) host.innerHTML = `<div class="alert alert-danger">${Utils.escape(m)}</div>`; return; }
-const rows = (data||[]);
-if (!rows.length) { host.innerHTML = '<div class="alert alert-info">لا يوجد موظفون في قسم Creative Gene.</div>'; return; }
-// اجلب الاعتراضات/الإجراءات لتقييمات هذا الأسبوع لعرض عمودَيها بدقّة
+rows = (data||[]);
 const evalIds = rows.filter(r => r.evaluation_id).map(r => r.evaluation_id);
-const objMap = {}, actMap = {};
 if (evalIds.length) {
 try {
 const [{ data: objs }, { data: acts }] = await Promise.all([
@@ -3548,6 +3557,8 @@ window.sb.from('creative_gene_actions').select('*').in('evaluation_id', evalIds)
 (acts||[]).forEach(a => actMap[a.evaluation_id] = a);
 } catch(_){}
 }
+}
+if (!rows.length) { host.innerHTML = '<div class="alert alert-info">لا يوجد موظفون في قسم Creative Gene.</div>'; return; }
 const body = rows.map(r => {
 const st = r.status;
 const evaluated = (st !== 'not_uploaded' && st !== 'uploaded_pending');
