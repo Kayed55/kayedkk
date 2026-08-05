@@ -221,7 +221,10 @@ return null;
 function mahzamDeptId() {
 const list = window._departments || [];
 const d = list.find(x => x.template_type === 'section_based') || list.find(x => x.code === 'mahzam');
-return d ? d.id : 2;
+if (d) return d.id;
+// ★ #67-C-0: محاولة تزامنية من كاش الأقسام (نفس نمط cgDeptId)
+try { const raw = localStorage.getItem(_DEPT_CACHE_KEY); if (raw) { const c = JSON.parse(raw); const arr = (c && c.d) || []; const cd = arr.find(x => x.template_type === 'section_based') || arr.find(x => x.code === 'mahzam'); if (cd) { window._departments = arr; return cd.id; } } } catch (_) {}
+return 2;
 }
 // م23-ج: كشف قسم محزم (code موثوق) + جلب قوالبه المتعددة (list_mahzam_templates) مع كاش
 function isMahzamDept(deptId){ const d=(window._departments||[]).find(x=>x.id===parseInt(deptId)); return !!(d && d.code==='mahzam'); }
@@ -1550,13 +1553,22 @@ ${noteIfNoSup}
 const JOB_ROLES = [['real_estate_marketer','مسوّق عقاري'],['designer','مصمّم'],['social_media','سوشيال ميديا'],['seo','SEO'],['content_manager','مدير محتوى'],['quality_agent','موظف جودة']];
 const JOB_TITLE_SUGGEST = { real_estate_marketer:'مسوق عقاري', designer:'مصمم', social_media:'مسؤول سوشل ميديا', seo:'مسؤول SEO', content_manager:'مدير المحتوى', quality_agent:'موظف جودة' };
 // تحميل الأقسام (مع تخزين) عبر RPC
+const _DEPT_CACHE_KEY = 'qe_departments_cache', _DEPT_TTL = 24 * 60 * 60 * 1000;   // ★ #67-C-0: الأقسام شبه ثابتة
 async function loadDepartments(force) {
   if (window._departments && !force) return window._departments;
+  // ★ #67-C-0: كاش localStorage (TTL 24h) — يجعل الأقسام متاحة فوراً بعد Hard Refresh؛ تعديلات الأدمن تستدعي force.
+  if (!force) {
+    try {
+      const raw = localStorage.getItem(_DEPT_CACHE_KEY);
+      if (raw) { const c = JSON.parse(raw); if (c && Array.isArray(c.d) && c.d.length && (Date.now() - (c.at || 0) < _DEPT_TTL)) { window._departments = c.d; return window._departments; } }
+    } catch (_) {}
+  }
   try {
     const tok = window.getSessionToken ? window.getSessionToken() : null;
     const { data } = await window.sb.rpc('list_departments', { p_session_token: tok });
     window._departments = (data && data.departments) ? data.departments : [];
-  } catch (_) { window._departments = []; }
+    try { if (window._departments.length) localStorage.setItem(_DEPT_CACHE_KEY, JSON.stringify({ d: window._departments, at: Date.now() })); } catch (_) {}
+  } catch (_) { if (!window._departments) window._departments = []; }   // ★ #67-C-0: لا تمسح الكاش القائم عند فشل RPC
   return window._departments;
 }
 
@@ -2579,7 +2591,15 @@ return `
 </div>`;
 }
 
-function cgDeptId() { const d = (window._departments||[]).find(x => x.code === 'creative_gen'); if (d) return d.id; console.warn('[cgDeptId] fallback used — _departments not loaded'); return 3; }
+function cgDeptId() {
+const d = (window._departments||[]).find(x => x.code === 'creative_gen');
+if (d) return d.id;
+// ★ #67-C-0: محاولة تزامنية من كاش الأقسام (يُكتب عند أول تحميل + الإقلاع) — يزيل الاعتماد على القيمة الصلبة، وأزيل console.warn المزعج
+try { const raw = localStorage.getItem(_DEPT_CACHE_KEY); if (raw) { const c = JSON.parse(raw); const cd = ((c && c.d) || []).find(x => x.code === 'creative_gen'); if (cd) { window._departments = c.d; return cd.id; } } } catch (_) {}
+// آخر ملاذ (شبه مستحيل بعد كاش الإقلاع). لا نرمي: cgDeptId يُستدعى تزامنياً داخل الرسم (throw = كسر صفحة CG).
+console.error('[cgDeptId] الأقسام غير محمّلة — يُفترض ألا يحدث بعد #67-C-0 (كاش + تحميل عند الإقلاع)');
+return 3;
+}
 
 // مركز التقييم: قسمان منفصلان بصرياً (محزم / Creative Gene)
 function renderEvalHub() {
