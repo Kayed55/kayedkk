@@ -12,23 +12,97 @@
 // ============================================
 // طبقة البيانات - localStorage
 // ============================================
+// ★ #67-B: مغلّف IndexedDB بسيط (key-value، بلا مكتبة) — حصّة كبيرة (~50MB+) تسع آلاف التقييمات.
+const _IDB = (function () {
+const DBN = 'qe_idb', STORE = 'kv';
+let _p = null;
+function open() {
+if (_p) return _p;
+_p = new Promise(function (resolve, reject) {
+let req;
+try { req = indexedDB.open(DBN, 1); } catch (e) { reject(e); return; }
+req.onupgradeneeded = function () { const db = req.result; if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE); };
+req.onsuccess = function () { resolve(req.result); };
+req.onerror = function () { reject(req.error); };
+});
+return _p;
+}
+return {
+available: function () { try { return typeof indexedDB !== 'undefined' && !!indexedDB; } catch (e) { return false; } },
+get: async function (key) { const db = await open(); return new Promise(function (res, rej) { const r = db.transaction(STORE, 'readonly').objectStore(STORE).get(key); r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); }; }); },
+set: async function (key, val) { const db = await open(); return new Promise(function (res, rej) { const tx = db.transaction(STORE, 'readwrite'); tx.objectStore(STORE).put(val, key); tx.oncomplete = function () { res(true); }; tx.onerror = function () { rej(tx.error); }; tx.onabort = function () { rej(tx.error); }; }); }
+};
+})();
+
 const DB = {
 KEY: 'qe_system_v6',
 data: null,
+_storageType: 'localStorage',   // ★ #67-B: يُضبط في initAsync (indexeddb|localStorage)
+_hadCache: false,               // ★ #67-B: هل حُمِّلت بيانات حقيقية (warm) أم seed؟
 
-init() {
-const saved = localStorage.getItem(this.KEY);
-if (saved) {
-try {
-this.data = JSON.parse(saved);
+// ★ #67-B: تطبيق كائن بيانات مُحمَّل (من IDB/localStorage) + ضمان البنى الفرعية
+_applyLoaded(obj) {
+this.data = obj;
 if (!this.data.criteria) this.data.criteria = JSON.parse(JSON.stringify(DEFAULT_CRITERIA));
 if (!this.data.objections) this.data.objections = [];
 if (!this.data.audit_logs) this.data.audit_logs = [];
 if (!this.data.nextObjectionId) this.data.nextObjectionId = 1;
 if (!this.data.nextAuditId) this.data.nextAuditId = 1;
 CRITERIA = this.data.criteria;
+},
+
+// ★ #67-B: تهيئة async مُفضّلة (IndexedDB) — تُستدعى من bootApp بـawait (قراءة محلية سريعة، ليست شبكة)
+async initAsync() {
+this._hadCache = false;
+if (!_IDB.available()) {           // متصفّح بلا IndexedDB → مسار localStorage التزامني
+this._storageType = 'localStorage';
+const had = !!localStorage.getItem(this.KEY);
+this.init();
+this._hadCache = had;
 return;
-} catch(e){}
+}
+try {
+const d = await _IDB.get(this.KEY);
+if (d && typeof d === 'object' && d.users) {   // IDB يحوي بيانات حقيقية → warm
+this._storageType = 'indexeddb';
+this._applyLoaded(d);
+this._hadCache = true;
+return;
+}
+// IDB فارغ → هجرة من localStorage القديم (parse-safety: عند الفشل نحتفظ به ونستخدم seed)
+const legacy = localStorage.getItem(this.KEY);
+if (legacy) {
+let parsed = null;
+try { parsed = JSON.parse(legacy); }
+catch (e) { console.error('[initAsync] فشل parse للكاش القديم — يُحتفظ به ويُستخدم seed:', e && e.message); }
+if (parsed && parsed.users) {
+this._applyLoaded(parsed);
+this._hadCache = true;
+try {
+await _IDB.set(this.KEY, this.data);   // انسخ لـIDB
+localStorage.removeItem(this.KEY);     // امسح القديم فقط عند نجاح idbSet الكامل
+this._storageType = 'indexeddb';
+} catch (e) { console.warn('[initAsync] تعذّر نسخ الكاش لـIDB — يبقى localStorage:', e && e.message); this._storageType = 'localStorage'; }
+return;
+}
+}
+// لا IDB ولا legacy صالح → seed (يُحفظ عبر _persist لـIDB)
+this._storageType = 'indexeddb';
+this.init();
+this._hadCache = false;
+} catch (e) {
+console.warn('[initAsync] IDB فشل — fallback localStorage:', e && e.message);
+this._storageType = 'localStorage';
+const had = !!localStorage.getItem(this.KEY);
+this.init();
+this._hadCache = had;
+}
+},
+
+init() {
+const saved = localStorage.getItem(this.KEY);
+if (saved) {
+try { this._applyLoaded(JSON.parse(saved)); return; } catch(e){}
 }
 this.data = {
 users: [
@@ -57,13 +131,23 @@ this.save();
 },
 
 save() {
-    // تخزين آمن للحصّة: لا نُفشل العملية لو امتلأ localStorage — المصدر الحقيقي هو Supabase.
+    this._persist();
+    // ★ #67-B: أي تعديل محلي قد يغيّر أرقام لوحة التحكم → أبطل كاشها
+    try { if (typeof window !== 'undefined' && window.invalidateDashCache) window.invalidateDashCache(); } catch (_) {}
+  },
+
+  // ★ #67-B: التخزين — IndexedDB (حصّة كبيرة، بلا تقليم) مع fallback لـlocalStorage lite
+  _persist() {
+    if (this._storageType === 'indexeddb' && _IDB.available()) {
+      _IDB.set(this.KEY, this.data).catch(function (e) { console.warn('DB._persist: IDB فشل — البيانات في الذاكرة/السحابة:', e && e.message); });
+      return;
+    }
     try { localStorage.setItem(this.KEY, JSON.stringify(this.data)); }
     catch (e) {
       try {
         const lite = Object.assign({}, this.data, { evaluations: (this.data.evaluations||[]).slice(-120), audit_logs: [], notifications: (this.data.notifications||[]).slice(-120) });
         localStorage.setItem(this.KEY, JSON.stringify(lite));
-      } catch (_) { console.warn('DB.save: localStorage ممتلئ — تم التجاهل (المصدر Supabase)'); }
+      } catch (_) { console.warn('DB._persist: localStorage ممتلئ — تم التجاهل (المصدر Supabase)'); }
     }
   },
 
@@ -278,7 +362,7 @@ if (!row || !row.ok) return { ok:false, message:(row && row.message) || 'تعذ�
 if (window.SupabaseSync) { window.SupabaseSync._appliedSeq = ++window.SupabaseSync._pullSeq; }
 this.data.evaluations = this.data.evaluations.filter(e => e.id !== id);
 this.data.objections  = (this.data.objections||[]).filter(o => o.evaluation_id !== id);
-localStorage.setItem(this.KEY, JSON.stringify(this.data));
+this._persist();   // ★ #67-B
 return { ok:true, employee_name:row.employee_name, deleted_objections:row.deleted_objections || 0 };
 }
 
@@ -559,4 +643,13 @@ if (filter.from) { const f = new Date(filter.from); list = list.filter(l => new 
 if (filter.to) { const t = new Date(filter.to); list = list.filter(l => new Date(l.timestamp) <= t); }
 return list.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
 }
+};
+
+// ★ #67-B: أداة تصحيح — نوع التخزين المُستخدم + حجم البيانات + عدد التقييمات
+window.__STORAGE_INFO__ = function () {
+  let bytes = 0;
+  try { bytes = JSON.stringify(DB.data || {}).length; } catch (_) {}
+  const info = { type: DB._storageType, hadCache: DB._hadCache, approxKB: Math.round(bytes / 1024), evals: ((DB.data && DB.data.evaluations) || []).length, users: ((DB.data && DB.data.users) || []).length };
+  console.table(info);
+  return info;
 };

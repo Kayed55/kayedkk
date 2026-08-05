@@ -229,21 +229,8 @@ window.SupabaseSync = {
         }
         self._appliedSeq = seq;
 
-        // ===== تخزين آمن للحصّة (localStorage ~5MB) =====
-        // البيانات كبرت (evaluations وحدها ~3MB) وقد تتجاوز الحصّة → setItem يرمي QuotaExceededError.
-        // الحل: نضمن البيانات الكاملة في الذاكرة (يعمل التطبيق)، ونُخزّن أخفّ نسخة تسع الحصّة (أفضل جهد).
-        const KEY = 'qe_system_v6';
-        const variants = [
-          dbData,                                                                                   // الكامل
-          Object.assign({}, dbData, { evaluations: (dbData.evaluations||[]).slice(-120), audit_logs: [], notifications: (dbData.notifications||[]).slice(-120) }), // مُقلّم
-          Object.assign({}, dbData, { evaluations: [], audit_logs: [], notifications: [] })         // الأصغر (يبقي users + criteria)
-        ];
-        let persisted = 'none';
-        for (let i = 0; i < variants.length; i++) {
-          try { localStorage.setItem(KEY, JSON.stringify(variants[i])); persisted = (i === 0 ? 'full' : 'lite'); break; }
-          catch (e) { if (i === variants.length - 1) console.warn('[pullAll] localStorage ممتلئ — تعذّر حتى تخزين النسخة الصغرى:', (e && e.name) || e); }
-        }
-        if (persisted !== 'full') console.warn('[pullAll] تجاوز حصّة localStorage — خُزّنت نسخة (' + persisted + ')؛ البيانات كاملة في الذاكرة.');
+        // ★ #67-B: التخزين انتقل إلى DB._persist() (IndexedDB — حصّة كبيرة، بلا تقليم) بعد إسناد DB.data أدناه،
+        //   بدل نُسخ localStorage lite التي كانت تقصّ التقييمات عند تجاوز 5MB (سبب تعطّل warm SWR مع 1119 تقييم).
 
         // مرجع DB: ثابت عام (ليس على window) — نستخدمه المجرّد. (كان window.DB خطأً يجعل
         // الكتلة كود ميّت، فتبقى الذاكرة على نسخة localStorage المُقلّمة lite.)
@@ -260,7 +247,10 @@ window.SupabaseSync = {
             d.nextUserId = dbData.nextUserId; d.nextEvalId = dbData.nextEvalId;
             d.nextNotifId = dbData.nextNotifId; d.nextObjectionId = dbData.nextObjectionId;
           }
+          if (typeof DB._persist === 'function') { try { DB._persist(); } catch (_) {} }   // ★ #67-B: حفظ كامل لـIndexedDB
         }
+        // ★ #67-B: سحب force = أعقب كتابة → أبطل كاش لوحة التحكم (يشمل التقييمات والاعتراضات)
+        if (force && typeof window !== 'undefined' && window.invalidateDashCache) { try { window.invalidateDashCache(); } catch (_) {} }
         self._lastPullError = null;
 
         this.ready = true;
