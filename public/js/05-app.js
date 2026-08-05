@@ -46,6 +46,8 @@ window.addEventListener('unhandledrejection', function(e){ reportClientError((e.
 async function bootApp() {
   const _t0 = (window.performance && performance.now) ? performance.now() : 0;
   await DB.initAsync();   // ★ #67-B: تهيئة async (IndexedDB مع fallback لـlocalStorage) — قراءة محلية سريعة
+  // ★ #67-C-0: حمّل الأقسام مبكّراً (من كاش localStorage فوراً، أو RPC مرة) — جاهزة قبل أي تنقّل لصفحة CG (لا fallback في cgDeptId)
+  try { if (typeof loadDepartments === 'function') loadDepartments(); } catch (_) {}
   const hasCache = !!(DB._hadCache && DB.data);
 
   if (hasCache) {
