@@ -1079,17 +1079,25 @@ const bc = document.getElementById('chart-bar-'+key);
 if (bc) charts.push(new Chart(bc, { type:'bar', data:{ labels:(s.top||[]).map(t=>t.name), datasets:[{ label:'تقييمات', data:(s.top||[]).map(t=>t.count), backgroundColor:cfg.color+'cc' }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true, ticks:{ precision:0 } } } } }));
 }
 let _dashCache = null, _dashCacheAt = 0;
+const _DASH_KEY = 'qe_dash_cache', _DASH_TTL = 60000;   // ★ #67-B: كاش لوحة التحكم — TTL 60s (ينجو من Hard Refresh)
+// إبطال كاش لوحة التحكم (ذاكرة + localStorage) — يُستدعى عبر DB.save + pullAll(force) + كتابة الاعتراض
+function invalidateDashCache() { _dashCache = null; _dashCacheAt = 0; try { localStorage.removeItem(_DASH_KEY); } catch (_) {} if (window.__CACHE_DEBUG__) console.log('🗑️ [dash-cache] أُبطل'); }
+window.invalidateDashCache = invalidateDashCache;
+window.__CLEAR_DASH_CACHE__ = invalidateDashCache;
 async function loadDashboard(force) {
 const host = document.getElementById('dash-body');
 if (!host) return;
 let j = null;
-if (!force && _dashCache && (Date.now() - _dashCacheAt < 60000)) j = _dashCache;
+if (!force && _dashCache && (Date.now() - _dashCacheAt < _DASH_TTL)) j = _dashCache;
+// ★ #67-B: كاش localStorage (ينجو من Hard Refresh — أرقام لوحة التحكم تظهر فوراً)
+if (!j && !force) { try { const raw = localStorage.getItem(_DASH_KEY); if (raw) { const c = JSON.parse(raw); if (c && c.j && (Date.now() - (c.at||0) < _DASH_TTL)) { j = c.j; _dashCache = c.j; _dashCacheAt = c.at; } } } catch (_) {} }
 if (!j) {
 try {
 const { data, error } = await window.sb.rpc('get_dashboard_stats', { p_session_token: cgToken() });
 j = Array.isArray(data) ? data[0] : data;
 if (error || !j || !j.ok) { const m=(j&&j.message)||(error&&error.message)||'تعذّر تحميل الإحصائيات'; if(!handleSessionError(m)) host.innerHTML = `<div class="alert alert-danger">${Utils.escape(m)}</div>`; return; }
 _dashCache = j; _dashCacheAt = Date.now();
+try { localStorage.setItem(_DASH_KEY, JSON.stringify({ j: j, at: _dashCacheAt })); } catch (_) {}   // ★ #67-B: احفظ للنجاة من Hard Refresh
 } catch (e) { host.innerHTML = `<div class="alert alert-danger">${Utils.escape(e.message||'خطأ')}</div>`; return; }
 }
 const sections = j.sections || {};
@@ -3064,6 +3072,7 @@ if (!text) { Toast.error('نص الاعتراض مطلوب'); return; }
 const { data, error } = await window.sb.rpc('raise_objection', { p_session_token: cgToken(), p_evaluation_id: ev.id, p_objection_text: text });
 const r = Array.isArray(data)?data[0]:data;
 if (error || !r || !r.ok) { const m=(r&&r.message)||(error&&error.message)||'تعذّر تقديم الاعتراض'; if(!handleSessionError(m)) Toast.error(m); return; }
+invalidateDashCache();   // ★ #67-B: الاعتراض يغيّر عدّاد الاعتراضات في لوحة التحكم (raise_objection لا يستدعي pullAll(true))
 Modal.close(); Toast.success('تم تقديم الاعتراض'); if (onDone) onDone();
 });
 }
@@ -7286,7 +7295,7 @@ if (!(v>=0 && v<=100)) { Toast.error('أدخل رقماً بين 0 و100'); retu
 const { data, error } = await window.sb.rpc('set_department_pass_score', { p_session_token: cgToken(), p_department_id: deptId, p_pass_score: v });
 const r = Array.isArray(data)?data[0]:data;
 if (error || !r || !r.ok) { const m=(r&&r.message)||(error&&error.message)||'تعذّر الحفظ'; if(!handleSessionError(m)) Toast.error(m); return; }
-Modal.close(); Toast.success('تم تحديث درجة النجاح'); _dashCache=null; await loadDepartments(true); navigate('departments',{tab:'depts'});
+Modal.close(); Toast.success('تم تحديث درجة النجاح'); invalidateDashCache(); await loadDepartments(true); navigate('departments',{tab:'depts'});
 });
 }
 function departmentModal(id) {

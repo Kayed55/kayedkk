@@ -45,10 +45,10 @@ window.addEventListener('unhandledrejection', function(e){ reportClientError((e.
 // ★ #66: SWR عند الإقلاع — ارسم فوراً من كاش localStorage ثم حدّث بالخلفية (يزيل round-trip الحاجب من سيدني).
 async function bootApp() {
   const _t0 = (window.performance && performance.now) ? performance.now() : 0;
-  const hasCache = !!localStorage.getItem('qe_system_v6');
-  DB.init();   // تهيئة تزامنية من localStorage (دافئة لو hasCache)
+  await DB.initAsync();   // ★ #67-B: تهيئة async (IndexedDB مع fallback لـlocalStorage) — قراءة محلية سريعة
+  const hasCache = !!(DB._hadCache && DB.data);
 
-  if (hasCache && DB.data) {
+  if (hasCache) {
     // ✅ Warm: رسم فوري من الكاش، ثم سحب خلفي غير حاجب.
     routeInitial();
     if (window.__CACHE_DEBUG__ && _t0) console.log('⚡ [boot] warm render خلال ' + Math.round(performance.now() - _t0) + 'ms (من الكاش)');
