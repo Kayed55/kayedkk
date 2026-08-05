@@ -136,33 +136,22 @@ document.addEventListener('input', markDirty);
 document.addEventListener('change', markDirty);
 }
 
-// نقطة الدخول الموحّدة من القائمة الجانبية (مع debounce 200ms ضد النقر المتسارع)
+// نقطة الدخول الموحّدة من القائمة الجانبية — ★ #67-A: تنفيذ فوري (leading-edge) بدل تأخير 200ms
+//   (الرسم صار رخيصاً — لا سحب حاجب — فلا داعي لتأخير كل تنقّل؛ نحرس فقط ضد النقر المزدوج السريع).
 function navigateToSection(page, params) {
-if (_navDebounce) clearTimeout(_navDebounce);
-_navDebounce = setTimeout(() => _doNavigateToSection(page, params || {}), 200);
+if (_navDebounce) return;                        // تجاهل نقرة مكرّرة خلال نافذة 150ms
+_navDebounce = setTimeout(() => { _navDebounce = null; }, 150);
+_doNavigateToSection(page, params || {});
 }
 
-async function _doNavigateToSection(page, params) {
-// حارس التعديلات غير المحفوظة
+// ★ #67-A (Blocker fix): رسم فوري من DB.data — أُزيل السحب الحاجب pullAll(true) + spinner «جاري تحميل أحدث البيانات» + _sectionError.
+//   الطزاجة مغطّاة بطبقتين: Realtime (#65: evaluations/users/notifications/objections) + autosync كل 120s.
+//   النتيجة: تنقّل فوري (<200ms، رسم من الذاكرة) + صفر حِمل DB لكل تنقّل (يحترم هدف #65: CPU ≤25%).
+function _doNavigateToSection(page, params) {
+// حارس التعديلات غير المحفوظة (يبقى)
 if (_formDirty && !confirm('لديك تعديلات لم تُحفظ. هل تريد المغادرة دون حفظ؟')) return;
 _formDirty = false;
-const token = ++_navToken;                    // "آخر طلب يفوز" ضد التنقّل المتسارع
-const c = document.querySelector('.content'); // أبقِ القائمة والهيدر، بدّل المحتوى فقط
-if (c) c.innerHTML = `<div class="section-loading"><div class="spinner"></div><div>جاري تحميل أحدث البيانات…</div></div>`;
-try {
-// جلب طازج من القاعدة قبل العرض (يُحدّث DB.data بالكامل = كل الأقسام)
-if (window.sb && window.SupabaseSync && typeof SupabaseSync.pullAll === 'function') {
-const ok = await SupabaseSync.pullAll(true);
-if (token !== _navToken) return;            // ألغاه تنقّل أحدث
-if (ok === false) { _sectionError(page, params); return; }
-}
-if (token !== _navToken) return;
-navigate(page, params);
-} catch (err) {
-if (token !== _navToken) return;
-console.error('section load failed:', err);
-_sectionError(page, params);
-}
+navigate(page, params);   // رسم فوري من DB.data
 }
 
 function _sectionError(page, params) {
