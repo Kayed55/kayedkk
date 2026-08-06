@@ -24,7 +24,7 @@ let _navToken = 0;
 let _navDebounce = null;
 const _FORM_PAGES = ['new-evaluation', 'edit-evaluation'];
 // عناوين الأقسام — تُستخدم في الشريط العلوي وفي عنوان تبويب المتصفّح
-const PAGE_TITLES = {dashboard:'لوحة التحكم', employees:'إدارة الموظفين', 'view-employee':'بيانات الموظف', evaluations:'التقييمات', 'new-evaluation':'تقييم جديد', 'cg-week':'أسبوع Creative Gene', 'cg-objections':'اعتراضات Creative Gene', 'cg-my-team':'موظفوني — Creative Gene', 'cg-frequent-errors':'المعايير الأدنى أداءً — Creative Gene', 'cg-actions-report':'تقرير الإجراءات — Creative Gene', 'cg-upload':'رفع تقييم جديد', 'cg-requests':'طلبات التقييم — Creative Gene', 'cg-pending-approval':'بانتظار الاعتماد — Creative Gene', 'view-evaluation':'تفاصيل التقييم', 'edit-evaluation':'تعديل التقييم', reports:'التقارير', 'monthly-report':'التقرير الشهري', 'actions-report':'تقرير الإجراءات المتخذة', 'errors-report':'الأخطاء المتكررة الشهرية', objections:'الاعتراضات', 'view-objection':'تفاصيل الاعتراض', 'new-objection':'تقديم اعتراض', 'audit-log':'سجل العمليات', 'quality-report':'تقرير الجودة', users:'إدارة المستخدمين', 'deleted-users':'المستخدمون المحذوفون', profile:'الملف الشخصي', notifications:'الإشعارات', settings:'الإعدادات', login:'تسجيل الدخول'};
+const PAGE_TITLES = {dashboard:'لوحة التحكم', employees:'إدارة الموظفين', 'view-employee':'بيانات الموظف', evaluations:'التقييمات', 'new-evaluation':'تقييم جديد', 'cg-week':'أسبوع Creative Gene', 'cg-eval':'تفاصيل تقييم Creative Gene', 'cg-objections':'اعتراضات Creative Gene', 'cg-my-team':'موظفوني — Creative Gene', 'cg-frequent-errors':'المعايير الأدنى أداءً — Creative Gene', 'cg-actions-report':'تقرير الإجراءات — Creative Gene', 'cg-upload':'رفع تقييم جديد', 'cg-requests':'طلبات التقييم — Creative Gene', 'cg-pending-approval':'بانتظار الاعتماد — Creative Gene', 'view-evaluation':'تفاصيل التقييم', 'edit-evaluation':'تعديل التقييم', reports:'التقارير', 'monthly-report':'التقرير الشهري', 'actions-report':'تقرير الإجراءات المتخذة', 'errors-report':'الأخطاء المتكررة الشهرية', objections:'الاعتراضات', 'view-objection':'تفاصيل الاعتراض', 'new-objection':'تقديم اعتراض', 'audit-log':'سجل العمليات', 'quality-report':'تقرير الجودة', users:'إدارة المستخدمين', 'deleted-users':'المستخدمون المحذوفون', profile:'الملف الشخصي', notifications:'الإشعارات', settings:'الإعدادات', login:'تسجيل الدخول'};
 
 function destroyCharts() {
 charts.forEach(c => { try { c.destroy(); } catch(e){} });
@@ -50,6 +50,7 @@ const pages = {
 'evaluations': renderEvaluations,
 'new-evaluation': () => renderNewEvaluation(params.dept),
 'cg-week': () => renderCgWeek(params.week),
+'cg-eval': () => renderCgEvaluation(params.id),   // ★ #70
 'cg-objections': renderCgObjections,
 'cg-my-team': renderCgMyTeam,
 'cg-frequent-errors': renderCgFrequentErrors,
@@ -3413,6 +3414,7 @@ let q = window.sb.from('creative_gene_actions').select('*').order('taken_at', { 
 const { data, error } = await q;
 if (error) { if(!handleSessionError(error.message)) host.innerHTML = `<div class="alert alert-danger">${Utils.escape(error.message)}</div>`; return; }
 let acts = data || [];
+acts = acts.filter(a => a.supervisor_id != null && a.superseded_at == null);   // ★ #70: إجراءات المشرف النشطة فقط (توصية الجودة ليست إجراءً مُتخذاً + استبعاد المُلغى)
 if (currentUser.role === 'supervisor') acts = acts.filter(a => a.supervisor_id === currentUser.id);
 if (!acts.length) { host.innerHTML = '<div class="alert alert-info">لا توجد إجراءات في هذا القسم.</div>'; return; }
 const rows = acts.map(a => { const emp = DB.getUser(a.employee_id), sup = DB.getUser(a.supervisor_id), ev = DB.getEvaluation(a.evaluation_id);
@@ -3437,7 +3439,7 @@ const lastByEmp = {};
 emps.forEach(e => { const evs=(DB.data.evaluations||[]).filter(x=>x.employee_id===e.id&&x.template_type==='pdf_based_weekly').sort((a,b)=>String(b.week_start||'').localeCompare(String(a.week_start||''))); lastByEmp[e.id]=evs[0]||null; });
 const evalIds = Object.values(lastByEmp).filter(Boolean).map(e=>e.id);
 const objMap = {}, actMap = {};
-if (evalIds.length) { try { const [{ data:objs },{ data:acts }] = await Promise.all([window.sb.from('creative_gene_objections').select('*').in('evaluation_id',evalIds), window.sb.from('creative_gene_actions').select('*').in('evaluation_id',evalIds)]); (objs||[]).forEach(o=>objMap[o.evaluation_id]=o); (acts||[]).forEach(a=>actMap[a.evaluation_id]=a); } catch(_){} }
+if (evalIds.length) { try { const [{ data:objs },{ data:acts }] = await Promise.all([window.sb.from('creative_gene_objections').select('*').in('evaluation_id',evalIds), window.sb.from('creative_gene_actions').select('*').in('evaluation_id',evalIds)]); (objs||[]).forEach(o=>objMap[o.evaluation_id]=o); (acts||[]).filter(a=>a.supervisor_id!=null && a.superseded_at==null).forEach(a=>actMap[a.evaluation_id]=a); } catch(_){} }   // ★ #70: إجراء المشرف النشط فقط
 const rows = emps.map(e => { const last = lastByEmp[e.id];
 if (!last) return `<tr><td>${Utils.escape(e.full_name)}</td><td>${jobTitleCell(e)}</td><td colspan="4" style="color:var(--muted)">لا يوجد تقييم</td><td>—</td></tr>`;
 const o = objMap[last.id], a = actMap[last.id];
@@ -3538,7 +3540,7 @@ const { data, error } = await window.sb.rpc('get_cg_week_bundle', { p_session_to
 if (!error && data && Array.isArray(data.status)) {
 rows = data.status;
 (data.objections||[]).forEach(o => objMap[o.evaluation_id] = o);
-(data.actions||[]).forEach(a => actMap[a.evaluation_id] = a);
+(data.actions||[]).filter(a => a.supervisor_id != null && a.superseded_at == null).forEach(a => actMap[a.evaluation_id] = a);   // ★ #70: إجراء المشرف النشط فقط (لا توصية الجودة/المُلغى)
 }
 } catch(_){}
 if (rows === null) {
@@ -3554,7 +3556,7 @@ window.sb.from('creative_gene_objections').select('*').in('evaluation_id', evalI
 window.sb.from('creative_gene_actions').select('*').in('evaluation_id', evalIds)
 ]);
 (objs||[]).forEach(o => objMap[o.evaluation_id] = o);
-(acts||[]).forEach(a => actMap[a.evaluation_id] = a);
+(acts||[]).filter(a => a.supervisor_id != null && a.superseded_at == null).forEach(a => actMap[a.evaluation_id] = a);   // ★ #70: إجراء المشرف النشط فقط
 } catch(_){}
 }
 }
@@ -3565,7 +3567,7 @@ const evaluated = (st !== 'not_uploaded' && st !== 'uploaded_pending');
 const badge = evaluated ? '<span class="badge badge-success">🟢 تم التقييم</span>' : (st==='uploaded_pending' ? '<span class="badge badge-warning">🟡 بانتظار التقييم</span>' : '<span class="badge badge-danger">🔴 لم يُرفع</span>');
 let actions = '';
 if (st === 'uploaded_pending') actions = `<button class="btn btn-sm btn-secondary" onclick="openCgPdfByWeek(${r.employee_id},'${ws}')">📄 فتح</button> <button class="btn btn-sm btn-success" onclick="navigate('new-evaluation',{dept:${cgDeptId()},emp:${r.employee_id}})">📝 تقييم</button>`;
-else if (evaluated) actions = `<button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${r.evaluation_id})">📄 فتح</button> <span style="font-weight:700;color:var(--primary)">${r.percentage}%</span>`;
+else if (evaluated) actions = `<button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${r.evaluation_id})">📄 فتح</button> <button class="btn btn-sm btn-secondary" onclick="navigate('cg-eval',{id:${r.evaluation_id}})">🕒 التفاصيل</button> <span style="font-weight:700;color:var(--primary)">${r.percentage}%</span>`;
 else actions = `<button class="btn btn-sm btn-secondary" onclick="cgUploadBehalf(${r.employee_id},'${ws}')">📎 رفع نيابةً</button>`;
 const o = objMap[r.evaluation_id], a = actMap[r.evaluation_id];
 const objCol = o ? (objBadge(o.status)) : '<span style="color:var(--muted)">—</span>';
@@ -3575,6 +3577,71 @@ return `<tr><td>${Utils.escape(r.employee_name)}</td><td>${badge}</td><td>${objC
 host.innerHTML = `<div class="card"><div class="card-body" style="padding:0;overflow-x:auto"><table class="table"><thead><tr><th>الموظف</th><th>الحالة</th><th>الاعتراض</th><th>الإجراء</th><th></th></tr></thead><tbody>${body}</tbody></table></div></div>`;
 }
 function cgUploadBehalf(empId, ws) { pickPdfAndUpload(empId, ws, () => loadCgWeekTable(ws)); }
+
+// ============================================================================
+// ★ PR #70 — صفحة cg-eval: المسار الزمني لتقييم CG + أزرار مقيّدة بالصلاحيات
+// ============================================================================
+function _cgStateBadge(ws) {
+  const m = { pending_supervisor:['🟡 بانتظار إجراء المشرف','badge-warning'], approved:['🟢 مُعتمد (نافذة اعتراض مفتوحة)','badge-success'],
+    objection_raised:['✋ اعتراض قائم','badge-danger'], objection_reviewed:['⚖️ روجِع الاعتراض','badge-info'], closed:['🔒 مُغلق','badge-secondary'], action_taken:['🟢 اتُّخذ إجراء','badge-success'] };
+  const x = m[ws] || [ws||'—','badge-info']; return `<span class="badge ${x[1]}">${x[0]}</span>`;
+}
+function _objDecisionLabel(s) { return { accepted:'قبول', partial:'قبول جزئي', rejected:'رفض', pending:'قيد المراجعة' }[s] || s || '-'; }
+
+function renderCgEvaluation(id) {
+  return `<div class="page-header"><div><div class="page-title">تفاصيل تقييم Creative Gene</div><div class="page-subtitle">المسار الزمني والإجراءات</div></div>
+    <button class="btn btn-secondary" onclick="navigate('cg-week')">← رجوع لأسبوع CG</button></div>
+    <div id="cgeval-body"><div class="card"><div class="card-body" style="text-align:center;padding:40px"><div class="spinner"></div></div></div></div>`;
+}
+
+async function loadCgEvaluationTimeline(id) {
+  const host = document.getElementById('cgeval-body');
+  if (!host) return;
+  if (!id) { host.innerHTML = '<div class="alert alert-danger">معرّف التقييم مفقود</div>'; return; }
+  let data = null, error = null;
+  try { const r = await window.sb.rpc('get_cg_evaluation_timeline', { p_session_token: getSessionToken(), p_evaluation_id: parseInt(id) }); data = r.data; error = r.error; }
+  catch (e) { error = e; }
+  const j = Array.isArray(data) ? data[0] : data;
+  if (error || !j || !j.ok) { const m = (j && j.error) || (error && error.message) || 'تعذّر تحميل التقييم'; if (!handleSessionError(m)) host.innerHTML = `<div class="alert alert-danger">${Utils.escape(m)}</div>`; return; }
+  const ev = j.evaluation || {}, st = j.status || {}, acts = j.actions || [], objs = j.objections || [], perms = j.permissions || {};
+  const emp = DB.getUser(ev.employee_id);
+  const qo = acts.find(a => a.supervisor_id == null);   // qo_suggestion (supervisor_id NULL)
+  const qoBanner = qo ? `<div class="alert alert-info">💡 <b>توصية الجودة (غير مُلزمة):</b> ${Utils.escape(actionTypeLabel(qo.action_type))}${qo.action_details ? ' — ' + Utils.escape(qo.action_details) : ''}</div>` : '';
+  // أحداث زمنية موحّدة
+  const events = [];
+  if (ev.created_at) events.push({ at: ev.created_at, icon: '📝', who: 'الجودة', text: `أنشأت التقييم${ev.percentage != null ? ' (' + ev.percentage + '% — ' + Utils.escape(ev.grade || '') + ')' : ''}` });
+  acts.forEach(a => {
+    const isQo = a.supervisor_id == null;
+    events.push({ at: a.taken_at, icon: isQo ? '💡' : '⚖️', who: isQo ? 'الجودة' : 'المشرف', style: a.superseded_at ? 'text-decoration:line-through;opacity:.55' : '',
+      text: `${isQo ? 'توصية الجودة' : 'إجراء المشرف'}: ${Utils.escape(actionTypeLabel(a.action_type))}${a.action_details ? ' — ' + Utils.escape(a.action_details) : ''}${a.superseded_at ? ' (أُلغي بعد قبول الاعتراض)' : ''}` });
+  });
+  objs.forEach(o => {
+    events.push({ at: o.raised_at, icon: '✋', who: 'الموظف', text: `اعتراض: ${Utils.escape(o.objection_text || '')}` });
+    if (o.reviewed_at) events.push({ at: o.reviewed_at, icon: '⚖️', who: 'الجودة', text: `قرار المراجعة: ${_objDecisionLabel(o.status)}${o.reviewer_response ? ' — ' + Utils.escape(o.reviewer_response) : ''}` });
+  });
+  events.sort((a, b) => new Date(a.at) - new Date(b.at));
+  const timeline = events.map(e => `<div style="display:flex;gap:12px;padding:10px 0;border-bottom:1px dashed var(--border);${e.style || ''}">
+    <div style="font-size:20px;flex-shrink:0">${e.icon}</div>
+    <div style="flex:1;min-width:0"><div style="font-size:13px">${e.text}</div><div style="font-size:11px;color:var(--muted)">${Utils.escape(e.who)} · ${Utils.formatDate(e.at)}</div></div></div>`).join('');
+  let btns = '';
+  if (perms.can_object) btns += `<button class="btn btn-warning" id="cge-object">✋ تقديم اعتراض</button>`;
+  if (perms.can_commit_action) btns += `<button class="btn btn-primary" id="cge-action">⚖️ حفظ إجراء المشرف</button>`;
+  if (perms.can_review_objection) btns += `<button class="btn btn-info" id="cge-review">⚖️ الردّ على الاعتراض</button>`;
+  host.innerHTML = `${qoBanner}
+    <div class="card"><div class="card-body">
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:6px">
+        <div><b>الموظف:</b> ${Utils.escape(emp ? emp.full_name : ('#' + ev.employee_id))} · <b>الأسبوع:</b> ${Utils.escape(String(st.week_start || ev.week_start || '-'))}</div>
+        <div>${_cgStateBadge(st.workflow_state)}</div></div>
+      ${btns ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${btns}</div>` : ''}
+    </div></div>
+    <div class="card"><div class="card-header"><div class="card-title">🕒 المسار الزمني</div></div>
+      <div class="card-body">${timeline || '<div style="color:var(--muted)">لا أحداث</div>'}</div></div>`;
+  // إعادة استخدام modals الموجودة (كلها تستدعي pullAll + refresh داخلياً)
+  const onDone = () => { invalidateDashCache(); try { SupabaseSync.pullAll(true).finally(() => navigate('cg-eval', { id: id })); } catch (_) { navigate('cg-eval', { id: id }); } };
+  const bO = document.getElementById('cge-object'); if (bO) bO.addEventListener('click', () => raiseObjectionFlow(ev, onDone));
+  const bA = document.getElementById('cge-action'); if (bA) bA.addEventListener('click', () => takeActionModal(ev.id));
+  const bR = document.getElementById('cge-review'); if (bR) bR.addEventListener('click', () => { const pend = objs.find(o => o.status === 'pending'); if (pend) reviewObjectionModal(pend.id); else Toast.error('لا يوجد اعتراض معلّق'); });
+}
 
 // ============================================================
 // م7 — دورة العمل (Workflow) لتقييم Creative Gene + سجل التغييرات
@@ -4295,7 +4362,7 @@ const inPeriod = (dstr) => { if (period==='all' || !dstr) return true; const d=n
 evals = evals.filter(e => inPeriod(e.week_start||e.evaluation_date)).sort((a,b)=> String(b.week_start||'').localeCompare(String(a.week_start||'')));
 const evalIds = evals.map(e => e.id);
 const objMap = {}, actMap = {};
-if (evalIds.length) { try { const [{ data:objs },{ data:acts }] = await Promise.all([window.sb.from('creative_gene_objections').select('*').in('evaluation_id',evalIds), window.sb.from('creative_gene_actions').select('*').in('evaluation_id',evalIds)]); (objs||[]).forEach(o=>objMap[o.evaluation_id]=o); (acts||[]).forEach(a=>actMap[a.evaluation_id]=a); } catch(_){} }
+if (evalIds.length) { try { const [{ data:objs },{ data:acts }] = await Promise.all([window.sb.from('creative_gene_objections').select('*').in('evaluation_id',evalIds), window.sb.from('creative_gene_actions').select('*').in('evaluation_id',evalIds)]); (objs||[]).forEach(o=>objMap[o.evaluation_id]=o); (acts||[]).filter(a=>a.supervisor_id!=null && a.superseded_at==null).forEach(a=>actMap[a.evaluation_id]=a); } catch(_){} }   // ★ #70: إجراء المشرف النشط فقط
 let uploads = 0, openObj = 0;
 try { const { data:st } = await window.sb.from('creative_gene_weekly_status').select('employee_id,pdf_file_path'); uploads = (st||[]).filter(s => s.pdf_file_path && cgEmpIds.has(s.employee_id)).length; } catch(_){}
 try { const { data:ob } = await window.sb.from('creative_gene_objections').select('status,employee_id'); openObj = (ob||[]).filter(o => o.status==='pending' && cgEmpIds.has(o.employee_id)).length; } catch(_){}
@@ -7619,6 +7686,10 @@ window._dashTimer = setInterval(() => { if (currentPage === 'dashboard') loadDas
 }
 if (page === 'reports') renderReportsCharts();
 if (page === 'departments' && (currentParams.tab || 'depts') === 'templates') attachTemplatesTab();
+if (page === 'cg-eval') {   // ★ #70
+loadCgEvaluationTimeline(currentParams.id);
+}
+
 if (page === 'cg-week') {
 const ws = weekStartSaturdayJS(currentParams.week || null);  // #33: تطبيع إلى السبت
 loadCgWeekTable(ws);
