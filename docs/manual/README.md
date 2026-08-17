@@ -22,3 +22,13 @@ node build.js manual.html "دليل-استخدام-نظام-الجودة.pdf"
 2. في `manual.html` استبدل إطار الشاشة:
    `<div class="shot">…</div>` بـ `<div class="shot"><img src="images/xxx.png"></div>`.
 3. أعد البناء.
+
+## ملفات الأدوار المنفصلة
+`build-roles.js` يولّد 3 نسخ خاصة بكل دور من نفس `manual.html` (مصدر واحد):
+```bash
+node build-roles.js                       # يولّد HTML لكل دور
+node build.js "دليل-الموظف.html" "دليل-الموظف.pdf"
+node build.js "دليل-المشرف.html" "دليل-المشرف.pdf"
+node build.js "دليل-موظف-الجودة.html" "دليل-موظف-الجودة.pdf"
+```
+كل ملف: غلاف باسم الدور + الدخول + فصل الدور + المراجع المناسبة + دليله السريع.
