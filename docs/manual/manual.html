@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>دليل استخدام نظام الجودة — شركة محزم</title>
+<link rel="stylesheet" href="assets/cairo.css">
+<style>
+:root{
+  --brand:#06579F; --brand-d:#202E4D; --cg:#7b1fa2; --mahzam:#1976d2;
+  --ink:#1e293b; --muted:#64748b; --line:#e2e8f0; --soft:#f8fafc;
+  --ok:#16a34a; --danger:#dc2626; --warn:#d97706; --info:#0ea5e9;
+}
+*{box-sizing:border-box;}
+html{font-family:'Cairo',sans-serif;}
+body{direction:rtl; text-align:right; color:var(--ink); font-size:11pt; line-height:1.75; margin:0;
+  -webkit-print-color-adjust:exact; print-color-adjust:exact;}
+
+/* ---------- الصفحات والرأس والتذييل ---------- */
+@page{
+  size:A4; margin:20mm 17mm 18mm 17mm;
+  @top-center{ content:"شركة محزم · نظام الجودة للتقييم والتدريب"; font-family:'Cairo',sans-serif; font-size:8pt; color:#cbd5e1; }
+  @bottom-center{ content:"صفحة " counter(page) " من " counter(pages); font-family:'Cairo',sans-serif; font-size:8.5pt; color:#94a3b8; }
+}
+@page cover{ margin:0;
+  @top-center{content:none} @bottom-center{content:none}
+}
+.cover{ page:cover; }
+h1.ch{ string-set:chapter content(); }
+
+/* ---------- الغلاف ---------- */
+.cover{ height:297mm; width:210mm; position:relative; color:#fff; overflow:hidden;
+  background:linear-gradient(150deg,#06579F 0%,#0a4a85 45%,#202E4D 100%); }
+.cover .glow{ position:absolute; border-radius:50%; opacity:.13; background:#fff; }
+.cover-inner{ position:absolute; inset:0; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; padding:0 26mm; }
+.cover .logo{ width:118px; height:118px; background:rgba(255,255,255,.12); border:2px solid rgba(255,255,255,.35); border-radius:26px; display:flex; align-items:center; justify-content:center; margin-bottom:28px; }
+.cover .logo img{ width:76px; height:76px; }
+.cover .kicker{ letter-spacing:2px; font-size:12pt; color:#bcdcff; font-weight:600; margin-bottom:10px;}
+.cover h1{ font-size:33pt; font-weight:800; margin:0 0 10px; line-height:1.28; }
+.cover .sub{ font-size:15pt; color:#dbeafe; font-weight:600; margin-bottom:30px;}
+.cover .rule{ width:70px; height:4px; background:#3b9dff; border-radius:3px; margin:0 auto 28px;}
+.cover .aud{ font-size:12.5pt; color:#eaf4ff; line-height:2; }
+.cover .foot{ position:absolute; bottom:18mm; left:0; right:0; text-align:center; color:#9fc4ee; font-size:10pt;}
+
+/* ---------- العناوين ---------- */
+h1.ch{ font-size:21pt; color:var(--brand); font-weight:800; margin:0 0 4px; padding-bottom:8px; border-bottom:3px solid var(--brand); break-before:page; }
+.ch-tag{ color:var(--muted); font-size:10.5pt; margin:0 0 16px;}
+h2{ font-size:15pt; color:var(--brand-d); font-weight:700; margin:22px 0 8px; padding-right:12px; border-right:5px solid var(--brand); break-after:avoid;}
+h3{ font-size:12.5pt; color:#334155; font-weight:700; margin:15px 0 5px; break-after:avoid;}
+p{ margin:6px 0;}
+ul,ol{ margin:6px 0; padding-right:22px;} li{ margin:4px 0;}
+.lead{ font-size:12pt; color:#475569;}
+b,strong{ font-weight:700; color:#0f172a;}
+a{ color:var(--brand); }
+
+/* ---------- بطاقات التنبيه ---------- */
+.callout{ border-radius:10px; padding:11px 14px; margin:12px 0; border:1px solid; border-right-width:5px; font-size:10.5pt; break-inside:avoid;}
+.callout .h{ font-weight:700; margin-bottom:2px;}
+.callout p{ margin:2px 0;}
+.note{ border-color:#bae6fd; border-right-color:var(--info); background:#f0f9ff;}
+.warn{ border-color:#fed7aa; border-right-color:var(--warn); background:#fff7ed;}
+.tip{ border-color:#bbf7d0; border-right-color:var(--ok); background:#f0fdf4;}
+.danger{ border-color:#fecaca; border-right-color:var(--danger); background:#fef2f2;}
+
+/* ---------- جداول ---------- */
+table{ width:100%; border-collapse:collapse; margin:12px 0; font-size:10pt;}
+th,td{ border:1px solid var(--line); padding:7px 9px; text-align:right; vertical-align:top;}
+thead th{ background:var(--brand); color:#fff; font-weight:700;}
+tbody tr:nth-child(even){ background:#f8fafc;}
+tr{ break-inside:avoid;}
+.matrix td.y{ color:var(--ok); font-weight:800; text-align:center;}
+.matrix td.n{ color:#cbd5e1; text-align:center;}
+.matrix td.c{ color:var(--warn); font-weight:700; text-align:center; font-size:9pt;}
+.matrix th:first-child, .matrix td:first-child{ text-align:right; background:#f1f5f9; font-weight:600;}
+table.states td:first-child{ font-weight:700; white-space:nowrap; background:#f8fafc;}
+
+/* ---------- الفهرس ---------- */
+.toc ul{ list-style:none; padding:0; margin:12px 0;}
+.toc a{ display:flex; align-items:baseline; text-decoration:none; color:var(--ink); font-size:11.5pt; padding:7px 0; border-bottom:1px solid #f1f5f9;}
+.toc a .t{ order:1; font-weight:600;}
+.toc a::before{ content:""; order:2; flex:1; margin:0 8px 3px; border-bottom:1px dotted #cbd5e1; align-self:flex-end;}
+.toc a::after{ content:target-counter(attr(href),page); order:3; color:var(--brand); font-weight:800; min-width:22px; text-align:left;}
+.toc .sec a .t{ font-weight:800; color:var(--brand-d);}
+.toc .sub a{ padding:5px 0; font-size:10.5pt; color:#475569;}
+.toc .sub a .t{ font-weight:500;}
+.toc .sub a::after{ color:#94a3b8; font-weight:700;}
+
+/* ---------- مخطط التدفّق ---------- */
+.flow{ display:flex; flex-direction:column; align-items:center; margin:16px 0; break-inside:avoid;}
+.flow .node{ background:#fff; border:2px solid var(--brand); color:var(--brand-d); border-radius:12px; padding:8px 18px; font-weight:700; font-size:10.5pt; text-align:center; min-width:62%;}
+.flow .node small{ display:block; font-weight:500; color:var(--muted); font-size:8.5pt;}
+.flow .node.q{ border-color:var(--cg); background:#faf5ff;}
+.flow .node.start{ background:var(--brand); color:#fff; border-color:var(--brand);}
+.flow .node.end{ background:var(--ok); color:#fff; border-color:var(--ok);}
+.flow .node.branch{ border-color:var(--warn); background:#fff7ed;}
+.flow .arrow{ color:#94a3b8; font-size:15pt; line-height:1; margin:3px 0;}
+
+/* ---------- لقطة شاشة ---------- */
+.shot{ border:2px dashed #cbd5e1; border-radius:12px; background:repeating-linear-gradient(45deg,#fbfdff,#fbfdff 10px,#f4f8fd 10px,#f4f8fd 20px); padding:24px 16px; text-align:center; color:#94a3b8; margin:12px 0 4px; break-inside:avoid;}
+.shot.big{ padding:44px 16px;}
+.shot .ic{ font-size:22pt;}
+.shot .cap{ font-size:9.5pt; font-weight:600; margin-top:6px; color:#64748b;}
+.shot img{ max-width:100%; border-radius:8px; display:block; margin:0 auto;}
+.figcap{ text-align:center; font-size:9.5pt; color:var(--muted); margin:2px 0 14px;}
+
+/* ---------- عناصر مساعدة ---------- */
+.pill{ display:inline-block; padding:1px 10px; border-radius:20px; font-size:9pt; font-weight:700; border:1px solid; white-space:nowrap;}
+.pill.emp{ color:#0369a1; border-color:#7dd3fc; background:#e0f2fe;}
+.pill.sup{ color:#9a3412; border-color:#fdba74; background:#ffedd5;}
+.pill.qo{ color:#7b1fa2; border-color:#d8b4fe; background:#f3e8ff;}
+.pill.adm{ color:#334155; border-color:#cbd5e1; background:#f1f5f9;}
+.btn{ display:inline-block; background:#eef2ff; border:1px solid #c7d2fe; color:#1e3a8a; border-radius:7px; padding:1px 9px; font-weight:700; font-size:9.5pt; white-space:nowrap;}
+.btn.g{ background:#ecfdf5; border-color:#a7f3d0; color:#065f46;}
+.btn.r{ background:#fef2f2; border-color:#fecaca; color:#991b1b;}
+.btn.y{ background:#fffbeb; border-color:#fde68a; color:#92400e;}
+.badge{ display:inline-block; padding:1px 9px; border-radius:6px; font-size:9pt; font-weight:700; white-space:nowrap;}
+.b-ok{ background:#dcfce7; color:#166534;} .b-dn{ background:#fee2e2; color:#991b1b;}
+.b-wn{ background:#fef3c7; color:#92400e;} .b-in{ background:#e0f2fe; color:#075985;} .b-nu{ background:#f1f5f9; color:#475569;}
+.path{ background:#f1f5f9; border:1px solid #e2e8f0; border-radius:6px; padding:1px 8px; font-size:9.5pt; color:#334155; font-weight:600;}
+.roleband{ display:flex; align-items:center; gap:10px; background:linear-gradient(90deg,#eff6ff,transparent); border-right:6px solid var(--brand); border-radius:8px; padding:10px 14px; margin:4px 0 10px; break-after:avoid;}
+.roleband .ico{ font-size:20pt;} .roleband .tt{ font-size:15pt; font-weight:800; color:var(--brand-d);} .roleband .ds{ font-size:9.5pt; color:var(--muted);}
+.stepbox{ background:var(--soft); border:1px solid var(--line); border-radius:10px; padding:4px 16px 8px; margin:10px 0; break-inside:avoid;}
+.qcard{ border:1px solid var(--line); border-top:4px solid var(--brand); border-radius:10px; padding:6px 14px 12px; margin:12px 0; break-inside:avoid;}
+.qcard.emp{ border-top-color:var(--info);} .qcard.sup{ border-top-color:var(--warn);} .qcard.qo{ border-top-color:var(--cg);}
+.qcard h3{ margin-top:8px;}
+.faq{ margin:10px 0; break-inside:avoid;}
+.faq .q{ font-weight:700; color:var(--brand-d); background:#f1f5f9; border-radius:8px; padding:7px 12px;}
+.faq .a{ padding:6px 12px 2px;}
+hr.soft{ border:none; border-top:1px solid var(--line); margin:16px 0;}
+.small{ font-size:9.5pt; color:var(--muted);}
+</style>
+</head>
+<body>
+
+<!-- ============ الغلاف ============ -->
+<section class="cover">
+  <div class="glow" style="width:340px;height:340px;top:-90px;left:-70px;"></div>
+  <div class="glow" style="width:260px;height:260px;bottom:40px;right:-60px;"></div>
+  <div class="cover-inner">
+    <div class="logo"><img src="assets/logo.svg" alt="شعار محزم"></div>
+    <div class="kicker">شركة محزم · نظام الجودة</div>
+    <h1>دليل استخدام<br>نظام الجودة للتقييم والتدريب</h1>
+    <div class="sub">دليل الموظف والمشرف وموظف الجودة</div>
+    <div class="rule"></div>
+    <div class="aud">إصدار 1.0 — دليل تدريبي شامل<br>لاستخدام النظام خطوة بخطوة</div>
+    <div class="foot">© شركة محزم — جميع الحقوق محفوظة</div>
+  </div>
+</section>
+
+<!-- ============ الفهرس ============ -->
+<section class="toc">
+<h1 class="ch">الفهرس</h1>
+<p class="ch-tag">محتويات الدليل</p>
+<ul>
+  <li class="sec"><a href="#intro"><span class="t">مقدمة عن النظام</span></a></li>
+  <li class="sec"><a href="#ch1"><span class="t">الفصل الأول: تسجيل الدخول والتنقّل في النظام</span></a></li>
+  <li class="sec"><a href="#ch2"><span class="t">الفصل الثاني: دليل الموظف</span></a></li>
+  <li class="sub"><a href="#ch2-eval"><span class="t">تقييماتي ومراجعة التقييم</span></a></li>
+  <li class="sub"><a href="#ch2-obj"><span class="t">الاعتراض على التقييم</span></a></li>
+  <li class="sub"><a href="#ch2-upload"><span class="t">رفع تقييم أسبوعي (Creative Gene)</span></a></li>
+  <li class="sec"><a href="#ch3"><span class="t">الفصل الثالث: دليل المشرف</span></a></li>
+  <li class="sec"><a href="#ch4"><span class="t">الفصل الرابع: دليل موظف الجودة</span></a></li>
+  <li class="sub"><a href="#ch4-create"><span class="t">إنشاء تقييم جديد</span></a></li>
+  <li class="sub"><a href="#ch4-requests"><span class="t">طلبات التقييم (استقبال رفعات الموظفين)</span></a></li>
+  <li class="sub"><a href="#ch4-obj"><span class="t">مراجعة الاعتراضات</span></a></li>
+  <li class="sub"><a href="#ch4-emp"><span class="t">إدارة الموظفين</span></a></li>
+  <li class="sub"><a href="#ch4-tpl"><span class="t">الأقسام ونماذج التقييم</span></a></li>
+  <li class="sub"><a href="#ch4-rep"><span class="t">التقارير</span></a></li>
+  <li class="sec"><a href="#ch5"><span class="t">الفصل الخامس: دورة التقييم كاملة</span></a></li>
+  <li class="sec"><a href="#ch6"><span class="t">الفصل السادس: الصلاحيات</span></a></li>
+  <li class="sec"><a href="#ch7"><span class="t">الفصل السابع: شرح الدرجات والنجاح والرسوب</span></a></li>
+  <li class="sec"><a href="#ch8"><span class="t">الفصل الثامن: الأسئلة الشائعة</span></a></li>
+  <li class="sec"><a href="#ch9"><span class="t">الفصل التاسع: أفضل الممارسات</span></a></li>
+  <li class="sec"><a href="#quick"><span class="t">الدليل السريع</span></a></li>
+</ul>
+</section>
+
+<!-- ============ مقدمة ============ -->
+<section>
+<h1 class="ch" id="intro">مقدمة عن النظام</h1>
+<p class="ch-tag">ما هو نظام الجودة، ولماذا نستخدمه</p>
+
+<p class="lead"><b>نظام الجودة للتقييم والتدريب</b> هو منظومة داخلية لشركة محزم تُدير دورة تقييم أداء الموظفين من بدايتها إلى نهايتها: تُنشئ إدارة الجودة التقييمات، ويطّلع عليها الموظفون ويمكنهم الاعتراض، ويتابع المشرفون فرقهم ويتّخذون الإجراءات المناسبة، ثمّ توثَّق النتائج في تقارير تفصيلية.</p>
+
+<h2>لماذا نستخدمه؟</h2>
+<ul>
+  <li><b>توحيد معايير التقييم</b> عبر نماذج مُعدّة لكل قسم ووظيفة.</li>
+  <li><b>الشفافية</b>: يرى كل موظف تقييمه وملاحظاته ودرجته بوضوح.</li>
+  <li><b>العدالة</b>: يمكن للموظف الاعتراض على أي تقييم، وتراجعه الجودة وتردّ عليه.</li>
+  <li><b>المتابعة والتحسين</b>: تُسجَّل الإجراءات (تنبيه، تدريب، إشادة…) وتُقاس نسبة التحسّن.</li>
+  <li><b>قرارات مبنيّة على بيانات</b> عبر تقارير شهرية وسنوية للأقسام والموظفين.</li>
+</ul>
+
+<h2>ماذا يقدّم لكل مستخدم؟</h2>
+<table>
+  <thead><tr><th>المستخدم</th><th>ماذا يقدّم له النظام</th></tr></thead>
+  <tbody>
+    <tr><td><span class="pill emp">الموظف</span></td><td>يرى تقييماته ودرجاته وملاحظاته، ويعترض عند الحاجة، ويتابع نتيجة اعتراضه. (وفي قسم Creative Gene يرفع تقييمه الأسبوعي.)</td></tr>
+    <tr><td><span class="pill sup">المشرف</span></td><td>يتابع أداء فريقه، ويطّلع على تقييماتهم، ويتّخذ الإجراء المناسب على الملاحظات.</td></tr>
+    <tr><td><span class="pill qo">موظف الجودة</span></td><td>يُنشئ التقييمات ويعتمدها، ويراجع الاعتراضات، ويدير الموظفين والنماذج والتقارير.</td></tr>
+    <tr><td><span class="pill adm">مدير النظام</span></td><td>كل صلاحيات الجودة، إضافة إلى إدارة المستخدمين والإعدادات والحذف النهائي.</td></tr>
+  </tbody>
+</table>
+
+<h2>قسمان داخل النظام</h2>
+<p>يُنظّم النظام العمل في قسمين رئيسيين، ولكلٍّ منهما نماذجه وشاشاته:</p>
+<ul>
+  <li><b>📊 قسم محزم</b> — التقييمات القائمة على <b>بنود</b> (نموذج «محزم بنود»).</li>
+  <li><b>🎨 قسم Creative Gene</b> — التقييمات الأسبوعية القائمة على <b>ملف PDF</b> ومعايير بأوزان، حيث يرفع الموظف عمله أسبوعياً لتقييمه.</li>
+</ul>
+
+<h2>دورة التقييم باختصار</h2>
+<div class="flow">
+  <div class="node start">موظف الجودة يُنشئ التقييم<small>ويُعتمد فوراً</small></div><div class="arrow">↓</div>
+  <div class="node q">يظهر التقييم للموظف<small>مع بدء نافذة الاعتراض</small></div><div class="arrow">↓</div>
+  <div class="node branch">الموظف يقبل ضمنياً أو يقدّم اعتراضاً</div><div class="arrow">↓</div>
+  <div class="node">إن اعترض: تراجع الجودة وتردّ (قبول / جزئي / رفض)</div><div class="arrow">↓</div>
+  <div class="node">المشرف يتابع ويتّخذ الإجراء المناسب</div><div class="arrow">↓</div>
+  <div class="node end">تُغلق العملية وتظهر في التقارير</div>
+</div>
+<p class="small">ملاحظة: التفاصيل الكاملة لدورة العمل — ومنها اختلافها بين قسمَي محزم وCreative Gene — في <b>الفصل الخامس</b>.</p>
+
+<div class="callout note"><div class="h">💡 كيف تقرأ هذا الدليل</div>
+<p>الفصل الأول للجميع. ثم اقرأ الفصل الخاص بدورك (الموظف / المشرف / الجودة). الفصول الأخيرة (الصلاحيات، الدرجات، الأسئلة الشائعة، الدليل السريع) مرجع سريع للجميع. الأزرار والشاشات في هذا الدليل مكتوبة <b>بنفس أسمائها في النظام</b>.</p></div>
+</section>
+
+<!-- ============ الفصل الأول ============ -->
+<section>
+<h1 class="ch" id="ch1">الفصل الأول: تسجيل الدخول والتنقّل في النظام</h1>
+<p class="ch-tag">كيف تدخل إلى النظام وتتنقّل بين صفحاته</p>
+
+<h2>1) تسجيل الدخول</h2>
+<p>الدخول يتمّ على <b>خطوتين</b> لمزيد من الأمان (تحقّق ثنائي عبر رمز يصل إلى بريدك):</p>
+<div class="stepbox">
+<ol>
+  <li>أدخل <b>📧 البريد الإلكتروني</b> و<b>🔒 كلمة المرور</b>، ثم اضغط <span class="btn">دخول</span>.</li>
+  <li>سيصلك <b>كود تحقّق مكوّن من 6 أرقام</b> على بريدك. أدخله في شاشة <b>🔐 التحقق الثنائي</b> ثم اضغط <span class="btn g">تأكيد ودخول</span>.</li>
+  <li>الكود <b>صالح لمدة 5 دقائق</b>؛ إن انتهت مهلته تظهر رسالة «⏰ انتهت صلاحية الكود» وتحتاج لطلب الدخول من جديد.</li>
+</ol>
+</div>
+<div class="shot big"><div class="ic">🖼️</div><div class="cap">لقطة شاشة: صفحة تسجيل الدخول (حقول البريد وكلمة المرور وزر «دخول»)</div></div>
+<p class="figcap">شكل 1-1: شاشة تسجيل الدخول والتحقق الثنائي</p>
+
+<div class="callout note"><div class="h">🔑 نسيت كلمة المرور؟</div>
+<p>اضغط رابط <b>«🔑 نسيت كلمة المرور؟»</b> في صفحة الدخول وأدخل بريدك المسجّل. إن واجهتك مشكلة في الدخول، تواصل مع إدارة النظام لإعادة تعيين كلمة المرور لك.</p></div>
+
+<div class="callout warn"><div class="h">⚠️ تغيير كلمة المرور لأول مرة</div>
+<p>إذا كان حسابك جديداً أو أُعيد تعيين كلمة مروره، فقد يطلب منك النظام <b>تغيير كلمة المرور</b> وينقلك إلى صفحة «الملف الشخصي» لتحديثها قبل المتابعة.</p></div>
+
+<h2>2) الصفحة الرئيسية (لوحة التحكم)</h2>
+<p>بعد الدخول تظهر <b>لوحة التحكم</b> وفيها:</p>
+<ul>
+  <li><b>شريط ترحيبي</b> باسمك ودورك وتاريخ اليوم.</li>
+  <li><b>بطاقات إحصائية</b>: إجمالي التقييمات، متوسط الجودة %، تقييمات اليوم، تقييمات الشهر. (ولغير الموظف تظهر أيضاً بطاقتا «اعتراضات مفتوحة / مغلقة».)</li>
+  <li><b>آخر النشاطات</b>، وللمشرف والجودة إحصاءات كل قسم (محزم / Creative Gene) ورسوم بيانية وقوائم «أفضل الموظفين» و«يحتاجون متابعة».</li>
+</ul>
+<div class="shot"><div class="ic">🖼️</div><div class="cap">لقطة شاشة: لوحة التحكم بعد تسجيل الدخول</div></div>
+<p class="figcap">شكل 1-2: لوحة التحكم</p>
+
+<h2>3) التنقّل بين الصفحات</h2>
+<p>تُستخدم <b>القائمة الجانبية</b> للتنقّل. تختلف عناصرها حسب دورك، وتنقسم لغير الموظف إلى قسمين قابلين للطيّ: <b>📊 محزم</b> و<b>🎨 Creative Gene</b>، إضافة إلى عناصر عامة في الأسفل (التقارير، الأقسام والنماذج، إدارة الموظفين… حسب صلاحيتك).</p>
+<table>
+  <thead><tr><th>الدور</th><th>أبرز عناصر القائمة التي يراها</th></tr></thead>
+  <tbody>
+    <tr><td><span class="pill emp">الموظف</span></td><td>🏠 الرئيسية · 📋 تقييماتي · ⚖️ اعتراضاتي · 👤 حسابي · (📤 رفع تقييم — لموظفي Creative Gene فقط)</td></tr>
+    <tr><td><span class="pill sup">المشرف</span></td><td>🏠 الرئيسية · قسم/أقسام فريقه (التقييمات، الأخطاء المتكررة، تقرير الإجراءات، التقارير) · 👥 إدارة الموظفين (فريقه) · 👤 حسابي</td></tr>
+    <tr><td><span class="pill qo">موظف الجودة</span></td><td>كل عناصر القسمين (طلبات التقييم، التقييمات، الاعتراضات، التقارير…) · 📊 تقرير الجودة · ⚙️ الأقسام والنماذج · 👥 إدارة الموظفين · 🛡️ إدارة المستخدمين · 📜 سجل العمليات</td></tr>
+    <tr><td><span class="pill adm">مدير النظام</span></td><td>كل ما سبق · 🗑 المستخدمون المحذوفون · صلاحيات الحذف النهائي والإعدادات</td></tr>
+  </tbody>
+</table>
+<div class="callout note"><div class="h">👨‍💼 ملاحظة للمشرف</div>
+<p>يرى المشرف في قائمته <b>القسم الذي ينتمي إليه موظفوه فقط</b> (محزم أو Creative Gene أو كليهما). كما أن عنصرَي «📥 طلبات التقييم» و«⚖️ اعتراضات Creative Gene» مخصّصان للجودة والمدير، فلا يظهران للمشرف.</p></div>
+
+<h2>4) تسجيل الخروج</h2>
+<p>من أسفل القائمة الجانبية اضغط <span class="btn r">🚪 تسجيل الخروج</span> لإنهاء جلستك بأمان.</p>
+
+<h2>5) ماذا لو لم تكن لديك صلاحية؟</h2>
+<p>إذا حاولت فتح صفحة لا تملك صلاحيتها، يعرض النظام رسالة واضحة مثل <b>«غير مصرح»</b> أو <b>«🚫 غير مصرح لك بالوصول لهذه الصفحة»</b> دون تنفيذ العملية. هذا سلوك طبيعي — تظهر لك فقط الصفحات المناسبة لدورك.</p>
+<div class="callout warn"><div class="h">⏱️ انتهاء الجلسة</div>
+<p>لأسباب أمنية قد تنتهي الجلسة بعد فترة، فتظهر رسالة «انتهت جلستك، يرجى تسجيل الدخول مجدداً» ويعيدك النظام لصفحة الدخول. سجّل الدخول من جديد وتابع عملك.</p></div>
+</section>
+
+<!-- ============ الفصل الثاني: الموظف ============ -->
+<section>
+<h1 class="ch" id="ch2">الفصل الثاني: دليل الموظف</h1>
+<p class="ch-tag">كل ما يحتاجه الموظف لاستخدام النظام</p>
+
+<div class="roleband"><div class="ico">👤</div><div><div class="tt">دليل الموظف</div><div class="ds">مشاهدة التقييمات · الاعتراض · رفع التقييم الأسبوعي (لموظفي Creative Gene)</div></div></div>
+
+<h2>الصفحة الرئيسية للموظف</h2>
+<p>تعرض لوحة تحكم الموظف بطاقات بأرقامه الخاصة: <b>إجمالي تقييماته</b>، <b>متوسط جودته %</b>، <b>تقييمات اليوم</b>، و<b>تقييمات الشهر</b>، إضافة إلى <b>آخر النشاطات</b>. (قوائم «أفضل الموظفين» و«يحتاجون متابعة» وأزرار الإجراءات السريعة لا تظهر للموظف.)</p>
+
+<h2 id="ch2-eval">تقييماتي ومراجعة التقييم</h2>
+<p>افتح <span class="path">📋 تقييماتي</span> من القائمة لعرض جميع تقييماتك في جدول (رقم التقييم، الموظف، القسم، التاريخ، المقيِّم، الدرجة، التقدير). اضغط أي صفّ لفتح تفاصيل التقييم.</p>
+
+<div class="stepbox">
+<h3>ماذا تفعل عند وصول تقييم جديد؟</h3>
+<ol>
+  <li>افتح <span class="path">تقييماتي</span> وادخل على التقييم الأحدث.</li>
+  <li>اقرأ <b>الدرجة</b> و<b>التقدير</b> (ناجح / راسب)، و<b>الملاحظة المرصودة</b>، و<b>ملاحظات المُقيّم</b>.</li>
+  <li>راجع <b>تفاصيل البنود/المعايير</b> لمعرفة أين وقع الخطأ (إن وُجد).</li>
+  <li>إذا كنت غير موافق، يمكنك <b>تقديم اعتراض</b> (انظر القسم التالي) — وإلا يُعدّ التقييم مقبولاً.</li>
+</ol>
+</div>
+
+<p>يظهر التقييم بأحد شكلين حسب قسمك:</p>
+<h3>أ) تقييم محزم (بنود)</h3>
+<p>يعرض: بيانات الموظف والمقيِّم والتاريخ، و<b>الدرجة الكلية</b> مع حالة <span class="badge b-ok">✓ ناجح</span> أو <span class="badge b-dn">✗ راسب</span>، ثم <b>الأقسام والبنود</b> حيث يظهر لكل بند: <span class="badge b-ok">✅ لا يوجد خطأ</span> أو <span class="badge b-dn">❌ يوجد خطأ</span> أو <span class="badge b-in">⚪ لا ينطبق</span>. كما يعرض «🔍 الملاحظة المرصودة» و«⚖️ الإجراء المتخذ (من قِبَل الجودة)» و«👨‍💼 إجراء المشرف».</p>
+<h3>ب) تقييم Creative Gene (ملف PDF)</h3>
+<p>يعرض: <b>الدرجة الكلية</b> من 100 مع حالة النجاح/الرسوب، و<b>المعايير التفصيلية</b> (درجة كل معيار من وزنه)، و<b>📝 ملاحظة الجودة</b>، وزر <span class="btn">📄 فتح ملف PDF</span> لعرض ملفك، إضافة إلى <b>💡 الإجراء المرصود من الجودة</b> و<b>⚖️ الإجراء المتخذ من المشرف</b>.</p>
+<div class="shot"><div class="ic">🖼️</div><div class="cap">لقطة شاشة: صفحة تفاصيل التقييم كما يراها الموظف</div></div>
+<p class="figcap">شكل 2-1: تفاصيل التقييم</p>
+
+<h2 id="ch2-obj">الاعتراض على التقييم</h2>
+<p>إذا رأيت أن التقييم غير دقيق، يمكنك الاعتراض. تختلف الطريقة قليلاً بين القسمين:</p>
+
+<h3>اعتراض Creative Gene (خلال نافذة 24 ساعة)</h3>
+<div class="callout warn"><div class="h">⏳ مهلة زمنية مهمة</div>
+<p>لتقييمات Creative Gene، يجب تقديم الاعتراض <b>خلال 24 ساعة</b> من لحظة اعتماد التقييم. تظهر حالة التقييم <span class="badge b-wn">⏳ نافذة الاعتراض مفتوحة (24س)</span> ويظهر عدّاد للوقت المتبقّي. بعد انتهاء المهلة يُغلق التقييم تلقائياً ولا يُقبل الاعتراض.</p></div>
+<div class="stepbox">
+<ol>
+  <li>افتح تقييم Creative Gene، واضغط <span class="btn y">✋ تقديم اعتراض</span>.</li>
+  <li>اكتب <b>سبب الاعتراض</b> بوضوح داخل المهلة المتاحة.</li>
+  <li>اضغط <span class="btn">⚖️ إرسال الاعتراض</span>. يُسمح <b>باعتراض واحد فقط</b> لكل تقييم.</li>
+  <li>تتغيّر الحالة إلى <span class="badge b-dn">✋ اعتراض قائم</span>، ثم <span class="badge b-in">⚖️ روجِع الاعتراض</span> بعد ردّ الجودة.</li>
+</ol>
+</div>
+
+<h3>اعتراض محزم (بنود)</h3>
+<div class="stepbox">
+<ol>
+  <li>افتح التقييم واضغط <span class="btn y">⚖️ تقديم اعتراض</span>.</li>
+  <li>اكتب <b>سبب الاعتراض</b>، ويمكنك <b>إرفاق ملف</b> (حتى 5 ميجابايت) إن رغبت.</li>
+  <li>اضغط <span class="btn">📤 تقديم الاعتراض</span>.</li>
+  <li>تابع حالة اعتراضك من <span class="path">⚖️ اعتراضاتي</span>: <span class="badge b-wn">قيد الانتظار</span> → <span class="badge b-in">قيد المراجعة</span> → <span class="badge b-ok">مقبول</span> أو <span class="badge b-dn">مرفوض</span>.</li>
+</ol>
+</div>
+<div class="callout note"><div class="h">ℹ️ بعد الاعتراض</div>
+<p>تراجع إدارة الجودة اعتراضك وتردّ عليه. قد يكون الرد: <b>قبول</b> (وقد تُعدّل الدرجة)، أو <b>قبول جزئي</b>، أو <b>رفض</b> مع توضيح السبب. ستصلك النتيجة ويمكنك رؤيتها في تفاصيل الاعتراض.</p></div>
+
+<h2 id="ch2-upload">رفع تقييم أسبوعي (لموظفي Creative Gene)</h2>
+<p>موظفو قسم Creative Gene يرفعون تقييمهم الأسبوعي بأنفسهم ليصل إلى الجودة لتقييمه:</p>
+<div class="stepbox">
+<ol>
+  <li>من القائمة اختر <span class="path">📤 رفع تقييم</span>.</li>
+  <li>حدّد <b>من تاريخ</b> و<b>إلى تاريخ</b> (يجب ألّا تتجاوز الفترة <b>7 أيام</b>).</li>
+  <li>ارفع <b>ملف PDF</b> (الحد الأقصى <b>20 ميجابايت</b>)، وأضف <b>ملاحظات</b> للجودة إن رغبت.</li>
+  <li>اضغط <span class="btn g">📤 إرسال الطلب</span> — تظهر رسالة «تم إرسال الطلب إلى الجودة بنجاح».</li>
+  <li>تابع طلباتك من قسم <b>📋 طلباتي</b> أسفل الصفحة.</li>
+</ol>
+</div>
+<div class="shot"><div class="ic">🖼️</div><div class="cap">لقطة شاشة: صفحة رفع التقييم الأسبوعي</div></div>
+<p class="figcap">شكل 2-2: رفع تقييم أسبوعي</p>
+
+<h2>الحالات التي تظهر للموظف</h2>
+<table class="states">
+  <thead><tr><th>الحالة</th><th>معناها</th><th>ماذا تفعل؟</th></tr></thead>
+  <tbody>
+    <tr><td><span class="badge b-wn">⏳ نافذة الاعتراض مفتوحة</span></td><td>اعتُمد تقييمك، ومهلة الاعتراض (24س) مفتوحة</td><td>راجع التقييم، واعترض خلال المهلة إن لزم</td></tr>
+    <tr><td><span class="badge b-dn">✋ اعتراض قائم</span></td><td>قدّمت اعتراضاً وهو بانتظار مراجعة الجودة</td><td>انتظر رد الجودة</td></tr>
+    <tr><td><span class="badge b-in">⚖️ روجِع الاعتراض</span></td><td>ردّت الجودة على اعتراضك</td><td>اطّلع على القرار والرد</td></tr>
+    <tr><td><span class="badge b-ok">✅ مُغلق</span></td><td>انتهت دورة هذا التقييم</td><td>لا إجراء — محفوظ في سجلّك</td></tr>
+    <tr><td><span class="badge b-wn">قيد الانتظار</span> / <span class="badge b-in">قيد المراجعة</span></td><td>(اعتراض محزم) اعتراضك قيد المعالجة</td><td>تابع من «اعتراضاتي»</td></tr>
+    <tr><td><span class="badge b-ok">مقبول</span> / <span class="badge b-dn">مرفوض</span></td><td>(اعتراض محزم) صدر قرار الجودة</td><td>اطّلع على النتيجة</td></tr>
+  </tbody>
+</table>
+</section>
+
+<!-- ============ الفصل الثالث: المشرف ============ -->
+<section>
+<h1 class="ch" id="ch3">الفصل الثالث: دليل المشرف</h1>
+<p class="ch-tag">متابعة الفريق واتخاذ الإجراءات</p>
+
+<div class="roleband"><div class="ico">👨‍💼</div><div><div class="tt">دليل المشرف</div><div class="ds">متابعة فريقه · مراجعة تقييماتهم · اتخاذ الإجراء المناسب</div></div></div>
+
+<h2>لوحة المشرف</h2>
+<p>تعرض لوحة المشرف إحصاءات القسم/الأقسام التي ينتمي إليها فريقه (محزم و/أو Creative Gene): إجمالي التقييمات، الناجح/الراسب، المتوسط، الاعتراضات، الموظفون النشطون، ورسوم بيانية، إضافة إلى قائمة <b>«📉 يحتاجون متابعة»</b> (الموظفون الراسبون — آخر تقييم ≤ 84%).</p>
+
+<h2>متابعة الموظفين</h2>
+<ul>
+  <li>افتح <span class="path">👥 إدارة الموظفين</span> لترى <b>فريقك فقط</b> ومتوسّط أداء كل موظف.</li>
+  <li>افتح <span class="path">📋 التقييمات</span> لعرض تقييمات القسم والدخول على أي تقييم.</li>
+  <li>في Creative Gene افتح <span class="path">موظفوني — Creative Gene</span> لعرض فريقك وتقييماتهم الأسبوعية.</li>
+  <li>راقب قائمة «يحتاجون متابعة» في لوحة التحكم لمعرفة من يحتاج تدخّلاً.</li>
+</ul>
+<div class="callout note"><div class="h">🔎 نطاق رؤية المشرف</div>
+<p>يرى المشرف موظفي <b>فريقه</b> (المرتبطين به). عناصر «طلبات التقييم» و«اعتراضات Creative Gene» مخصّصة للجودة والمدير ولا تظهر للمشرف.</p></div>
+
+<h2>اتخاذ الإجراء</h2>
+<p>بعد اطّلاع المشرف على تقييم أحد موظفيه، يمكنه تسجيل الإجراء المناسب. تختلف الطريقة قليلاً بين القسمين:</p>
+
+<h3>في Creative Gene — مسار مستقل</h3>
+<div class="stepbox">
+<ol>
+  <li>افتح تفاصيل تقييم الموظف، واضغط <span class="btn">⚖️ اتخاذ إجراء</span>.</li>
+  <li>اختر <b>نوع الإجراء</b>: <span class="badge b-wn">⚠️ تنبيه</span> · <span class="badge b-in">📚 تدريب</span> · <span class="badge b-ok">👏 إشادة</span> · <span class="badge b-nu">📌 أخرى</span>، واكتب <b>تفاصيل الإجراء</b>.</li>
+  <li>احفظ. يمكنك اتخاذ الإجراء <b>في أي وقت</b> ودون التأثير على حالة التقييم أو مهلة الاعتراض.</li>
+</ol>
+</div>
+<div class="callout tip"><div class="h">💡 توصية الجودة غير مُلزمة</div>
+<p>قد ترى في التقييم <b>«💡 الإجراء المرصود من الجودة»</b> — هذه <b>توصية</b> استرشادية من الجودة وليست إجراءً مُلزماً. قرار الإجراء الفعلي يبقى لك كمشرف.</p></div>
+
+<h3>في محزم (بنود)</h3>
+<p>افتح التقييم واضغط <span class="btn">⚖️ تسجيل إجراء المشرف</span> (أو «تعديل إجراء المشرف»)، ثم اختر الإجراء من: <b>تنبيه شفهي، تنبيه كتابي، إعادة تدريب، جلسة تطوير وتحسين أداء، متابعة خاصة، لا يوجد إجراء، أخرى</b>، واكتب ملاحظاتك واحفظ.</p>
+<div class="shot"><div class="ic">🖼️</div><div class="cap">لقطة شاشة: نافذة اتخاذ الإجراء من المشرف</div></div>
+<p class="figcap">شكل 3-1: اتخاذ الإجراء</p>
+
+<h2>الاعتراضات</h2>
+<p>دور المشرف في الاعتراضات <b>اطّلاعي</b>: يمكنه عرض اعتراضات فريقه لمتابعة الموقف، لكن <b>البتّ في الاعتراض (قبول/رفض) من صلاحية الجودة</b> وليس المشرف.</p>
+
+<h2>الأخطاء والمعايير الأدنى أداءً</h2>
+<p>يستفيد المشرف من:</p>
+<ul>
+  <li><span class="path">⚠️ الأخطاء المتكررة</span> (محزم) — أكثر الملاحظات تكراراً لدى الفريق.</li>
+  <li><span class="path">⚠️ المعايير الأدنى أداءً</span> (Creative Gene) — المعايير مرتّبة من الأضعف أداءً، لتركيز التدريب عليها.</li>
+  <li><span class="path">📝 تقرير الإجراءات</span> — متابعة الإجراءات المتّخذة.</li>
+</ul>
+
+<h2>الحالات التي تهمّ المشرف</h2>
+<table class="states">
+  <thead><tr><th>الحالة</th><th>معناها</th><th>المطلوب من المشرف</th></tr></thead>
+  <tbody>
+    <tr><td><span class="badge b-dn">راسب (آخر تقييم ≤ 84%)</span></td><td>موظف يحتاج متابعة</td><td>مراجعة أسباب الرسوب واتخاذ إجراء (تدريب/متابعة)</td></tr>
+    <tr><td><span class="badge b-wn">⏳ نافذة الاعتراض مفتوحة</span></td><td>تقييم حديث لموظفك</td><td>يمكنك اتخاذ الإجراء في أي وقت</td></tr>
+    <tr><td><span class="badge b-dn">✋ اعتراض قائم</span></td><td>موظفك قدّم اعتراضاً</td><td>للمتابعة فقط — البتّ للجودة</td></tr>
+  </tbody>
+</table>
+</section>
+
+<!-- ============ الفصل الرابع: الجودة ============ -->
+<section>
+<h1 class="ch" id="ch4">الفصل الرابع: دليل موظف الجودة</h1>
+<p class="ch-tag">إدارة التقييمات والاعتراضات والموظفين والنماذج والتقارير</p>
+
+<div class="roleband"><div class="ico">⚖️</div><div><div class="tt">دليل موظف الجودة</div><div class="ds">إنشاء التقييمات · مراجعة الاعتراضات · إدارة الموظفين والنماذج · التقارير</div></div></div>
+<p>موظف الجودة هو محور إدارة النظام. هذا الفصل الأكثر تفصيلاً. (معظم هذه الصلاحيات متاحة أيضاً لمدير النظام.)</p>
+
+<h2 id="ch4-create">1) إنشاء تقييم جديد</h2>
+<div class="stepbox">
+<ol>
+  <li>من <span class="path">➕ تقييم جديد</span> اختر القسم: <b>📊 محزم</b> أو <b>🎨 Creative Gene</b>.</li>
+  <li>اختر <b>الموظف *</b> و<b>تاريخ التقييم *</b>. يظهر نموذج التقييم تلقائياً بحسب <b>النموذج المربوط بالموظف</b> (يُحدَّد من إدارة الموظفين — لا تختاره الجودة يدوياً هنا).</li>
+</ol>
+</div>
+<div class="callout warn"><div class="h">⚠️ الموظف بلا نموذج</div>
+<p>إذا لم يكن للموظف نموذج مُعيَّن، تظهر رسالة «لم يتم تعيين نموذج للموظف — عيّنه من إدارة الموظفين» مع زر للانتقال. عيّن النموذج أولاً ثم أنشئ التقييم.</p></div>
+
+<h3>أ) تقييم محزم (بنود)</h3>
+<div class="stepbox">
+<ol>
+  <li>حدّد <b>🔍 الملاحظة المرصودة *</b> (أو «✅ لا يوجد ملاحظات» لتقييم إيجابي، أو «أخرى» مع وصف).</li>
+  <li>حدّد <b>📡 نوع التواصل *</b>: <b>💬 محادثة</b> (مع رابط المحادثة) أو <b>📞 اتصال</b> (مع رقم/كود المكالمة).</li>
+  <li>لكل بند اختر: <span class="badge b-ok">✅ لا يوجد خطأ</span> / <span class="badge b-dn">❌ يوجد خطأ</span> / <span class="badge b-in">⚪ لا ينطبق</span>. تُحتسب <b>الدرجة مباشرةً</b> وتظهر في «الدرجة الإجمالية».</li>
+  <li>حدّد <b>⚖️ الإجراء المتخذ *</b> (إلزامي): تنبيه شفهي / كتابي / إعادة تدريب / جلسة توجيهية / لا يوجد إجراء / أخرى.</li>
+  <li>اكتب <b>ملاحظات إضافية</b> إن رغبت، ثم اضغط <span class="btn g">💾 حفظ التقييم</span>.</li>
+</ol>
+</div>
+
+<h3>ب) تقييم Creative Gene (ملف PDF)</h3>
+<div class="stepbox">
+<ol>
+  <li>حدّد أسبوع التقييم. إن رفع الموظف ملفه تظهر حالة <b>🟡 تم رفع الملف — بانتظار التقييم</b>؛ اضغط <span class="btn">📄 فتح ملف PDF</span> للاطّلاع.</li>
+  <li>أدخل <b>درجة كل معيار</b> (محدودة بوزن المعيار)، واكتب <b>الملاحظات</b>.</li>
+  <li>حدّد <b>🎯 اتخاذ إجراء *</b> (نوع الإجراء + تفاصيله). يظهر <b>مجموع الدرجة</b> مباشرة.</li>
+  <li>اضغط <span class="btn g">💾 حفظ التقييم</span> — يُعتمد التقييم فوراً وتبدأ نافذة الاعتراض (24 ساعة).</li>
+</ol>
+</div>
+<div class="shot"><div class="ic">🖼️</div><div class="cap">لقطة شاشة: نموذج إنشاء التقييم (محزم / Creative Gene)</div></div>
+<p class="figcap">شكل 4-1: إنشاء تقييم جديد</p>
+
+<h3>تعديل التقييم</h3>
+<p>لتعديل تقييم قائم، اضغط <span class="btn">✏️ تعديل</span> من صفحة التقييم (أو من الإعدادات). يُعاد احتساب الدرجة بعد الحفظ. <span class="small">(التعديل متاح للجودة والمدير على أي تقييم، وللمشرف على التقييمات التي أنشأها بنفسه فقط.)</span></p>
+
+<h2 id="ch4-requests">2) طلبات التقييم (استقبال رفعات الموظفين)</h2>
+<p>صفحة <span class="path">📥 طلبات التقييم</span> هي <b>صندوق وارد الجودة</b> لتقييمات موظفي Creative Gene المرفوعة:</p>
+<div class="stepbox">
+<ol>
+  <li>الفلتر الافتراضي <b>🔵 بانتظار التقييم</b> يعرض الرفعات التي تنتظر تقييمك.</li>
+  <li>اضغط <span class="btn g">📝 فتح للتقييم</span> أمام الطلب — يفتح نموذج تقييم Creative Gene لذلك الموظف/الأسبوع (الخطوة «ب» أعلاه).</li>
+  <li>يمكنك البحث باسم الموظف، وفتح ملف PDF (📄)، وعرض السجل (🕓).</li>
+</ol>
+</div>
+<div class="callout note"><div class="h">🔗 من الرفع إلى الإغلاق</div>
+<p>الموظف يرفع الملف ← يظهر لك هنا بحالة «بانتظار التقييم» ← تفتحه وتقيّمه ← يُعتمد وتبدأ نافذة الاعتراض ← يُغلق بعد 24 ساعة أو بعد مراجعة الاعتراض.</p></div>
+
+<h2 id="ch4-obj">3) مراجعة الاعتراضات</h2>
+<h3>اعتراضات Creative Gene</h3>
+<p>من <span class="path">⚖️ اعتراضات Creative Gene</span> (أو زر «الرد على الاعتراض») تفتح نافذة المراجعة:</p>
+<div class="stepbox">
+<ol>
+  <li>اطّلع على <b>نص الاعتراض</b> وتفاصيل التقييم، ويمكنك فتح ملف PDF.</li>
+  <li>اختر <b>قرار الرد *</b>: <span class="btn g">✅ قبول الاعتراض</span> · <span class="btn y">➗ قبول جزئي</span> · <span class="btn r">❌ رفض الاعتراض</span>.</li>
+  <li>اكتب <b>نص رد الجودة *</b>. ويمكنك اختيارياً تفعيل <b>«تعديل الدرجات»</b> لإعادة إدخال درجات المعايير (يُحفظ التعديل مع بقاء النموذج الأصلي في السجل).</li>
+  <li>اضغط <span class="btn">📨 إرسال الرد</span>.</li>
+</ol>
+</div>
+<div class="callout note"><div class="h">نتيجة القرار</div>
+<p><b>قبول / قبول جزئي</b> ← يُغلق التقييم (مع تعديل الدرجة إن أدخلته). <b>رفض</b> ← يعود التقييم «معتمداً» ويستمر عدّاد الاعتراض الأصلي.</p></div>
+
+<h3>اعتراضات محزم</h3>
+<p>من صفحة الاعتراض: <span class="btn">🔍 تحت المراجعة</span> (عند الحاجة) ثم <span class="btn g">✓ قبول الاعتراض</span> أو <span class="btn r">✗ رفض الاعتراض</span> مع كتابة نص الرد، ويمكن إضافة <b>تعليقات</b> على الاعتراض.</p>
+
+<h2 id="ch4-emp">4) إدارة الموظفين</h2>
+<p>من <span class="path">👥 إدارة الموظفين</span>:</p>
+<div class="stepbox">
+<h3>إضافة / تعديل موظف</h3>
+<ol>
+  <li>اضغط <span class="btn">➕ إضافة موظف</span> (أو «تعديل» لموظف قائم).</li>
+  <li>عبّئ: <b>اسم الموظف بالكامل *</b>، <b>الرقم الوظيفي *</b>، <b>📧 البريد الإلكتروني *</b>، <b>📱 رقم الجوال</b>، <b>الوصف الوظيفي *</b>.</li>
+  <li>اختر <b>👨‍💼 المشرف</b> (اختياري)، ثم <b>القسم *</b> (يحدّد النموذج المتاح).</li>
+  <li>اختر <b>نموذج التقييم *</b> (يُقيَّم الموظف وفقه، ويُشتقّ منه المسمّى التقني)، ويمكنك ضبط <b>المسمى الوظيفي المرئي</b>.</li>
+  <li>احفظ. للحساب الجديد تُولَّد <b>كلمة مرور مؤقتة</b> وتظهر لك لتسليمها للموظف (تُرسل أيضاً بالبريد).</li>
+</ol>
+</div>
+<div class="callout warn"><div class="h">🔗 الربط: قسم ← نموذج ← مسمّى</div>
+<p>القسم يحدّد النماذج المتاحة، والنموذج المختار يُحدِّد طريقة تقييم الموظف ويُشتقّ منه مسمّاه التقني. عند تغيير قسم موظف قد يتغيّر نموذجه — والتقييمات السابقة تبقى محفوظة بنسختها الأصلية (snapshot).</p></div>
+<p><b>إعادة تعيين كلمة المرور (🔑)</b> و<b>الحذف النهائي (🗑)</b> متاحان <b>لمدير النظام فقط</b>. الحذف النهائي غير قابل للاستعادة ويتطلّب تأكيداً مزدوجاً.</p>
+
+<h2 id="ch4-tpl">5) الأقسام ونماذج التقييم</h2>
+<p>من <span class="path">⚙️ الأقسام والنماذج</span> تبويبان:</p>
+<h3>🗂️ الأقسام</h3>
+<ul>
+  <li><span class="btn">➕ إضافة قسم</span>: الاسم، الكود، الوصف.</li>
+  <li>ضبط <b>درجة النجاح</b> للقسم (✏️) — تُعيد احتساب حالة النجاح/الرسوب لتقييمات القسم.</li>
+  <li>تعطيل / تفعيل القسم.</li>
+</ul>
+<h3>📋 نماذج التقييم</h3>
+<ul>
+  <li><b>نموذج محزم (بنود):</b> محرّر شجري للأقسام والأقسام الفرعية والبنود مع الأوزان — <b>يجب أن يكون مجموع أوزان الأقسام = 100</b>.</li>
+  <li><b>نموذج Creative Gene (PDF):</b> معالج من 3 خطوات (البيانات الأساسية → المعايير والأوزان (مجموعها 100) → المعاينة والحفظ).</li>
+  <li>لكل نموذج: تعديل، نسخ، تعطيل/تفعيل، أرشفة، حذف.</li>
+</ul>
+<div class="callout note"><div class="h">🗃️ حفظ النماذج السابقة (Snapshot)</div>
+<p>تعديل النموذج يُطبَّق على <b>التقييمات الجديدة فقط</b>؛ أمّا التقييمات السابقة فتحتفظ بنسخة النموذج القديم كما كانت وقت إنشائها. لذا لا يؤثّر تحديث النموذج على سجلّ التقييمات القديمة.</p></div>
+
+<h2 id="ch4-rep">6) التقارير</h2>
+<table>
+  <thead><tr><th>التقرير</th><th>ماذا يعرض</th></tr></thead>
+  <tbody>
+    <tr><td>📈 التقارير (محزم / CG)</td><td>لوحة شاملة: ترتيب الموظفين، المتوسطات، الناجح/الراسب، رسوم بيانية، مع تصدير Excel/PDF</td></tr>
+    <tr><td>📅 التقرير الشهري</td><td>نتائج الموظفين خلال شهر (عدد، متوسط، أعلى، أدنى، التقدير)</td></tr>
+    <tr><td>❌ الأخطاء المتكررة</td><td>أكثر الملاحظات تكراراً خلال الشهر مع نسبة التغيّر</td></tr>
+    <tr><td>⚖️ تقرير الإجراءات</td><td>الملاحظات والإجراءات ونسبة التحسّن بعد الإجراء</td></tr>
+    <tr><td>⚠️ المعايير الأدنى أداءً (CG)</td><td>معايير Creative Gene مرتّبة من الأضعف أداءً</td></tr>
+    <tr><td>📊 تقرير الجودة</td><td>الأداء العام حسب القسم وأداء موظفي الجودة (خاص بالجودة والمدير)</td></tr>
+  </tbody>
+</table>
+
+<h2>7) إدارة المستخدمين · سجل العمليات · الإعدادات</h2>
+<ul>
+  <li><b>🛡️ إدارة المستخدمين:</b> حسابات المديرين والجودة والمشرفين (إضافة/تعديل/تعطيل؛ الحذف وإعادة كلمة المرور للمدير فقط). لا يمكن لموظف الجودة تعديل حسابات المديرين أو إنشائها.</li>
+  <li><b>📜 سجل العمليات:</b> سجل بجميع العمليات (التاريخ، المستخدم، الدور، العملية، التفاصيل) مع تصدير Excel.</li>
+  <li><b>⚙️ الإعدادات:</b> تخصيص نموذج محزم والنقاط والأوزان ونموذج Creative Gene، وتبويب «تعديل التقييمات» (حذف/تعديل التقييمات — الحذف للمدير فقط).</li>
+  <li><b>🗑 المستخدمون المحذوفون:</b> أرشيف للسجل فقط (لمدير النظام).</li>
+</ul>
+</section>
+
+<!-- ============ الفصل الخامس: دورة التقييم ============ -->
+<section>
+<h1 class="ch" id="ch5">الفصل الخامس: دورة التقييم كاملة</h1>
+<p class="ch-tag">رحلة التقييم من الإنشاء حتى الإغلاق</p>
+
+<h2>دورة Creative Gene (التقييم الأسبوعي بالملفات)</h2>
+<div class="flow">
+  <div class="node">الموظف يرفع ملف الأسبوع (PDF)</div><div class="arrow">↓</div>
+  <div class="node start">يظهر للجودة في «طلبات التقييم»<small>بانتظار التقييم</small></div><div class="arrow">↓</div>
+  <div class="node q">الجودة تفتح الملف وتقيّمه<small>يُعتمد فوراً + تبدأ نافذة 24 ساعة</small></div><div class="arrow">↓</div>
+  <div class="node branch">الموظف: يقبل ضمنياً أو يعترض خلال 24 ساعة</div><div class="arrow">↓</div>
+  <div class="node">إن اعترض: الجودة تردّ (قبول → إغلاق · جزئي → إغلاق · رفض → يعود معتمداً)</div><div class="arrow">↓</div>
+  <div class="node">المشرف يتّخذ الإجراء (مسار مستقل، في أي وقت)</div><div class="arrow">↓</div>
+  <div class="node end">يُغلق التقييم (بعد 24 ساعة أو بعد المراجعة) ويظهر في التقارير</div>
+</div>
+
+<h2>دورة محزم (التقييم بالبنود)</h2>
+<div class="flow">
+  <div class="node start">الجودة تُنشئ التقييم وتعتمده</div><div class="arrow">↓</div>
+  <div class="node">يظهر التقييم للموظف</div><div class="arrow">↓</div>
+  <div class="node branch">الموظف: يقبل أو يقدّم اعتراضاً (مع مرفقات)</div><div class="arrow">↓</div>
+  <div class="node">الجودة: تحت المراجعة → قبول / رفض + الرد</div><div class="arrow">↓</div>
+  <div class="node">المشرف يسجّل إجراءه على الملاحظة</div><div class="arrow">↓</div>
+  <div class="node end">يُوثَّق في التقارير ويُقاس التحسّن</div>
+</div>
+<div class="callout note"><div class="h">الفرق بين المسارين</div>
+<p><b>Creative Gene</b>: يبدأ برفع الموظف، وله نافذة اعتراض زمنية (24 ساعة) وإغلاق تلقائي. <b>محزم</b>: تبدأ الجودة بالإنشاء، والاعتراض يدعم المرفقات وحالات (قيد الانتظار/المراجعة/مقبول/مرفوض) دون مؤقّت زمني.</p></div>
+</section>
+
+<!-- ============ الفصل السادس: الصلاحيات ============ -->
+<section>
+<h1 class="ch" id="ch6">الفصل السادس: الصلاحيات</h1>
+<p class="ch-tag">من يستطيع فعل ماذا</p>
+<p>الرمز: <span class="badge b-ok">✓</span> متاح · <span class="badge b-nu">—</span> غير متاح · <span class="badge b-wn">حسب الشرط</span> مشروط (انظر الحاشية).</p>
+<table class="matrix">
+  <thead><tr><th>الخاصية</th><th>موظف</th><th>مشرف</th><th>موظف الجودة</th><th>مدير النظام</th></tr></thead>
+  <tbody>
+    <tr><td>مشاهدة تقييماته</td><td class="y">✓</td><td class="c">فريقه¹</td><td class="y">✓</td><td class="y">✓</td></tr>
+    <tr><td>إنشاء تقييم</td><td class="n">—</td><td class="n">—</td><td class="y">✓</td><td class="y">✓</td></tr>
+    <tr><td>تعديل تقييم</td><td class="n">—</td><td class="c">ما أنشأه²</td><td class="y">✓</td><td class="y">✓</td></tr>
+    <tr><td>حذف تقييم</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="y">✓</td></tr>
+    <tr><td>اعتماد التقييم (محزم)</td><td class="n">—</td><td class="n">—</td><td class="y">✓</td><td class="y">✓</td></tr>
+    <tr><td>تقديم اعتراض</td><td class="y">✓</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+    <tr><td>البتّ في الاعتراض</td><td class="n">—</td><td class="c">عرض فقط</td><td class="y">✓</td><td class="y">✓</td></tr>
+    <tr><td>اتخاذ إجراء (مشرف)</td><td class="n">—</td><td class="c">فريقه</td><td class="n">—</td><td class="y">✓</td></tr>
+    <tr><td>طلبات التقييم / فتح للتقييم</td><td class="n">—</td><td class="n">—</td><td class="y">✓</td><td class="y">✓</td></tr>
+    <tr><td>رفع تقييم أسبوعي</td><td class="c">CG فقط³</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+    <tr><td>الأخطاء / المعايير الأدنى أداءً</td><td class="n">—</td><td class="c">فريقه</td><td class="y">✓</td><td class="y">✓</td></tr>
+    <tr><td>التقارير</td><td class="n">—</td><td class="c">فريقه</td><td class="y">✓</td><td class="y">✓</td></tr>
+    <tr><td>تقرير الجودة</td><td class="n">—</td><td class="n">—</td><td class="y">✓</td><td class="y">✓</td></tr>
+    <tr><td>إدارة الموظفين (عرض)</td><td class="n">—</td><td class="c">فريقه</td><td class="y">✓</td><td class="y">✓</td></tr>
+    <tr><td>إضافة / تعديل موظف</td><td class="n">—</td><td class="n">—</td><td class="y">✓</td><td class="y">✓</td></tr>
+    <tr><td>إعادة كلمة المرور / حذف موظف</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="y">✓</td></tr>
+    <tr><td>الأقسام والنماذج</td><td class="n">—</td><td class="n">—</td><td class="y">✓</td><td class="y">✓</td></tr>
+    <tr><td>إدارة المستخدمين</td><td class="n">—</td><td class="n">—</td><td class="c">لا الأدمن⁴</td><td class="y">✓</td></tr>
+    <tr><td>سجل العمليات</td><td class="n">—</td><td class="n">—</td><td class="y">✓</td><td class="y">✓</td></tr>
+    <tr><td>الإعدادات</td><td class="n">—</td><td class="n">—</td><td class="y">✓</td><td class="y">✓</td></tr>
+    <tr><td>الحذف النهائي / المحذوفون</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="y">✓</td></tr>
+  </tbody>
+</table>
+<p class="small">¹ المشرف يرى تقييمات فريقه المرتبط به. &nbsp; ² المشرف يعدّل فقط التقييمات التي أنشأها بنفسه. &nbsp; ³ الرفع لموظفي قسم Creative Gene فقط. &nbsp; ⁴ موظف الجودة لا يعدّل حسابات المديرين ولا يُنشئها.</p>
+</section>
+
+<!-- ============ الفصل السابع: الدرجات ============ -->
+<section>
+<h1 class="ch" id="ch7">الفصل السابع: شرح الدرجات والنجاح والرسوب</h1>
+<p class="ch-tag">كيف تُحتسب الدرجة ومتى يكون الموظف ناجحاً</p>
+
+<h2>الدرجة النهائية</h2>
+<p>الدرجة من <b>100</b>. طريقة الاحتساب تعتمد على نوع النموذج:</p>
+<ul>
+  <li><b>محزم (بنود):</b> ينقسم النموذج إلى أقسام بأوزان مجموعها 100. بعض الأقسام <b>«حرجة»</b>: أي خطأ فيها يُصفّر درجة القسم كاملاً (مبدأ الكل أو لا شيء). الأقسام غير الحرجة تُحسب بالنسبة (عدد البنود الصحيحة من المطبَّقة).</li>
+  <li><b>Creative Gene (PDF):</b> لكل معيار وزن، والدرجة الممنوحة محدودة بوزنه، ومجموع الأوزان = 100.</li>
+</ul>
+
+<h2>متى يكون ناجحاً ومتى راسباً؟</h2>
+<p>يقارَن الأداء بـ<b>«درجة النجاح» الخاصة بالقسم</b>:</p>
+<div class="callout note"><div class="h">🎯 درجة النجاح</div>
+<p>تُضبط لكل قسم من «الأقسام والنماذج». وإن لم تُضبط، فالافتراضي: <b>Creative Gene = 90</b>، و<b>بقية الأقسام = 80</b>. تُثبَّت درجة النجاح <b>لحظة إنشاء التقييم</b>، فلا يتأثّر التقييم القديم بأي تغيير لاحق.</p></div>
+<table>
+  <thead><tr><th>الحالة</th><th>الشرط</th><th>اللون</th></tr></thead>
+  <tbody>
+    <tr><td><span class="badge b-ok">✅ ناجح</span></td><td>الدرجة ≥ درجة نجاح القسم</td><td>أخضر</td></tr>
+    <tr><td><span class="badge b-dn">❌ راسب</span></td><td>الدرجة أقل من درجة نجاح القسم</td><td>أحمر</td></tr>
+  </tbody>
+</table>
+<p>التقدير <b>ثنائي</b> (ناجح / راسب). أمّا اللون الأصفر فيظهر لدرجة <b>قسم</b> جزئية (بعض البنود صحيحة) وليس كتقدير نهائي.</p>
+
+<h2>أثر الأخطاء</h2>
+<ul>
+  <li>الخطأ في <b>قسم حرج</b> ← يُصفّر درجة القسم كاملة.</li>
+  <li>الخطأ في <b>قسم غير حرج</b> ← يقلّل نسبة القسم بمقدار البند.</li>
+  <li><b>⚪ لا ينطبق</b> ← يُستثنى البند من الحساب فلا يضرّ بالدرجة.</li>
+</ul>
+</section>
+
+<!-- ============ الفصل الثامن: FAQ ============ -->
+<section>
+<h1 class="ch" id="ch8">الفصل الثامن: الأسئلة الشائعة</h1>
+<p class="ch-tag">إجابات سريعة لأكثر الأسئلة تكراراً</p>
+
+<div class="faq"><div class="q">❓ لا يظهر لي التقييم — ماذا أفعل؟</div><div class="a">افتح «تقييماتي» وحدّث الصفحة. إن كان تقييماً جديداً قد يستغرق ثوانٍ ليظهر. إن استمرّ الأمر تواصل مع إدارة الجودة.</div></div>
+<div class="faq"><div class="q">❓ كيف أعترض على تقييم؟</div><div class="a">في Creative Gene: افتح التقييم واضغط «✋ تقديم اعتراض» خلال 24 ساعة. في محزم: اضغط «⚖️ تقديم اعتراض» واكتب السبب (ويمكن إرفاق ملف).</div></div>
+<div class="faq"><div class="q">❓ هل يمكن تعديل الاعتراض بعد إرساله؟</div><div class="a">لا. يُسمح باعتراض واحد لكل تقييم، لذا اكتب سببك بوضوح قبل الإرسال.</div></div>
+<div class="faq"><div class="q">❓ ماذا يحدث بعد الاعتراض وكيف أعرف النتيجة؟</div><div class="a">تراجعه الجودة وتردّ: قبول (وقد تُعدَّل الدرجة) / قبول جزئي / رفض. تظهر النتيجة والرد في تفاصيل الاعتراض، وتتغيّر الحالة تبعاً لذلك.</div></div>
+<div class="faq"><div class="q">❓ انتهت مهلة الاعتراض (24 ساعة) — هل أستطيع الاعتراض؟</div><div class="a">لا، يُغلق التقييم تلقائياً بعد المهلة. راجع تقييماتك أولاً بأول لئلّا تفوتك المهلة.</div></div>
+<div class="faq"><div class="q">❓ كيف يعرف المشرف أن هناك تقييماً يحتاج إجراء؟</div><div class="a">من لوحة التحكم (قائمة «يحتاجون متابعة») ومن تقييمات فريقه؛ ويمكنه اتخاذ الإجراء في أي وقت من تفاصيل التقييم.</div></div>
+<div class="faq"><div class="q">❓ الموظف مرتبط بنموذج خاطئ — ما الحل؟</div><div class="a">من «إدارة الموظفين» (الجودة/المدير) عدّل الموظف واختر القسم والنموذج الصحيحين. التقييمات السابقة تبقى بنموذجها الأصلي.</div></div>
+<div class="faq"><div class="q">❓ لماذا لا تظهر لي بعض الصفحات؟</div><div class="a">تظهر لكل مستخدم الصفحات المناسبة لدوره فقط. إن رأيت «غير مصرح» فهذا يعني أن الصفحة خارج صلاحيتك.</div></div>
+<div class="faq"><div class="q">❓ كيف تُحتسب الدرجة ومتى أُعدّ ناجحاً؟</div><div class="a">الدرجة من 100 بحسب النموذج، وتكون ناجحاً إذا بلغت «درجة نجاح القسم» (افتراضياً 90 لـ Creative Gene و80 لبقية الأقسام). التفاصيل في الفصل السابع.</div></div>
+<div class="faq"><div class="q">❓ نسيت كلمة المرور؟</div><div class="a">استخدم رابط «نسيت كلمة المرور؟» في صفحة الدخول، أو تواصل مع إدارة النظام لإعادة تعيينها.</div></div>
+</section>
+
+<!-- ============ الفصل التاسع: أفضل الممارسات ============ -->
+<section>
+<h1 class="ch" id="ch9">الفصل التاسع: أفضل الممارسات</h1>
+<p class="ch-tag">نصائح قصيرة لكل فئة</p>
+
+<div class="qcard emp"><h3>👤 للموظف</h3>
+<ul>
+  <li>راجع تقييماتك <b>أولاً بأول</b> حتى لا تفوتك مهلة الاعتراض (24 ساعة في Creative Gene).</li>
+  <li>عند الاعتراض، اكتب سبباً <b>واضحاً وموضوعياً</b> — فرصة واحدة لكل تقييم.</li>
+  <li>استفد من الملاحظات والأخطاء المتكررة <b>لتحسين أدائك</b> في الأسابيع القادمة.</li>
+  <li>في Creative Gene: ارفع ملفك في <b>وقته</b> وبفترة لا تتجاوز 7 أيام.</li>
+</ul></div>
+
+<div class="qcard sup"><h3>👨‍💼 للمشرف</h3>
+<ul>
+  <li>تابع قائمة <b>«يحتاجون متابعة»</b> بانتظام وتعامل مع حالات الرسوب مبكراً.</li>
+  <li>اختر الإجراء <b>المناسب للحالة</b> (تدريب/متابعة/إشادة) ووثّق تفاصيله.</li>
+  <li>استعن بتقرير <b>المعايير الأدنى أداءً</b> لتوجيه التدريب.</li>
+  <li>تذكّر أن توصية الجودة <b>استرشادية</b> والقرار النهائي لك.</li>
+</ul></div>
+
+<div class="qcard qo"><h3>⚖️ لموظف الجودة</h3>
+<ul>
+  <li>تأكّد من <b>ربط كل موظف بالقسم والنموذج الصحيحين</b> قبل التقييم.</li>
+  <li>اكتب <b>ملاحظات دقيقة</b> وحدّد الإجراء المناسب — الإجراء إلزامي.</li>
+  <li>راجع «طلبات التقييم» بانتظام حتى لا تتراكم رفعات الموظفين.</li>
+  <li>عند مراجعة الاعتراض، ردّ <b>بوضوح ومبرَّر</b>، وعدّل الدرجة عند الحاجة فقط.</li>
+  <li>حدّث النماذج بوعي — التغيير يطبَّق على التقييمات الجديدة فقط.</li>
+</ul></div>
+</section>
+
+<!-- ============ الدليل السريع ============ -->
+<section>
+<h1 class="ch" id="quick">الدليل السريع</h1>
+<p class="ch-tag">ملخّص مرجعي — ارجع إليه دون قراءة الدليل كاملاً</p>
+
+<div class="qcard emp"><h3>👤 الموظف — خطوات يومية</h3>
+<ol>
+  <li>سجّل الدخول (بريد + كلمة مرور + كود التحقّق).</li>
+  <li>افتح <b>تقييماتي</b> وراجع الجديد.</li>
+  <li>غير موافق؟ <b>قدّم اعتراضاً</b> (24 ساعة في Creative Gene).</li>
+  <li>Creative Gene: ارفع تقييمك من <b>«📤 رفع تقييم»</b>.</li>
+  <li>تابع <b>اعتراضاتي</b> لمعرفة النتيجة.</li>
+</ol></div>
+
+<div class="qcard sup"><h3>👨‍💼 المشرف — المتابعة والإجراء</h3>
+<ol>
+  <li>راجع <b>«يحتاجون متابعة»</b> في لوحة التحكم.</li>
+  <li>افتح تقييمات فريقك من <b>التقييمات / موظفوني</b>.</li>
+  <li>اضغط <b>«⚖️ اتخاذ إجراء»</b> واختر النوع واكتب التفاصيل.</li>
+  <li>استعن بتقارير <b>المعايير الأدنى أداءً</b> والإجراءات.</li>
+</ol></div>
+
+<div class="qcard qo"><h3>⚖️ موظف الجودة — الإنشاء والمتابعة</h3>
+<ol>
+  <li><b>➕ تقييم جديد</b> → اختر القسم والموظف → عبّئ النموذج → احفظ.</li>
+  <li>Creative Gene: راجع <b>«📥 طلبات التقييم»</b> واضغط <b>«فتح للتقييم»</b>.</li>
+  <li>راجع الاعتراضات وردّ (قبول/جزئي/رفض).</li>
+  <li>أدر <b>الموظفين والنماذج</b>، وتابع <b>التقارير</b>.</li>
+</ol></div>
+
+<hr class="soft">
+<p class="small" style="text-align:center">دليل استخدام نظام الجودة للتقييم والتدريب — شركة محزم · إصدار 1.0 · جميع الأسماء والشاشات مطابقة للنظام.</p>
+</section>
+
+<!-- Paged.js -->
+<script>
+  window.PagedConfig = { auto:true, after:()=>{ window.__PAGED_DONE__ = true; } };
+</script>
+<script src="assets/paged.polyfill.min.js"></script>
+</body>
+</html>
