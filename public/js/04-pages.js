@@ -3582,8 +3582,9 @@ function cgUploadBehalf(empId, ws) { pickPdfAndUpload(empId, ws, () => loadCgWee
 // ★ PR #70 — صفحة cg-eval: المسار الزمني لتقييم CG + أزرار مقيّدة بالصلاحيات
 // ============================================================================
 function _cgStateBadge(ws) {
-  const m = { pending_supervisor:['🟡 بانتظار إجراء المشرف','badge-warning'], approved:['🟢 مُعتمد (نافذة اعتراض مفتوحة)','badge-success'],
-    objection_raised:['✋ اعتراض قائم','badge-danger'], objection_reviewed:['⚖️ روجِع الاعتراض','badge-info'], closed:['🔒 مُغلق','badge-secondary'], action_taken:['🟢 اتُّخذ إجراء','badge-success'] };
+  // ★ #71: workflow_state = approved (نافذة 24h) / objection_raised / objection_reviewed / closed — أُلغيت pending_supervisor
+  const m = { approved:['⏳ نافذة الاعتراض مفتوحة (24س)','badge-warning'],
+    objection_raised:['✋ اعتراض قائم','badge-danger'], objection_reviewed:['⚖️ روجِع الاعتراض','badge-info'], closed:['✅ مُغلق','badge-success'] };
   const x = m[ws] || [ws||'—','badge-info']; return `<span class="badge ${x[1]}">${x[0]}</span>`;
 }
 function _objDecisionLabel(s) { return { accepted:'قبول', partial:'قبول جزئي', rejected:'رفض', pending:'قيد المراجعة' }[s] || s || '-'; }
@@ -3625,7 +3626,8 @@ async function loadCgEvaluationTimeline(id) {
     <div style="flex:1;min-width:0"><div style="font-size:13px">${e.text}</div><div style="font-size:11px;color:var(--muted)">${Utils.escape(e.who)} · ${Utils.formatDate(e.at)}</div></div></div>`).join('');
   let btns = '';
   if (perms.can_object) btns += `<button class="btn btn-warning" id="cge-object">✋ تقديم اعتراض</button>`;
-  if (perms.can_commit_action) btns += `<button class="btn btn-primary" id="cge-action">⚖️ حفظ إجراء المشرف</button>`;
+  // ★ #71 (Q4): المشرف مستقل — الزر متاح للمشرف/الأدمن بلا قيد workflow_state (لا نعتمد perms.can_commit_action من الـRPC القديم)
+  if (currentUser.role === 'supervisor' || currentUser.role === 'admin') btns += `<button class="btn btn-primary" id="cge-action">⚖️ اتخاذ إجراء</button>`;
   if (perms.can_review_objection) btns += `<button class="btn btn-info" id="cge-review">⚖️ الردّ على الاعتراض</button>`;
   host.innerHTML = `${qoBanner}
     <div class="card"><div class="card-body">
