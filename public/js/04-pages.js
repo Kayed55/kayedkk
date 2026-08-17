@@ -728,8 +728,7 @@ const sections = [
 {icon:'📈', label:'التقارير', nav:'reports', params:{reportTab:'mahzam'}},
 {icon:'📅', label:'التقرير الشهري', nav:'monthly-report', params:{dept:mId}} ]},
 { key:'cg', label:'Creative Gene', icon:'🎨', color:'#7b1fa2', dept:cId, items:[
-{icon:'📥', label:'طلبات التقييم', nav:'cg-requests', params:{}, roles:['admin','quality_officer']},
-{icon:'✅', label:'بانتظار الاعتماد', nav:'cg-pending-approval', params:{}, roles:['admin','supervisor']},
+// ★ #71: أُخفيت cg-requests/cg-pending-approval من التنقّل (لا بوّابة مشرف بعد الآن؛ صفحات فارغة بعد ترحيل M66). الصفحات نفسها باقية لروابط عميقة.
 {icon:'📋', label:'التقييمات', nav:'evaluations', params:{dept:cId}},
 {icon:'⚖️', label:'الاعتراضات', nav:'cg-objections', params:{}, roles:['admin','quality_officer']},
 {icon:'⚠️', label:'المعايير الأدنى أداءً', nav:'cg-frequent-errors', params:{}},
@@ -1011,13 +1010,8 @@ ${currentUser.role === 'admin' ? cgNoSupervisorCardHTML() : ''}
 
 // زر سريع لأهم شاشة حسب الدور
 function dashQuickAction() {
-const role = currentUser.role;
-let target, label, icon, color;
-if (role === 'quality_officer') { target = 'cg-requests'; label = 'الطلبات المفتوحة'; icon = '📥'; color = '#7b1fa2'; }
-else if (role === 'supervisor') { target = 'cg-pending-approval'; label = 'بانتظار الاعتماد'; icon = '✅'; color = '#f59e0b'; }
-else if (role === 'employee') { return ''; }
-else { target = 'cg-requests'; label = 'طلبات التقييم'; icon = '📥'; color = '#06579F'; }
-return `<div style="margin-bottom:20px"><button class="btn" style="background:${color};color:#fff;padding:12px 22px;font-size:15px;box-shadow:0 4px 14px ${color}44" data-nav="${target}">${icon} ${label} ←</button></div>`;
+// ★ #71: أُزيلت الأزرار السريعة (كانت تقود لـcg-requests/cg-pending-approval المُخفاتين) — لا زر سريع حالياً.
+return '';
 }
 
 // ألوان القسمين
@@ -1058,7 +1052,6 @@ ${statCard('❌', s.fail, 'راسب', '#dc2626', `${failPct}% من الإجما�
 ${statCard('⭐', s.avg + '%', 'متوسط الدرجات', '#0ea5e9', '')}
 ${statCard('⚖️', s.objections_open + ' / ' + s.objections_closed, 'اعتراضات (مفتوح/مغلق)', '#f59e0b', '')}
 ${statCard('👥', s.active_employees, 'الموظفون النشطون', '#8b5cf6', '')}
-${key==='cg' ? statCard('⏳', s.pending, 'قيد الانتظار', '#eab308', 'بانتظار التقييم/الاعتماد', 'cg-requests') : ''}
 </div>`;
 const notes = (s.notes && s.notes.length) ? s.notes.map((n,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;${i<s.notes.length-1?'border-bottom:1px dashed var(--border)':''}"><span style="font-size:13px">${i+1}. ${Utils.escape(n.note||'—')}</span><span class="badge" style="background:${cfg.soft};color:${cfg.color}">${n.count}×</span></div>`).join('') : '<div style="color:var(--muted);font-size:13px;padding:10px 0">لا توجد ملاحظات كافية حالياً.</div>';
 return `<div class="card" style="border-top:4px solid ${cfg.color};margin-bottom:20px">
