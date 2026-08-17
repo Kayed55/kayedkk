@@ -728,7 +728,8 @@ const sections = [
 {icon:'📈', label:'التقارير', nav:'reports', params:{reportTab:'mahzam'}},
 {icon:'📅', label:'التقرير الشهري', nav:'monthly-report', params:{dept:mId}} ]},
 { key:'cg', label:'Creative Gene', icon:'🎨', color:'#7b1fa2', dept:cId, items:[
-// ★ #71: أُخفيت cg-requests/cg-pending-approval من التنقّل (لا بوّابة مشرف بعد الآن؛ صفحات فارغة بعد ترحيل M66). الصفحات نفسها باقية لروابط عميقة.
+// ★ PR #72: أُعيدت «طلبات التقييم» (cg-requests) — queue الجودة لاستقبال رفعات الموظفين (pending_quality → «فتح للتقييم»). cg-pending-approval تبقى مخفية (بوّابة المشرف أُلغيت في #71).
+{icon:'📥', label:'طلبات التقييم', nav:'cg-requests', params:{}, roles:['admin','quality_officer']},
 {icon:'📋', label:'التقييمات', nav:'evaluations', params:{dept:cId}},
 {icon:'⚖️', label:'الاعتراضات', nav:'cg-objections', params:{}, roles:['admin','quality_officer']},
 {icon:'⚠️', label:'المعايير الأدنى أداءً', nav:'cg-frequent-errors', params:{}},
@@ -1010,8 +1011,11 @@ ${currentUser.role === 'admin' ? cgNoSupervisorCardHTML() : ''}
 
 // زر سريع لأهم شاشة حسب الدور
 function dashQuickAction() {
-// ★ #71: أُزيلت الأزرار السريعة (كانت تقود لـcg-requests/cg-pending-approval المُخفاتين) — لا زر سريع حالياً.
-return '';
+// ★ PR #72: أُعيد اختصار «طلبات التقييم» للجودة/الأدمن (queue رفعات الموظفين). المشرف/الموظف بلا اختصار (بوّابة الاعتماد أُلغيت في #71).
+const role = currentUser.role;
+if (role !== 'quality_officer' && role !== 'admin') return '';
+const label = role === 'quality_officer' ? 'الطلبات المفتوحة' : 'طلبات التقييم';
+return `<div style="margin-bottom:20px"><button class="btn" style="background:#7b1fa2;color:#fff;padding:12px 22px;font-size:15px;box-shadow:0 4px 14px #7b1fa244" data-nav="cg-requests">📥 ${label} ←</button></div>`;
 }
 
 // ألوان القسمين
@@ -3674,7 +3678,7 @@ return `<span class="badge" style="background:${w[2]}22;color:${w[2]};border:1px
 }
 function wfFilterOptions(sel) {
 return `<option value="all" ${!sel||sel==='all'?'selected':''}>كل الحالات</option>` +
-WF_STATES.map(w => `<option value="${w[0]}" ${sel===w[0]?'selected':''}>${w[3]} ${w[1]}</option>`).join('');
+WF_STATES.filter(w => w[0] !== 'pending_supervisor').map(w => `<option value="${w[0]}" ${sel===w[0]?'selected':''}>${w[3]} ${w[1]}</option>`).join('');  // ★ PR #72: أُزيل pending_supervisor من الفلتر (حالة ميتة بعد #71)
 }
 function periodRange(r) { return `${r.week_start||r.period_start||'—'} ← ${r.week_end||r.period_end||'—'}`; }
 
