@@ -3072,6 +3072,12 @@ const c = new Date(ev.created_at); c.setHours(c.getHours() + hours); return c;
 function objectionWindowOpen(ev) { try { return new Date() < objectionDeadline(ev); } catch(_) { return false; } }
 async function fetchObjection(evalId) { try { const { data } = await window.sb.from('creative_gene_objections').select('*').eq('evaluation_id', evalId).maybeSingle(); return data || null; } catch(_) { return null; } }
 async function fetchAction(evalId) { try { const { data } = await window.sb.from('creative_gene_actions').select('*').eq('evaluation_id', evalId).order('id', { ascending:false }).limit(1); return (data && data[0]) || null; } catch(_) { return null; } }
+// ★ PR #72 (عزل الأقسام): زر «رجوع» لقائمة التقييمات يحمل قسم الموظف → يعيد الفلتر ويمنع اختلاط محزم/كريتف جين عند الرجوع
+function _evalBackBtn(ev) {
+  const _emp = ev ? DB.getUser(ev.employee_id) : null;
+  const _dep = (_emp && _emp.department_id != null) ? _emp.department_id : null;
+  return `<button class="btn btn-secondary" data-nav="evaluations"${_dep!=null?` data-navparams='{"dept":${_dep}}'`:''}>← رجوع</button>`;
+}
 function raiseObjectionFlow(ev, onDone) {
 const dl = objectionDeadline(ev);
 const remMs = dl - new Date();
@@ -3242,7 +3248,7 @@ const dept = emp ? (window._departments||[]).find(d => d.id === emp.department_i
 const crit = (ev.template_snapshot && ev.template_snapshot.criteria) || [];
 const scores = ev.section_scores || ev.items || {};
 const critRows = crit.filter(c => scores[c.id] != null).map(c => `<tr><td>${Utils.escape(c.name)}</td><td><strong>${scores[c.id]} / ${c.weight}</strong></td></tr>`).join('');
-return `<div class="page-header"><div><div class="page-title">📄 تقييم أسبوعي (PDF)</div><div class="page-subtitle">${emp?Utils.escape(emp.full_name):''} — ${ev.week_start||''} ← ${ev.week_end||''}</div></div><button class="btn btn-secondary" data-nav="evaluations">← رجوع</button></div>
+return `<div class="page-header"><div><div class="page-title">📄 تقييم أسبوعي (PDF)</div><div class="page-subtitle">${emp?Utils.escape(emp.full_name):''} — ${ev.week_start||''} ← ${ev.week_end||''}</div></div>${_evalBackBtn(ev)}</div>
 <div class="card"><div class="card-body">
 <div style="padding:10px 12px;background:#f3e8ff;border-radius:8px;margin-bottom:14px;font-size:13px">المسمى: <strong>${jobTitleCell(emp)}</strong> &nbsp;|&nbsp; القسم: ${deptBadgeHTML(dept)} &nbsp;|&nbsp; النموذج المُستخدم: <strong>${usedTemplateLabel(ev)}</strong></div>
 <div style="display:flex;gap:32px;flex-wrap:wrap;align-items:center">
@@ -3252,7 +3258,7 @@ return `<div class="page-header"><div><div class="page-title">📄 تقييم أ
 <div><button class="btn btn-primary" onclick="openCgPdfByEval(${ev.id})">📄 فتح ملف PDF</button></div>
 </div></div></div>
 ${critRows ? `<div class="card"><div class="card-header"><div class="card-title">📊 المعايير التفصيلية</div></div><div class="card-body" style="padding:0"><table class="table"><thead><tr><th>المعيار</th><th>الدرجة / الحد الأقصى</th></tr></thead><tbody>${critRows}</tbody></table></div></div>` : ''}
-${ev.evaluation_notes ? `<div class="card"><div class="card-header"><div class="card-title">📝 ملاحظات المُقيّم</div></div><div class="card-body">${Utils.escape(ev.evaluation_notes)}</div></div>` : ''}
+<div class="card"><div class="card-header"><div class="card-title">📝 ملاحظة الجودة</div></div><div class="card-body">${ev.evaluation_notes?Utils.escape(ev.evaluation_notes):'<span style="color:var(--muted)">لا توجد ملاحظة.</span>'}</div></div>
 <div id="pdf-view-extra"></div>`;
 }
 async function loadPdfViewExtra(id) {
@@ -3260,16 +3266,26 @@ const host = document.getElementById('pdf-view-extra');
 if (!host) return;
 const ev = DB.getEvaluation(id);
 if (!ev || ev.template_type !== 'pdf_based_weekly') return;
-const obj = await fetchObjection(id), act = await fetchAction(id);
+const obj = await fetchObjection(id);
+// ★ PR #72: اجلب كل إجراءات creative_gene_actions مرة واحدة (نفس عقد anon)، ثم افصل:
+//   توصية الجودة = supervisor_id NULL · إجراء المشرف = supervisor_id NOT NULL وغير مُلغى (superseded_at NULL)
+let qoAct = null, supAct = null;
+try {
+  const { data } = await window.sb.from('creative_gene_actions').select('*').eq('evaluation_id', id).order('id', { ascending:false });
+  const rows = data || [];
+  qoAct  = rows.find(a => a.supervisor_id == null) || null;
+  supAct = rows.find(a => a.supervisor_id != null && a.superseded_at == null) || null;
+} catch(_) {}
 let html = '';
 if (obj) {
 const stB = objBadge(obj.status);
 html += `<div class="card" style="border-right:4px solid var(--warning)"><div class="card-header"><div class="card-title">⚖️ الاعتراض</div>${stB}</div><div class="card-body"><div>${Utils.escape(obj.objection_text)}</div>${obj.reviewer_response?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)"><strong>رد الجودة:</strong> ${Utils.escape(obj.reviewer_response)}</div>`:''}</div></div>`;
 }
-if (act) {
-const sup = DB.getUser(act.supervisor_id);
-html += `<div class="card" style="border-right:4px solid var(--danger)"><div class="card-header"><div class="card-title">🎯 الإجراء المتخذ</div></div><div class="card-body"><div style="display:flex;gap:20px;flex-wrap:wrap"><div><div style="font-size:12px;color:var(--muted)">النوع</div>${actionTypeLabel(act.action_type)}</div><div><div style="font-size:12px;color:var(--muted)">المشرف</div>${sup?Utils.escape(sup.full_name):'—'}</div><div><div style="font-size:12px;color:var(--muted)">التاريخ</div>${Utils.formatDate(act.taken_at)}</div></div><div style="margin-top:8px">${Utils.escape(act.action_details)}</div></div></div>`;
-}
+// 💡 الإجراء المرصود من الجودة (توصية غير مُلزمة) — يُعرض دائماً
+html += `<div class="card" style="border-right:4px solid var(--primary)"><div class="card-header"><div class="card-title">💡 الإجراء المرصود من الجودة</div></div><div class="card-body">${qoAct ? `<div style="display:flex;gap:20px;flex-wrap:wrap"><div><div style="font-size:12px;color:var(--muted)">النوع</div>${actionTypeLabel(qoAct.action_type)}</div><div><div style="font-size:12px;color:var(--muted)">التاريخ</div>${Utils.formatDate(qoAct.taken_at)}</div></div>${qoAct.action_details?`<div style="margin-top:8px">${Utils.escape(qoAct.action_details)}</div>`:''}` : '<span style="color:var(--muted)">لم تُسجّل الجودة إجراءً مقترحاً.</span>'}</div></div>`;
+// ⚖️ الإجراء المتخذ من المشرف — يُعرض دائماً (قد لا يكون اتُّخذ بعد)
+const sup = supAct ? DB.getUser(supAct.supervisor_id) : null;
+html += `<div class="card" style="border-right:4px solid var(--danger)"><div class="card-header"><div class="card-title">⚖️ الإجراء المتخذ من المشرف</div></div><div class="card-body">${supAct ? `<div style="display:flex;gap:20px;flex-wrap:wrap"><div><div style="font-size:12px;color:var(--muted)">النوع</div>${actionTypeLabel(supAct.action_type)}</div><div><div style="font-size:12px;color:var(--muted)">المشرف</div>${sup?Utils.escape(sup.full_name):'—'}</div><div><div style="font-size:12px;color:var(--muted)">التاريخ</div>${Utils.formatDate(supAct.taken_at)}</div></div>${supAct.action_details?`<div style="margin-top:8px">${Utils.escape(supAct.action_details)}</div>`:''}` : '<span style="color:var(--muted)">لم يتّخذ المشرف إجراءً بعد.</span>'}</div></div>`;
 host.innerHTML = html;
 }
 
@@ -3884,7 +3900,7 @@ const pct = (sc.percentage != null ? sc.percentage : ev.percentage);
 const tasks = ev.tasks || [];
 const tasksRows = tasks.map(t => `<tr><td>${Utils.escape(t.name||'—')}</td><td>${t.completion||0}</td><td>${t.timeliness||0}</td><td>${t.quality||0}</td><td><strong>${Math.round(((+t.completion||0)+(+t.timeliness||0)+(+t.quality||0))/3)}</strong></td></tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--muted)">لا مهام</td></tr>';
 const kpiRows = detail.map(k => `<tr><td>${Utils.escape(k.name)}</td><td>${k.value}</td><td>${k.normalized}%</td></tr>`).join('') || '<tr><td colspan="3" style="text-align:center;color:var(--muted)">—</td></tr>';
-return `<div class="page-header"><div><div class="page-title">📅 تقييم أسبوعي</div><div class="page-subtitle">${emp?Utils.escape(emp.full_name):''} — ${ev.week_start||''} ← ${ev.week_end||''}</div></div><button class="btn btn-secondary" data-nav="evaluations">← رجوع</button></div>
+return `<div class="page-header"><div><div class="page-title">📅 تقييم أسبوعي</div><div class="page-subtitle">${emp?Utils.escape(emp.full_name):''} — ${ev.week_start||''} ← ${ev.week_end||''}</div></div>${_evalBackBtn(ev)}</div>
 <div class="card"><div class="card-body" style="display:flex;gap:32px;flex-wrap:wrap;align-items:center">
 <div><div style="font-size:13px;color:var(--muted)">النتيجة الإجمالية</div><div style="font-size:34px;font-weight:800;color:var(--primary)">${pct}%</div>${Utils.gradeBadge(pct)}</div>
 <div><div style="font-size:13px;color:var(--muted)">متوسط المهام</div><div style="font-size:24px;font-weight:700">${sc.tasks_avg!=null?sc.tasks_avg:'—'}</div></div>
@@ -3967,7 +3983,7 @@ ${showObjButton ? `<button class="btn btn-warning" data-nav-newobj="${ev.id}">�
 ${existingObj ? `<button class="btn btn-info" data-nav-obj="${existingObj.id}">⚖️ عرض الاعتراض (${Utils.escape(existingObj.ref_number)})</button>` : ''}
 <button class="btn btn-success" id="single-xlsx">📊 Excel</button>
 <button class="btn btn-danger" id="single-pdf">📄 PDF</button>
-<button class="btn btn-secondary" data-nav="evaluations">← رجوع</button>
+${_evalBackBtn(ev)}
 </div>
 </div>
 <div class="card" style="margin-bottom:16px"><div class="card-body" style="padding:10px 14px;font-size:13px">المسمى: <strong>${jobTitleCell(emp)}</strong> &nbsp;|&nbsp; القسم: ${deptBadgeHTML(_vDept)} &nbsp;|&nbsp; النموذج المُستخدم: <strong>${usedTemplateLabel(ev)}</strong></div></div>
