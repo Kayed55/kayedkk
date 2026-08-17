@@ -99,7 +99,8 @@ table.states td:first-child{ font-weight:700; white-space:nowrap; background:#f8
 .shot.big{ padding:44px 16px;}
 .shot .ic{ font-size:22pt;}
 .shot .cap{ font-size:9.5pt; font-weight:600; margin-top:6px; color:#64748b;}
-.shot img{ max-width:100%; border-radius:8px; display:block; margin:0 auto;}
+.shot img{ max-width:100%; border-radius:6px; display:block; margin:0 auto; box-shadow:0 1px 5px rgba(0,0,0,.12);}
+.shot:has(img){ border:1px solid var(--line); background:#fff; padding:7px;}
 .figcap{ text-align:center; font-size:9.5pt; color:var(--muted); margin:2px 0 14px;}
 
 /* ---------- عناصر مساعدة ---------- */
@@ -237,7 +238,7 @@ hr.soft{ border:none; border-top:1px solid var(--line); margin:16px 0;}
   <li>الكود <b>صالح لمدة 5 دقائق</b>؛ إن انتهت مهلته تظهر رسالة «⏰ انتهت صلاحية الكود» وتحتاج لطلب الدخول من جديد.</li>
 </ol>
 </div>
-<div class="shot big"><div class="ic">🖼️</div><div class="cap">لقطة شاشة: صفحة تسجيل الدخول (حقول البريد وكلمة المرور وزر «دخول»)</div></div>
+<div class="shot"><img src="images/01-login.jpg" alt="صفحة تسجيل الدخول"></div>
 <p class="figcap">شكل 1-1: شاشة تسجيل الدخول والتحقق الثنائي</p>
 
 <div class="callout note"><div class="h">🔑 نسيت كلمة المرور؟</div>
@@ -253,7 +254,7 @@ hr.soft{ border:none; border-top:1px solid var(--line); margin:16px 0;}
   <li><b>بطاقات إحصائية</b>: إجمالي التقييمات، متوسط الجودة %، تقييمات اليوم، تقييمات الشهر. (ولغير الموظف تظهر أيضاً بطاقتا «اعتراضات مفتوحة / مغلقة».)</li>
   <li><b>آخر النشاطات</b>، وللمشرف والجودة إحصاءات كل قسم (محزم / Creative Gene) ورسوم بيانية وقوائم «أفضل الموظفين» و«يحتاجون متابعة».</li>
 </ul>
-<div class="shot"><div class="ic">🖼️</div><div class="cap">لقطة شاشة: لوحة التحكم بعد تسجيل الدخول</div></div>
+<div class="shot"><img src="images/02-dashboard.jpg" alt="لوحة التحكم"></div>
 <p class="figcap">شكل 1-2: لوحة التحكم</p>
 
 <h2>3) التنقّل بين الصفحات</h2>
@@ -307,7 +308,7 @@ hr.soft{ border:none; border-top:1px solid var(--line); margin:16px 0;}
 <p>يعرض: بيانات الموظف والمقيِّم والتاريخ، و<b>الدرجة الكلية</b> مع حالة <span class="badge b-ok">✓ ناجح</span> أو <span class="badge b-dn">✗ راسب</span>، ثم <b>الأقسام والبنود</b> حيث يظهر لكل بند: <span class="badge b-ok">✅ لا يوجد خطأ</span> أو <span class="badge b-dn">❌ يوجد خطأ</span> أو <span class="badge b-in">⚪ لا ينطبق</span>. كما يعرض «🔍 الملاحظة المرصودة» و«⚖️ الإجراء المتخذ (من قِبَل الجودة)» و«👨‍💼 إجراء المشرف».</p>
 <h3>ب) تقييم Creative Gene (ملف PDF)</h3>
 <p>يعرض: <b>الدرجة الكلية</b> من 100 مع حالة النجاح/الرسوب، و<b>المعايير التفصيلية</b> (درجة كل معيار من وزنه)، و<b>📝 ملاحظة الجودة</b>، وزر <span class="btn">📄 فتح ملف PDF</span> لعرض ملفك، إضافة إلى <b>💡 الإجراء المرصود من الجودة</b> و<b>⚖️ الإجراء المتخذ من المشرف</b>.</p>
-<div class="shot"><div class="ic">🖼️</div><div class="cap">لقطة شاشة: صفحة تفاصيل التقييم كما يراها الموظف</div></div>
+<div class="shot"><img src="images/03-eval-detail.jpg" alt="تفاصيل التقييم"></div>
 <p class="figcap">شكل 2-1: تفاصيل التقييم</p>
 
 <h2 id="ch2-obj">الاعتراض على التقييم</h2>
@@ -348,7 +349,7 @@ hr.soft{ border:none; border-top:1px solid var(--line); margin:16px 0;}
   <li>تابع طلباتك من قسم <b>📋 طلباتي</b> أسفل الصفحة.</li>
 </ol>
 </div>
-<div class="shot"><div class="ic">🖼️</div><div class="cap">لقطة شاشة: صفحة رفع التقييم الأسبوعي</div></div>
+<div class="shot"><img src="images/06-cg-upload.jpg" alt="رفع التقييم الأسبوعي"></div>
 <p class="figcap">شكل 2-2: رفع تقييم أسبوعي</p>
 
 <h2>الحالات التي تظهر للموظف</h2>
@@ -464,7 +465,7 @@ hr.soft{ border:none; border-top:1px solid var(--line); margin:16px 0;}
   <li>اضغط <span class="btn g">💾 حفظ التقييم</span> — يُعتمد التقييم فوراً وتبدأ نافذة الاعتراض (24 ساعة).</li>
 </ol>
 </div>
-<div class="shot"><div class="ic">🖼️</div><div class="cap">لقطة شاشة: نموذج إنشاء التقييم (محزم / Creative Gene)</div></div>
+<div class="shot"><img src="images/04-create-eval.jpg" alt="نموذج إنشاء تقييم جديد"></div>
 <p class="figcap">شكل 4-1: إنشاء تقييم جديد</p>
 
 <h3>تعديل التقييم</h3>
@@ -479,6 +480,8 @@ hr.soft{ border:none; border-top:1px solid var(--line); margin:16px 0;}
   <li>يمكنك البحث باسم الموظف، وفتح ملف PDF (📄)، وعرض السجل (🕓).</li>
 </ol>
 </div>
+<div class="shot"><img src="images/05-cg-requests.jpg" alt="طلبات التقييم — Creative Gene"></div>
+<p class="figcap">شكل 4-2: صفحة «طلبات التقييم» — صندوق وارد الجودة لرفعات الموظفين</p>
 <div class="callout note"><div class="h">🔗 من الرفع إلى الإغلاق</div>
 <p>الموظف يرفع الملف ← يظهر لك هنا بحالة «بانتظار التقييم» ← تفتحه وتقيّمه ← يُعتمد وتبدأ نافذة الاعتراض ← يُغلق بعد 24 ساعة أو بعد مراجعة الاعتراض.</p></div>
 
