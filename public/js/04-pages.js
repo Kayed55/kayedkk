@@ -1840,7 +1840,9 @@ return `<tr>
 <td>
 <button class="btn btn-sm btn-warning" ${lock?dis:`data-edit-user="${u.id}"`}>تعديل</button>
 ${currentUser.role === 'admin' ? `<button class="btn btn-sm btn-info" ${lock?dis:`data-reset-pw="${u.id}" title="إعادة تعيين كلمة المرور"`}>🔑</button>` : ''}
-${u.is_active ? `<button class="btn btn-sm btn-danger" ${lock?dis:`data-deact-user="${u.id}"`}>تعطيل</button>` : ''}
+${u.is_active
+  ? `<button class="btn btn-sm btn-danger" ${lock?dis:`data-deact-user="${u.id}"`}>تعطيل</button>`
+  : `<button class="btn btn-sm btn-success" ${lock?dis:`data-act-user="${u.id}"`}>تفعيل</button>`}
 ${canDel ? `<button class="btn btn-sm" data-delete-user="${u.id}" title="حذف نهائي — لا يمكن التراجع" style="background:#b91c1c;color:#fff">🗑 حذف</button>` : ''}
 </td>
 </tr>`; }).join('');
@@ -7852,6 +7854,26 @@ if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'ت
 if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(true); }catch(_){} }
 } else { DB.deactivateUser(id); }
 Toast.success('تم تعطيل المستخدم');
+if (typeof navigate === 'function') navigate('users');
+return true;
+});
+}));
+// ★ إصلاح: زر «تفعيل» للمستخدم المعطّل (كان مفقوداً) — نفس RPC admin_set_user_active بـp_active=true
+document.querySelectorAll('[data-act-user]').forEach(b => b.addEventListener('click', async e => {
+e.stopPropagation();
+const btn = b;
+const id = parseInt(b.dataset.actUser);
+const u = DB.getUser(id);
+if (!u) return;
+if (!confirm(`هل تريد تفعيل حساب: ${u.full_name}؟`)) return;
+await submitWithFeedback(btn, 'جاري التفعيل...', null, async () => {
+if (window.sb && window.sb.rpc) {
+const { data, error } = await window.sb.rpc('admin_set_user_active', { p_session_token: (window.getSessionToken?window.getSessionToken():null), p_user_id: id, p_active: true });
+const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
+if (!row || !row.ok) { const msg=(row&&row.message)||(error&&error.message)||'تعذّر التفعيل'; const h=handleSessionError(msg); if(!h) Toast.error(msg); return false; }
+if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(true); }catch(_){} }
+} else { const uu = DB.getUser(id); if (uu) { uu.is_active = true; } }
+Toast.success('تم تفعيل المستخدم');
 if (typeof navigate === 'function') navigate('users');
 return true;
 });
