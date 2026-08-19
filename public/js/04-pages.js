@@ -218,15 +218,22 @@ return 'forbidden';
 return null;
 }
 
-// معرّف قسم محزم (section_based) — من الأقسام المُحمّلة، مع احتياط 2
-function mahzamDeptId() {
-const list = window._departments || [];
-const d = list.find(x => x.template_type === 'section_based') || list.find(x => x.code === 'mahzam');
-if (d) return d.id;
-// ★ #67-C-0: محاولة تزامنية من كاش الأقسام (نفس نمط cgDeptId)
-try { const raw = localStorage.getItem(_DEPT_CACHE_KEY); if (raw) { const c = JSON.parse(raw); const arr = (c && c.d) || []; const cd = arr.find(x => x.template_type === 'section_based') || arr.find(x => x.code === 'mahzam'); if (cd) { window._departments = arr; return cd.id; } } } catch (_) {}
-return 2;
+// ★ PR#73 (عزوة): محدِّد مشترك لمعرّف القسم عبر code (موثوق) — أساس DRY لكل الأقسام (محزم/كريتف/عزوة).
+//   يبحث في الأقسام المُحمّلة ثم كاش الإقلاع؛ يُرجع null إن لم يوجد القسم.
+function deptIdByCode(code) {
+  const list = window._departments || [];
+  let d = list.find(x => x.code === code);
+  if (d) return d.id;
+  try {
+    const raw = localStorage.getItem(_DEPT_CACHE_KEY);
+    if (raw) { const c = JSON.parse(raw); const arr = (c && c.d) || []; d = arr.find(x => x.code === code); if (d) { window._departments = arr; return d.id; } }
+  } catch (_) {}
+  return null;
 }
+// معرّف قسم محزم — بالـcode أولاً (لا template_type، لأن عزوة أيضاً section_based فتخطفه) مع احتياط 2
+function mahzamDeptId() { const id = deptIdByCode('mahzam'); return id != null ? id : 2; }
+// ★ PR#73: معرّف قسم عزوة (section_based، مطابق لمحزم بالكامل) — بالـcode فقط؛ يُرجع null قبل إنشائه
+function azwaDeptId() { return deptIdByCode('azwa'); }
 // م23-ج: كشف قسم محزم (code موثوق) + جلب قوالبه المتعددة (list_mahzam_templates) مع كاش
 function isMahzamDept(deptId){ const d=(window._departments||[]).find(x=>x.id===parseInt(deptId)); return !!(d && d.code==='mahzam'); }
 // ★ #48-ui: أُزيلت loadMahzamTemplates + populateMahzamTemplates (dead بعد #46 — توحيد dropdown النماذج ef-template)
@@ -2590,10 +2597,9 @@ return `
 }
 
 function cgDeptId() {
-const d = (window._departments||[]).find(x => x.code === 'creative_gen');
-if (d) return d.id;
-// ★ #67-C-0: محاولة تزامنية من كاش الأقسام (يُكتب عند أول تحميل + الإقلاع) — يزيل الاعتماد على القيمة الصلبة، وأزيل console.warn المزعج
-try { const raw = localStorage.getItem(_DEPT_CACHE_KEY); if (raw) { const c = JSON.parse(raw); const cd = ((c && c.d) || []).find(x => x.code === 'creative_gen'); if (cd) { window._departments = c.d; return cd.id; } } } catch (_) {}
+// ★ PR#73: موحّد عبر deptIdByCode (DRY) — نفس السلوك السابق مع احتياط 3
+const id = deptIdByCode('creative_gen');
+if (id != null) return id;
 // آخر ملاذ (شبه مستحيل بعد كاش الإقلاع). لا نرمي: cgDeptId يُستدعى تزامنياً داخل الرسم (throw = كسر صفحة CG).
 console.error('[cgDeptId] الأقسام غير محمّلة — يُفترض ألا يحدث بعد #67-C-0 (كاش + تحميل عند الإقلاع)');
 return 3;
