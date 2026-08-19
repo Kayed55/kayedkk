@@ -726,10 +726,11 @@ const isCgEmp = (myDeptId != null) && (myDeptId === cId || isCreativeGeneDept(my
 const cgUp = isCgEmp ? it('cg-upload','📤','رفع تقييم') : '';
 return it('dashboard','🏠','الرئيسية') + cgUp + it('evaluations','📋','تقييماتي') + it('objections','⚖️','اعتراضاتي') + it('profile','👤','حسابي');
 }
+const aId = azwaDeptId();
 const sections = [
 { key:'mahzam', label:'محزم', icon:'📊', color:'#1976d2', dept:mId, items:[
 {icon:'📋', label:'التقييمات', nav:'evaluations', params:{dept:mId}},
-{icon:'⚖️', label:'الاعتراضات', nav:'objections', params:{}},
+{icon:'⚖️', label:'الاعتراضات', nav:'objections', params:{dept:mId}},
 {icon:'⚠️', label:'الأخطاء المتكررة', nav:'errors-report', params:{}},
 {icon:'📝', label:'تقرير الإجراءات', nav:'actions-report', params:{}},
 {icon:'📈', label:'التقارير', nav:'reports', params:{reportTab:'mahzam'}},
@@ -744,6 +745,14 @@ const sections = [
 {icon:'📈', label:'التقارير', nav:'reports', params:{reportTab:'cg'}},
 {icon:'📅', label:'التقرير الشهري', nav:'monthly-report', params:{dept:cId}} ]}
 ];
+// ★ PR#73: قسم عزوة (section_based، مطابق لمحزم) — يعيد استخدام نفس الصفحات المشتركة عبر params.dept؛ يظهر فقط بعد إنشاء القسم (aId != null)
+if (aId != null) sections.push({ key:'azwa', label:'عزوة', icon:'📋', color:'#0f766e', dept:aId, items:[
+{icon:'📋', label:'التقييمات', nav:'evaluations', params:{dept:aId}},
+{icon:'⚖️', label:'الاعتراضات', nav:'objections', params:{dept:aId}},
+{icon:'⚠️', label:'الأخطاء المتكررة', nav:'errors-report', params:{dept:aId}},
+{icon:'📝', label:'تقرير الإجراءات', nav:'actions-report', params:{dept:aId}},
+{icon:'📈', label:'التقارير', nav:'reports', params:{reportTab:'azwa'}},
+{icon:'📅', label:'التقرير الشهري', nav:'monthly-report', params:{dept:aId}} ]});
 const itemActive = (it) => {
 if (currentPage !== it.nav) return false;
 if (it.params.dept != null) return String(currentParams.dept) === String(it.params.dept);
@@ -1026,7 +1035,7 @@ return `<div style="margin-bottom:20px"><button class="btn" style="background:#7
 }
 
 // ألوان القسمين
-const DASH_SECTIONS = { mahzam: { name:'محزم', icon:'📊', color:'#1976d2', soft:'#e3f2fd' }, cg: { name:'Creative Gene', icon:'🎨', color:'#7b1fa2', soft:'#f3e5f5' } };
+const DASH_SECTIONS = { mahzam: { name:'محزم', icon:'📊', color:'#1976d2', soft:'#e3f2fd' }, cg: { name:'Creative Gene', icon:'🎨', color:'#7b1fa2', soft:'#f3e5f5' }, azwa: { name:'عزوة', icon:'📋', color:'#0f766e', soft:'#ccfbf1' } };
 function timeAgo(iso) {
 try { const d = new Date(iso), now = new Date(), sec = Math.floor((now - d)/1000);
 if (sec < 60) return 'الآن'; const min = Math.floor(sec/60); if (min < 60) return `قبل ${min} دقيقة`;
@@ -1109,7 +1118,7 @@ try { localStorage.setItem(_DASH_KEY, JSON.stringify({ j: j, at: _dashCacheAt })
 } catch (e) { host.innerHTML = `<div class="alert alert-danger">${Utils.escape(e.message||'خطأ')}</div>`; return; }
 }
 const sections = j.sections || {};
-const order = ['mahzam','cg'].filter(k => sections[k]);
+const order = ['mahzam','cg','azwa'].filter(k => sections[k]);
 let html = order.map(k => sectionBlockHTML(k, sections[k])).join('');
 if (!order.length) html += '<div class="alert alert-info">لا توجد إحصائيات متاحة لعرضها.</div>';
 // آخر النشاطات
@@ -1136,7 +1145,7 @@ return `<div class="page-header"><div><div class="page-title">📊 تقرير ا
 <div class="form-group" style="margin:0;min-width:160px"><label class="form-label">الفترة</label><select class="form-control" id="qr-period"><option value="month">هذا الشهر</option><option value="last">الشهر الماضي</option><option value="3m" selected>آخر 3 أشهر</option><option value="custom">مخصّص</option></select></div>
 <div class="form-group qr-custom" style="margin:0;display:none"><label class="form-label">من</label><input type="date" class="form-control" id="qr-from"></div>
 <div class="form-group qr-custom" style="margin:0;display:none"><label class="form-label">إلى</label><input type="date" class="form-control" id="qr-to"></div>
-<div class="form-group" style="margin:0;min-width:150px"><label class="form-label">القسم</label><select class="form-control" id="qr-dept"><option value="">الكل</option><option value="2">محزم</option><option value="3">Creative Gene</option></select></div>
+<div class="form-group" style="margin:0;min-width:150px"><label class="form-label">القسم</label><select class="form-control" id="qr-dept"><option value="">الكل</option>${(window._departments||[]).filter(d=>d.is_visible_in_ui && d.code).map(d=>`<option value="${d.id}">${Utils.escape(d.name)}</option>`).join('')}</select></div>
 <div class="form-group" style="margin:0;min-width:160px"><label class="form-label">موظف الجودة</label><select class="form-control" id="qr-qo"><option value="">الكل</option>${qoOpts}</select></div>
 <button class="btn btn-primary" id="qr-apply">تطبيق</button>
 </div></div></div>
@@ -4068,15 +4077,23 @@ ${sectionsHTML}`;
 // Reports
 // ============================================
 // موزّع تقارير بتبويبين منفصلين (محزم / Creative Gene) — فصل تام بـ department_id
+// ★ PR#73: معرّف قسم التقارير — DRY (عزوة تعيد استخدام مسار محزم). أولوية: تبويب الهاب (reportTab) ثم قسم الصفحة (dept) وإلا محزم.
+function _reportDeptId(){
+  const t = currentParams.reportTab;
+  if (t === 'azwa') return azwaDeptId();
+  if (t === 'cg') return cgDeptId();
+  if (t === 'mahzam') return mahzamDeptId();
+  return currentParams.dept ? parseInt(currentParams.dept) : mahzamDeptId();
+}
 function renderReports() {
 if (currentUser.role === 'employee') return '<div class="alert alert-danger">🚫 غير مصرح لك بعرض التقارير</div>';
-const mId = mahzamDeptId(), cId = cgDeptId();
+const mId = mahzamDeptId(), cId = cgDeptId(), aId = azwaDeptId();
 const isSup = currentUser.role === 'supervisor';
 const supEmps = isSup ? DB.getUsers({ role:'employee' }).filter(e => e.supervisor_id === currentUser.id || e.supervisor_name === currentUser.full_name) : [];
 const supDepts = new Set(supEmps.map(e => e.department_id));
 let tabs = [];
-if (!isSup) tabs = [{k:'mahzam',l:'📊 تقارير محزم'},{k:'cg',l:'🎨 تقارير Creative Gene'}];
-else { if (supDepts.has(mId)) tabs.push({k:'mahzam',l:'📊 تقارير محزم'}); if (supDepts.has(cId)) tabs.push({k:'cg',l:'🎨 تقارير Creative Gene'}); }
+if (!isSup) { tabs = [{k:'mahzam',l:'📊 تقارير محزم'},{k:'cg',l:'🎨 تقارير Creative Gene'}]; if (aId!=null) tabs.push({k:'azwa',l:'📊 تقارير عزوة'}); }
+else { if (supDepts.has(mId)) tabs.push({k:'mahzam',l:'📊 تقارير محزم'}); if (supDepts.has(cId)) tabs.push({k:'cg',l:'🎨 تقارير Creative Gene'}); if (aId!=null && supDepts.has(aId)) tabs.push({k:'azwa',l:'📊 تقارير عزوة'}); }
 if (!tabs.length) tabs = [{k:'mahzam',l:'📊 تقارير محزم'}];
 let tab = currentParams.reportTab;
 if (!tab || !tabs.some(t => t.k === tab)) {
@@ -4097,7 +4114,7 @@ const fromDate = currentParams.from || '';
 const toDate = currentParams.to || '';
 
 // حصر صارم بقسم محزم عبر department_id (لا الحقل النصّي القديم)
-let employees = DB.getUsers({ role:'employee' }).filter(e => e.department_id === mahzamDeptId());
+let employees = DB.getUsers({ role:'employee' }).filter(e => e.department_id === _reportDeptId());
 if (currentUser.role === 'supervisor') {
 employees = employees.filter(e => e.supervisor_name === currentUser.full_name || e.supervisor_id === currentUser.id);
 }
@@ -4154,7 +4171,7 @@ const yearOpts = Array.from(allYears).sort().reverse().map(y => `<option value="
 
 // Supervisor list (محزم فقط)
 const supSet = new Set();
-DB.getUsers({role:'employee'}).filter(u => u.department_id === mahzamDeptId()).forEach(u => { if (u.supervisor_name && u.supervisor_name !== '-') supSet.add(u.supervisor_name); });
+DB.getUsers({role:'employee'}).filter(u => u.department_id === _reportDeptId()).forEach(u => { if (u.supervisor_name && u.supervisor_name !== '-') supSet.add(u.supervisor_name); });
 const supOpts = Array.from(supSet).map(s => `<option value="${s}" ${s===filterSup?'selected':''}>${s}</option>`).join('');
 
 // Month options
@@ -4257,7 +4274,7 @@ return `
 
 function renderReportsCharts() {
 if (window._reportTab === 'cg') return; // تبويب CG له عرضه الخاص بلا رسوم محزم
-const employees = DB.getUsers({ role:'employee' }).filter(e => e.department_id === mahzamDeptId());
+const employees = DB.getUsers({ role:'employee' }).filter(e => e.department_id === _reportDeptId());
 const empData = employees.map(e => {
 const ue = DB.data.evaluations.filter(ev => ev.employee_id === e.id);
 return {
@@ -4299,7 +4316,7 @@ options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:
 // ============================================
 function exportReportsXLSX() {
 if (window._reportTab === 'cg') return exportCgReportsXLSX();
-const employees = DB.getUsers({ role:'employee' }).filter(e => e.department_id === mahzamDeptId());
+const employees = DB.getUsers({ role:'employee' }).filter(e => e.department_id === _reportDeptId());
 const allEvals = DB.data.evaluations;
 const data = employees.map(e => {
 const ue = allEvals.filter(ev => ev.employee_id === e.id);
@@ -4329,7 +4346,7 @@ Toast.success('تم تصدير ملف Excel');
 
 async function exportReportsPDF() {
 if (window._reportTab === 'cg') return exportCgReportsPDF();
-const employees = DB.getUsers({ role:'employee' }).filter(e => e.department_id === mahzamDeptId());
+const employees = DB.getUsers({ role:'employee' }).filter(e => e.department_id === _reportDeptId());
 const allEvals = DB.data.evaluations;
 const empData = employees.map(e => {
 const ue = allEvals.filter(ev => ev.employee_id === e.id);
@@ -4677,7 +4694,7 @@ await htmlToPDF(html, `التقرير_الشهري_${monthKey}.pdf`);
 // Actions Report - تقرير الإجراءات المتخذة
 // ============================================
 function getActionsReportData() {
-const employees = DB.getUsers({ role:'employee' }).filter(e => e.department_id === mahzamDeptId());
+const employees = DB.getUsers({ role:'employee' }).filter(e => e.department_id === _reportDeptId());
 const _empIds = new Set(employees.map(e => e.id));
 const evals = DB.data.evaluations.filter(x => _empIds.has(x.employee_id));
 
@@ -4981,7 +4998,7 @@ await htmlToPDF(html, `تقرير_الإجراءات_${new Date().toISOString().
 // ============================================
 function getErrorsReportData(monthKey, filters={}) {
 const [y, m] = monthKey.split('-').map(Number);
-const _mahzamIds = new Set(DB.getUsers({ role:'employee' }).filter(e => e.department_id === mahzamDeptId()).map(e => e.id));
+const _mahzamIds = new Set(DB.getUsers({ role:'employee' }).filter(e => e.department_id === _reportDeptId()).map(e => e.id));
 let evals = DB.data.evaluations.filter(ev => {
 const d = new Date(ev.evaluation_date);
 return d.getFullYear() === y && d.getMonth() === m - 1 && _mahzamIds.has(ev.employee_id);
@@ -5185,6 +5202,9 @@ objections = DB.getObjections({ supervisor_name: currentUser.full_name });
 } else {
 objections = DB.getObjections();
 }
+// ★ PR#73: عزل الاعتراضات حسب القسم (للأدمن/الجودة) إن مُرّر dept — join الموظف→department_id يمنع اختلاط محزم/عزوة
+const _objDept = currentParams.dept ? parseInt(currentParams.dept) : null;
+if (_objDept != null) objections = objections.filter(o => { const u = DB.getUser(o.employee_id); return u && u.department_id === _objDept; });
 
 const counts = {
 pending: objections.filter(o => o.status === 'pending').length,
