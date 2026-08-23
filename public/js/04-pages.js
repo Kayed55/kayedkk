@@ -731,8 +731,9 @@ const sections = [
 { key:'mahzam', label:'محزم', icon:'📊', color:'#1976d2', dept:mId, items:[
 {icon:'📋', label:'التقييمات', nav:'evaluations', params:{dept:mId}},
 {icon:'⚖️', label:'الاعتراضات', nav:'objections', params:{dept:mId}},
-{icon:'⚠️', label:'الأخطاء المتكررة', nav:'errors-report', params:{}},
-{icon:'📝', label:'تقرير الإجراءات', nav:'actions-report', params:{}},
+// ★ PR#73: dept=mId صريح (لا params:{} الغامض) — يضمن عزل القسم عبر _reportDeptId + إبراز صحيح ومطابقة عزوة
+{icon:'⚠️', label:'الأخطاء المتكررة', nav:'errors-report', params:{dept:mId}},
+{icon:'📝', label:'تقرير الإجراءات', nav:'actions-report', params:{dept:mId}},
 {icon:'📈', label:'التقارير', nav:'reports', params:{reportTab:'mahzam'}},
 {icon:'📅', label:'التقرير الشهري', nav:'monthly-report', params:{dept:mId}} ]},
 { key:'cg', label:'Creative Gene', icon:'🎨', color:'#7b1fa2', dept:cId, items:[
@@ -5033,7 +5034,9 @@ function renderErrorsReport() {
 const months = getMonthOptions();
 const now = new Date();
 const currentMonth = currentParams.month || `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-const filterDept = currentParams.dept || '';
+// ★ عزل القسم = currentParams.dept (رقمي) يُطبَّق داخل getErrorsReportData عبر _reportDeptId.
+//   فلتر القائمة أدناه اسم قسم نصّي منفصل (deptName) — لا يُخلط بالمعرّف الرقمي وإلّا انهار العزل.
+const filterDept = currentParams.deptName || '';
 const filterSup = currentParams.sup || '';
 
 const monthOpts = months.map(m => `<option value="${m}" ${m===currentMonth?'selected':''}>${arabicMonthName(m)}</option>`).join('');
@@ -5140,7 +5143,7 @@ return `
 function renderErrorsReportCharts() {
 const now = new Date();
 const monthKey = currentParams.month || `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-const data = getErrorsReportData(monthKey, { department: currentParams.dept || '', supervisor: currentParams.sup || '' });
+const data = getErrorsReportData(monthKey, { department: currentParams.deptName || '', supervisor: currentParams.sup || '' });
 const top = data.sorted.slice(0, 8);
 const c = document.getElementById('er-chart');
 if (c && top.length) charts.push(new Chart(c, {
@@ -5153,7 +5156,7 @@ options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{le
 function exportErrorsReportXLSX() {
 const now = new Date();
 const monthKey = currentParams.month || `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-const data = getErrorsReportData(monthKey, { department: currentParams.dept || '', supervisor: currentParams.sup || '' });
+const data = getErrorsReportData(monthKey, { department: currentParams.deptName || '', supervisor: currentParams.sup || '' });
 const rows = data.sorted.map(([obs, count], i) => ({
 'الترتيب': i+1,
 'الملاحظة المرصودة': obs,
@@ -5171,7 +5174,7 @@ Toast.success('تم تصدير التقرير');
 async function exportErrorsReportPDF() {
 const now = new Date();
 const monthKey = currentParams.month || `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-const data = getErrorsReportData(monthKey, { department: currentParams.dept || '', supervisor: currentParams.sup || '' });
+const data = getErrorsReportData(monthKey, { department: currentParams.deptName || '', supervisor: currentParams.sup || '' });
 const rows = data.sorted.map(([obs, count], i) => {
 const pct = data.total ? Math.round((count/data.total)*100*10)/10 : 0;
 return `<tr><td style="padding:6px;border:1px solid #cbd5e1;text-align:center">${i+1}</td><td style="padding:6px;border:1px solid #cbd5e1">${Utils.escape(obs)}</td><td style="padding:6px;border:1px solid #cbd5e1;text-align:center"><strong>${count}</strong></td><td style="padding:6px;border:1px solid #cbd5e1;text-align:center">${pct}%</td></tr>`;
@@ -7895,17 +7898,20 @@ loadDeletedUsersTable();
 if (page === 'errors-report') {
 const apply = () => {
 const month = document.getElementById('er-month')?.value;
-const dept = document.getElementById('er-dept')?.value;
+const deptName = document.getElementById('er-dept')?.value;
 const sup = document.getElementById('er-sup')?.value;
 const params = {};
+// ★ حفظ عزل القسم (dept رقمي) عبر أي تغيير في الفلاتر — كان يُفقد فيسقط على محزم (dept=2)
+if (currentParams.dept != null) params.dept = currentParams.dept;
 if (month) params.month = month;
-if (dept) params.dept = dept;
+if (deptName) params.deptName = deptName;
 if (sup) params.sup = sup;
 navigate('errors-report', params);
 };
 document.querySelectorAll('.er-filter').forEach(el => el.addEventListener('change', apply));
 const clr = document.getElementById('er-clear');
-if (clr) clr.addEventListener('click', () => navigate('errors-report', {}));
+// ★ «إعادة تعيين» تمسح فلاتر القائمة فقط وتُبقي عزل القسم (dept الرقمي)
+if (clr) clr.addEventListener('click', () => navigate('errors-report', currentParams.dept != null ? { dept: currentParams.dept } : {}));
 const xls = document.getElementById('er-export-xlsx');
 if (xls) xls.addEventListener('click', exportErrorsReportXLSX);
 const pdf = document.getElementById('er-export-pdf');
