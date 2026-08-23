@@ -4782,7 +4782,8 @@ x.avgChange = Math.round((x.totalChange/x.count)*10)/10;
 x.improvementRate = Math.round((x.improved/x.count)*100);
 });
 
-return { perEmployee, topObservations, actionsByObs, improvements, improvementByAction };
+// ★ Bug#112: أعِد evals المحصورة بالقسم (_reportDeptId) ليستخدمها العرض/الرسوم بدل DB.data.evaluations العام
+return { perEmployee, topObservations, actionsByObs, improvements, improvementByAction, evals };
 }
 
 function renderActionsReport() {
@@ -4827,8 +4828,9 @@ const impRows = Object.entries(data.improvementByAction).sort((a,b)=>b[1].improv
 </td>
 </tr>`).join('');
 
-const totalEvals = DB.data.evaluations.length;
-const totalWithAction = DB.data.evaluations.filter(e => e.action_taken).length;
+// ★ Bug#112: بطاقات الإحصاء تُحصر بقسم الصفحة (data.evals) — كانت تقرأ DB.data.evaluations العام فتُظهر أرقام محزم داخل عزوة
+const totalEvals = data.evals.length;
+const totalWithAction = data.evals.filter(e => e.action_taken).length;
 const totalObs = data.topObservations.reduce((s,[,n]) => s+n, 0);
 const improved = data.improvements.filter(im => im.change > 0).length;
 const overallImpRate = data.improvements.length ? Math.round((improved/data.improvements.length)*100) : 0;
@@ -4909,8 +4911,9 @@ data:{ labels: obsLabels, datasets:[{ label:'عدد الملاحظات', data: o
 options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true}} }
 }));
 
+// ★ Bug#112: رسم توزيع الإجراءات يُحصر بقسم الصفحة (data.evals) لا كل الأقسام
 const actsCount = {};
-DB.data.evaluations.forEach(e => {
+data.evals.forEach(e => {
 const a = e.action_taken === 'أخرى' ? (e.action_taken_other||'أخرى') : e.action_taken;
 if (a) actsCount[a] = (actsCount[a]||0)+1;
 });
@@ -5041,9 +5044,10 @@ const filterSup = currentParams.sup || '';
 
 const monthOpts = months.map(m => `<option value="${m}" ${m===currentMonth?'selected':''}>${arabicMonthName(m)}</option>`).join('');
 
-const deptSet = new Set();
-DB.getUsers({role:'employee'}).forEach(u => { if (u.department) deptSet.add(u.department); });
-const deptOpts = Array.from(deptSet).map(d => `<option value="${d}" ${d===filterDept?'selected':''}>${d}</option>`).join('');
+// ★ Bug#112: قائمة القسم تُبنى من departments (is_visible_in_ui) لا من أقسام الموظفين الموجودين —
+//   وإلّا لا يظهر قسم بلا موظفين (عزوة). يظهر تلقائياً أي قسم مستقبلي. (نفس نمط qr-dept في تقرير الجودة)
+const deptOpts = (window._departments||[]).filter(d => d.is_visible_in_ui && d.code)
+.map(d => `<option value="${Utils.escape(d.name)}" ${d.name===filterDept?'selected':''}>${Utils.escape(d.name)}</option>`).join('');
 
 const supSet = new Set();
 DB.getUsers({role:'employee'}).forEach(u => { if (u.supervisor_name && u.supervisor_name !== '-') supSet.add(u.supervisor_name); });
