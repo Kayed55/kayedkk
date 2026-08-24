@@ -1138,6 +1138,8 @@ order.forEach(k => buildSectionCharts(k, sections[k]));
 // ============================================
 function renderQualityReport() {
 if (!(currentUser.role==='admin'||currentUser.role==='quality_officer')) return '<div class="alert alert-danger">غير مصرح</div>';
+// ★ Bug#113: قائمة القسم (qr-dept) تُبنى من window._departments — لو لم تُحمَّل بعد تظهر «الكل» فقط. حمّلها ثم أعِد الرسم.
+if (!window._departments) loadDepartments(true).then(() => { if (currentPage === 'quality-report') navigate('quality-report', currentParams); });
 const qos = (DB.getUsers({role:'quality_officer'})||[]);
 const qoOpts = qos.map(q=>`<option value="${q.id}">${Utils.escape(q.full_name)}</option>`).join('');
 return `<div class="page-header"><div><div class="page-title">📊 تقرير الجودة</div><div class="page-subtitle">الأداء العام لموظفي الجودة ونتائج التقييمات حسب القسم</div></div>
@@ -5034,6 +5036,8 @@ return { evals, obsCounts, total, sorted, positiveCount };
 }
 
 function renderErrorsReport() {
+// ★ Bug#113: قائمة القسم (er-dept) تُبنى من window._departments — لو لم تُحمَّل بعد تظهر «الكل» فقط. حمّلها ثم أعِد الرسم.
+if (!window._departments) loadDepartments(true).then(() => { if (currentPage === 'errors-report') navigate('errors-report', currentParams); });
 const months = getMonthOptions();
 const now = new Date();
 const currentMonth = currentParams.month || `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
