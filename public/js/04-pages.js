@@ -3510,25 +3510,32 @@ if (!ev) { Toast.error('التقييم غير موجود'); return; }
 const emp = DB.getUser(ev.employee_id);
 const types = (ev.template_snapshot && ev.template_snapshot.allowed_action_types) || ['warning','training','praise','other'];
 const obj = await fetchObjection(evalId);
-const proposed = await fetchAction(evalId); // الإجراء الذي حدّده موظف الجودة
-const preType = proposed ? proposed.action_type : (types[0]||'');
-const preDetails = proposed ? (proposed.action_details||'') : '';
-const proposer = (proposed && proposed.created_by) ? DB.getUser(proposed.created_by) : null;
+// ★ Bug#115: اقتراح الجودة = صفّ creative_gene_actions بـsupervisor_id NULL (نفس تقسيم loadPdfViewExtra) —
+//   يُعرض كبطاقة مرجعية للقراءة فقط. حقول المشرف تبدأ فارغة دائماً (لا تعطيل، لا زر تعديل) وتُحفظ كإجراء مستقل عبر take_action.
+let qoAct = null;
+try { const { data } = await window.sb.from('creative_gene_actions').select('*').eq('evaluation_id', evalId).order('id', { ascending:false }); qoAct = (data||[]).find(a => a.supervisor_id == null) || null; } catch(_){}
+const qoBy = (qoAct && qoAct.created_by) ? DB.getUser(qoAct.created_by) : null;
 Modal.show('مراجعة واعتماد التقييم', `
 <div style="margin-bottom:10px"><strong>الموظف:</strong> ${emp?Utils.escape(emp.full_name):'-'} — <strong>الأسبوع:</strong> ${ev.week_start||''} — <strong>الدرجة:</strong> ${ev.percentage}% ${passFailBadge(ev.percentage, emp?emp.department_id:cgDeptId())}</div>
 ${critBreakdownHTML(ev)}
 ${ev.evaluation_notes?`<div style="margin-bottom:8px"><strong>ملاحظات المُقيّم:</strong> ${Utils.escape(ev.evaluation_notes)}</div>`:''}
 <button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${ev.id})" style="margin-bottom:10px">📄 فتح ملف التقييم</button>
 ${obj?`<div class="alert alert-warning"><strong>اعتراض الموظف:</strong> ${Utils.escape(obj.objection_text)}${obj.reviewer_response?'<br><strong>رد الجودة:</strong> '+Utils.escape(obj.reviewer_response):''}</div>`:''}
+${qoAct?`<div id="ta-qo-ref" style="border:1px solid var(--primary);background:#eff6ff;border-radius:10px;padding:12px;margin-bottom:10px">
+<div style="font-weight:800;margin-bottom:6px;color:var(--primary)">📋 اقتراح الجودة (للاطلاع)</div>
+<div style="display:flex;gap:20px;flex-wrap:wrap;font-size:13px">
+<div><div style="font-size:12px;color:var(--muted)">النوع</div>${actionTypeLabel(qoAct.action_type)}</div>
+<div><div style="font-size:12px;color:var(--muted)">مُقيّم الجودة</div>${qoBy?Utils.escape(qoBy.full_name):'موظف الجودة'}</div>
+</div>
+${qoAct.action_details?`<div style="margin-top:8px"><div style="font-size:12px;color:var(--muted)">التفاصيل</div>${Utils.escape(qoAct.action_details)}</div>`:''}
+<div style="margin-top:8px;font-size:11px;color:var(--muted)">اقتراح غير مُلزم — سجّل إجراءك المستقل أدناه.</div>
+</div>`:''}
 <div style="border:2px solid var(--warning);background:#fffbeb;border-radius:10px;padding:12px">
-<div style="font-weight:800;margin-bottom:8px">🎯 الإجراء ${proposed?`<span style="font-size:11px;font-weight:400;color:var(--muted)">(اقتراح ${proposer?Utils.escape(proposer.full_name):'موظف الجودة'})</span>`:'<span style="font-size:11px;font-weight:400;color:var(--danger)">(لم يحدّده الجودة — أدخله)</span>'}</div>
-<div class="form-group" style="margin-bottom:8px"><label class="form-label">نوع الإجراء *</label><select class="form-control" id="ta-type" ${proposed?'disabled':''}>${types.map(t=>`<option value="${t}" ${t===preType?'selected':''}>${actionTypeLabel(t)}</option>`).join('')}</select></div>
-<div class="form-group" style="margin:0"><label class="form-label">تفاصيل الإجراء *</label><textarea class="form-control" id="ta-details" rows="3" ${proposed?'disabled':''}>${Utils.escape(preDetails)}</textarea></div>
-${proposed?`<button type="button" class="btn btn-sm btn-secondary" id="ta-edit" style="margin-top:8px">✏️ تعديل الإجراء</button>`:''}
+<div style="font-weight:800;margin-bottom:8px">🎯 إجراء المشرف</div>
+<div class="form-group" style="margin-bottom:8px"><label class="form-label">نوع الإجراء *</label><select class="form-control" id="ta-type">${types.map((t,i)=>`<option value="${t}" ${i===0?'selected':''}>${actionTypeLabel(t)}</option>`).join('')}</select></div>
+<div class="form-group" style="margin:0"><label class="form-label">تفاصيل الإجراء *</label><textarea class="form-control" id="ta-details" rows="3" placeholder="اكتب تفاصيل إجراء المشرف..."></textarea></div>
 </div>`,
 `<button class="btn btn-secondary" onclick="Modal.close()">إلغاء</button><button class="btn btn-success" id="ta-save">✅ اعتماد</button>`);
-const editBtn = document.getElementById('ta-edit');
-if (editBtn) editBtn.addEventListener('click', () => { const t=document.getElementById('ta-type'), d=document.getElementById('ta-details'); if(t)t.disabled=false; if(d){d.disabled=false; d.focus();} editBtn.style.display='none'; });
 document.getElementById('ta-save').addEventListener('click', async () => {
 const type = document.getElementById('ta-type').value, details = document.getElementById('ta-details').value.trim();
 if (!details) { Toast.error('تفاصيل الإجراء مطلوبة'); return; }
