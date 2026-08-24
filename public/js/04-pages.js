@@ -727,6 +727,9 @@ const cgUp = isCgEmp ? it('cg-upload','📤','رفع تقييم') : '';
 return it('dashboard','🏠','الرئيسية') + cgUp + it('evaluations','📋','تقييماتي') + it('objections','⚖️','اعتراضاتي') + it('profile','👤','حسابي');
 }
 const aId = azwaDeptId();
+// ★ Bug#114: مشرف CG = supervisor لديه موظف واحد على الأقل في قسم CG (dept=cId) — يطابق فلتر loadCgMyTeam بالضبط
+//   (supervisor_id فقط، لا الاسم) ليظهر «موظفوني — Creative Gene» فقط حين تكون للصفحة محتوى. لا يظهر لـadmin/QO/غير-CG.
+const _isCgSup = (role === 'supervisor') && DB.getUsers({role:'employee'}).some(e => e.supervisor_id === currentUser.id && e.department_id === cId);
 const sections = [
 { key:'mahzam', label:'محزم', icon:'📊', color:'#1976d2', dept:mId, items:[
 {icon:'📋', label:'التقييمات', nav:'evaluations', params:{dept:mId}},
@@ -740,6 +743,8 @@ const sections = [
 // ★ PR #72: أُعيدت «طلبات التقييم» (cg-requests) — queue الجودة لاستقبال رفعات الموظفين (pending_quality → «فتح للتقييم»). cg-pending-approval تبقى مخفية (بوّابة المشرف أُلغيت في #71).
 {icon:'📥', label:'طلبات التقييم', nav:'cg-requests', params:{}, roles:['admin','quality_officer']},
 {icon:'📋', label:'التقييمات', nav:'evaluations', params:{dept:cId}},
+// ★ Bug#114: استعادة رابط «موظفوني — Creative Gene» اليتيم — لمشرف CG فقط (roles + show)؛ شاشة اتخاذ الإجراء (take_action)
+{icon:'👥', label:'موظفوني — Creative Gene', nav:'cg-my-team', params:{}, roles:['supervisor'], show:()=>_isCgSup},
 {icon:'⚖️', label:'الاعتراضات', nav:'cg-objections', params:{}, roles:['admin','quality_officer']},
 {icon:'⚠️', label:'المعايير الأدنى أداءً', nav:'cg-frequent-errors', params:{}},
 {icon:'📝', label:'تقرير الإجراءات', nav:'cg-actions-report', params:{}},
@@ -766,7 +771,7 @@ let html = `<div class="menu-item ${currentPage==='dashboard'?'active':''}" data
 sections.forEach(sec => {
 if (role === 'supervisor' && supDepts && !supDepts.has(sec.dept)) return;
 const isOpen = sec.items.some(itemActive) || window._openSections[sec.key];
-const itemsHTML = sec.items.filter(it => !it.roles || it.roles.indexOf(role) !== -1).map(it => `<div class="menu-item ${itemActive(it)?'active':''}" data-nav="${it.nav}" data-navparams='${JSON.stringify(it.params)}' style="padding-right:38px;font-size:13px;${itemActive(it)?'background:'+sec.color+'22;border-right:3px solid '+sec.color:''}"><span>${it.icon}</span><span>${it.label}</span></div>`).join('');
+const itemsHTML = sec.items.filter(it => (!it.roles || it.roles.indexOf(role) !== -1) && (!it.show || it.show())).map(it => `<div class="menu-item ${itemActive(it)?'active':''}" data-nav="${it.nav}" data-navparams='${JSON.stringify(it.params)}' style="padding-right:38px;font-size:13px;${itemActive(it)?'background:'+sec.color+'22;border-right:3px solid '+sec.color:''}"><span>${it.icon}</span><span>${it.label}</span></div>`).join('');
 html += `<div class="menu-section" data-section="${sec.key}">
 <div class="menu-item" data-section-toggle="${sec.key}" style="font-weight:700;border-right:3px solid ${sec.color};cursor:pointer"><span>${sec.icon}</span><span style="flex:1">${sec.label}</span><span class="sec-caret" style="display:inline-block;transition:.2s;${isOpen?'':'transform:rotate(-90deg)'}">▾</span></div>
 <div class="section-items" style="${isOpen?'':'display:none'}">${itemsHTML}</div>
