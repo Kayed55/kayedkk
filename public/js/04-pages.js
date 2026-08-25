@@ -3842,6 +3842,8 @@ const body = rows.map(r => {
 const st = r.workflow_state;
 let actions = '';
 if (st === 'pending_quality') actions += `<button class="btn btn-sm btn-success" onclick="openRequestForEval(${r.weekly_status_id},${r.employee_id},'${r.week_start}')">📝 فتح للتقييم</button>`;
+// ★ Feature1/v=116: «تصحيح التاريخ» — QO/admin فقط، وفقط قبل إنشاء التقييم (pending_quality + evaluation_id NULL) — يطابق حارس Option A في qo_update_upload_date
+if (st === 'pending_quality' && r.evaluation_id == null && (currentUser.role === 'quality_officer' || currentUser.role === 'admin')) actions += ` <button class="btn btn-sm btn-secondary" onclick="editUploadDateModal(${r.weekly_status_id},'${r.week_start}','${Utils.escape((r.employee_name||'').replace(/'/g,''))}')">✏️ تعديل التاريخ</button>`;
 else if (st === 'objection_raised' && (currentUser.role === 'quality_officer' || currentUser.role === 'admin') && r.has_objection) actions += `<button class="btn btn-sm btn-warning" onclick="reviewObjectionByEval(${r.evaluation_id})">⚖️ الرد على الاعتراض</button>`;
 if (r.evaluation_id) actions += ` <button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${r.evaluation_id})">📄</button>`;
 else actions += ` <button class="btn btn-sm btn-secondary" onclick="openCgPdfByWeek(${r.employee_id},'${r.week_start}')">📄</button>`;
@@ -3863,6 +3865,35 @@ const { data } = await window.sb.from('creative_gene_objections').select('id').e
 const o = (data && data[0]) || null;
 if (!o) { Toast.error('الاعتراض غير موجود'); return; }
 reviewObjectionModal(o.id);
+}
+// ★ Feature1/v=116: تصحيح تاريخ رفع تقييم CG (QO/admin، pending_quality فقط) — يستدعي qo_update_upload_date.
+//   الحقول تبدأ بالتاريخ الحالي للمرجع؛ الـRPC يُطبّع على السبت. رسائل خطأ الـRPC تُعرض داخل المودال؛ النجاح يُغلق ويُحدّث.
+function editUploadDateModal(statusId, currentWeekStart, empName) {
+Modal.show('✏️ تصحيح تاريخ الرفع', `
+<div style="margin-bottom:10px">الموظف: <strong>${Utils.escape(empName || '')}</strong></div>
+<div class="alert alert-info" style="font-size:13px">التاريخ الحالي (بداية الأسبوع): <strong>${Utils.escape(currentWeekStart || '')}</strong></div>
+<div class="form-group" style="margin:0"><label class="form-label">التاريخ الجديد *</label><input type="date" class="form-control" id="eud-date" value="${Utils.escape(currentWeekStart || '')}"></div>
+<div style="font-size:12px;color:var(--muted);margin-top:6px">ℹ️ سيتم تطبيع التاريخ تلقائياً إلى سبت الأسبوع.</div>
+<div id="eud-msg" style="margin-top:10px"></div>`,
+`<button class="btn btn-secondary" onclick="Modal.close()">إلغاء</button><button class="btn btn-primary" id="eud-save">💾 حفظ</button>`);
+document.getElementById('eud-save').addEventListener('click', async (e) => {
+const btn = e.currentTarget;
+const newDate = (document.getElementById('eud-date') || {}).value || '';
+const msg = document.getElementById('eud-msg');
+if (!newDate) { if (msg) msg.innerHTML = '<div class="alert alert-danger">اختر التاريخ الجديد</div>'; return; }
+await submitWithFeedback(btn, 'جارٍ الحفظ...', null, async () => {
+const { data, error } = await window.sb.rpc('qo_update_upload_date', { p_session_token: cgToken(), p_weekly_status_id: statusId, p_new_week_start: newDate });
+const r = Array.isArray(data) ? data[0] : data;
+if (error || !r || !r.ok) {
+const m = (r && r.message) || (error && error.message) || 'تعذّر تعديل التاريخ';
+if (!handleSessionError(m)) { if (msg) msg.innerHTML = `<div class="alert alert-danger">${Utils.escape(m)}</div>`; }
+return false;
+}
+if (window.SupabaseSync && SupabaseSync.pullAll) { try { await SupabaseSync.pullAll(true); } catch (_) {} }
+Modal.close(); Toast.success((r && r.message) || 'تم تصحيح التاريخ'); loadCgRequests();
+return true;
+});
+});
 }
 function deleteRequestModal(statusId, empName) {
 Modal.show('🗑️ حذف طلب التقييم', `
