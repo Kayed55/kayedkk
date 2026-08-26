@@ -6220,6 +6220,12 @@ return `
 ${rows || '<div class="alert alert-warning">لا توجد معايير في نموذج هذا التقييم</div>'}
 <div class="form-group" style="margin-top:12px"><label class="form-label">الملاحظات (اختياري)</label><textarea class="form-control" id="cg-edit-notes" rows="3">${Utils.escape(ev.evaluation_notes||'')}</textarea></div>
 </div></div>
+<div class="card"><div class="card-header"><div class="card-title">📄 ملف التقييم</div></div>
+<div class="card-body">
+<div style="margin-bottom:8px;font-size:13px">الملف الحالي: <strong>${ev.pdf_file_name?Utils.escape(ev.pdf_file_name):(ev.pdf_file_path?Utils.escape(ev.pdf_file_path.split('/').pop()):'—')}</strong> ${ev.pdf_file_path?`<button type="button" class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${ev.id})">📄 فتح الحالي</button>`:''}</div>
+<div class="form-group" style="margin:0"><label class="form-label">استبدال الملف (اختياري)</label><input type="file" class="form-control" id="cg-edit-file" accept="application/pdf"></div>
+<div style="font-size:12px;color:var(--muted);margin-top:6px">ℹ️ اترك الحقل فارغاً للإبقاء على الملف الحالي. الحد الأقصى 20 ميجابايت، PDF فقط.</div>
+</div></div>
 <div class="card" style="position:sticky;bottom:0;z-index:10;border:2px solid var(--primary)"><div class="card-body">
 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px">
 <div><div style="font-size:13px;color:var(--muted)">الدرجة الإجمالية</div>
@@ -6248,6 +6254,9 @@ const gEl = document.getElementById('cg-edit-grade'); if (gEl) gEl.innerHTML = o
 };
 inputs.forEach(i => i.addEventListener('input', recompute));
 recompute();
+// ★ Feature2/v=117: يرفع الملف الجديد مرّة واحدة فقط (لو اختير) ويُعيد استخدام مساره عبر جولة التأكيد —
+//   يمنع ملفاً يتيماً في الـbucket عند مسار SUPERVISOR_ACTION_EXISTS.
+let _uploadedPdf = null;   // {path,name} — مرفوع سلفاً، يُعاد استخدامه في الاستدعاء الثاني
 form.addEventListener('submit', async e => {
 e.preventDefault();
 const btn = form.querySelector('button[type=submit]');
@@ -6256,11 +6265,31 @@ const scores = {}; let ok = true;
 inputs.forEach(i => { const v = parseFloat(i.value), w = parseFloat(i.dataset.weight)||0; if (!(v>=0 && v<=w)) ok=false; scores[i.dataset.cid] = v; });
 if (!ok) { Toast.error('كل درجة يجب أن تكون بين 0 والحد الأقصى للمعيار'); return false; }
 const notes = ((document.getElementById('cg-edit-notes')||{}).value || '').trim();
+// استبدال الملف (اختياري) — يُرفع مرّة واحدة ويُخزَّن في _uploadedPdf (لا رفع مكرّر عند التأكيد)
+const fileEl = document.getElementById('cg-edit-file');
+const file = (fileEl && fileEl.files && fileEl.files[0]) || null;
+if (file && !_uploadedPdf) {
+_uploadedPdf = await uploadRequestPdf(file, ev.week_start || (new Date()).toISOString().slice(0,10));
+if (!_uploadedPdf) return false;   // فشل الرفع (uploadRequestPdf عرض الخطأ)
+}
 const tok = window.getSessionToken ? getSessionToken() : null;
-const { data, error } = await window.sb.rpc('admin_update_cg_evaluation', { p_session_token: tok, p_eval_id: evalId, p_criteria_scores: scores, p_evaluation_notes: notes });
-const r = (!error && Array.isArray(data) && data[0]) ? data[0] : (data && !Array.isArray(data) ? data : null);
-if (!r || !r.ok) { const m = (r && r.message) || (error && error.message) || 'تعذّر حفظ التعديلات'; if (!handleSessionError(m)) Toast.error(m); return false; }
+const save = async (override) => {
+const { data, error } = await window.sb.rpc('qo_update_cg_evaluation', {
+p_session_token: tok, p_evaluation_id: evalId, p_criteria_scores: scores, p_evaluation_notes: notes,
+p_pdf_file_path: _uploadedPdf ? _uploadedPdf.path : null, p_pdf_file_name: _uploadedPdf ? _uploadedPdf.name : null,
+p_confirm_override_supervisor: !!override });
+return (!error && Array.isArray(data) && data[0]) ? data[0] : (data && !Array.isArray(data) ? data : { ok:false, message:(error&&error.message) });
+};
+let r = await save(false);
+// إجراء مشرف مرتبط → تأكيد + توثيق → إعادة الاستدعاء بالتجاوز (بلا رفع مكرّر)
+if (r && r.message === 'SUPERVISOR_ACTION_EXISTS') {
+const proceed = await confirmDanger('⚠️ يوجد إجراء مشرف مرتبط بهذا التقييم. تعديل الدرجات الآن سيُوثَّق كتجاوز للإجراء المسجّل في سجلّ التدقيق. هل تريد المتابعة؟', 'نعم، احفظ مع التوثيق');
+if (!proceed) return false;
+r = await save(true);
+}
+if (!r || !r.ok) { const m = (r && r.message) || 'تعذّر حفظ التعديلات'; if (!handleSessionError(m)) Toast.error(m); return false; }
 if (window.SupabaseSync && SupabaseSync.pullAll) { try { await SupabaseSync.pullAll(true); } catch(_){} }
+_uploadedPdf = null;
 Toast.success(`تم حفظ التعديلات — ${r.percentage}% (${r.grade})`);
 navigate('view-evaluation', { id: evalId });
 return true;
