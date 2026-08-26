@@ -6220,6 +6220,12 @@ return `
 ${rows || '<div class="alert alert-warning">لا توجد معايير في نموذج هذا التقييم</div>'}
 <div class="form-group" style="margin-top:12px"><label class="form-label">الملاحظات (اختياري)</label><textarea class="form-control" id="cg-edit-notes" rows="3">${Utils.escape(ev.evaluation_notes||'')}</textarea></div>
 </div></div>
+<div class="card"><div class="card-header"><div class="card-title">📅 تاريخ الأسبوع</div></div>
+<div class="card-body">
+<div style="margin-bottom:8px;font-size:13px">التاريخ الحالي (بداية الأسبوع): <strong>${Utils.escape(ev.week_start||'—')}</strong>${ev.week_end?` ← ${Utils.escape(ev.week_end)}`:''}</div>
+<div class="form-group" style="margin:0"><label class="form-label">تعديل التاريخ (اختياري)</label><input type="date" class="form-control" id="cg-edit-week" value="${Utils.escape(ev.week_start||'')}"></div>
+<div style="font-size:12px;color:var(--muted);margin-top:6px">ℹ️ سيُطبَّع التاريخ تلقائياً إلى سبت الأسبوع. اتركه كما هو للإبقاء على التاريخ الحالي.</div>
+</div></div>
 <div class="card"><div class="card-header"><div class="card-title">📄 ملف التقييم</div></div>
 <div class="card-body">
 <div style="margin-bottom:8px;font-size:13px">الملف الحالي: <strong>${ev.pdf_file_name?Utils.escape(ev.pdf_file_name):(ev.pdf_file_path?Utils.escape(ev.pdf_file_path.split('/').pop()):'—')}</strong> ${ev.pdf_file_path?`<button type="button" class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${ev.id})">📄 فتح الحالي</button>`:''}</div>
@@ -6272,12 +6278,15 @@ if (file && !_uploadedPdf) {
 _uploadedPdf = await uploadRequestPdf(file, ev.week_start || (new Date()).toISOString().slice(0,10));
 if (!_uploadedPdf) return false;   // فشل الرفع (uploadRequestPdf عرض الخطأ)
 }
+// ★ Feature3/v=118: تاريخ الأسبوع (اختياري) — يُمرَّر فقط لو مختلف عن الحالي؛ الـRPC يُطبّعه لسبت
+const weekVal = ((document.getElementById('cg-edit-week')||{}).value || '').trim();
+const newWeek = (weekVal && weekVal !== (ev.week_start||'')) ? weekVal : null;
 const tok = window.getSessionToken ? getSessionToken() : null;
 const save = async (override) => {
 const { data, error } = await window.sb.rpc('qo_update_cg_evaluation', {
 p_session_token: tok, p_evaluation_id: evalId, p_criteria_scores: scores, p_evaluation_notes: notes,
 p_pdf_file_path: _uploadedPdf ? _uploadedPdf.path : null, p_pdf_file_name: _uploadedPdf ? _uploadedPdf.name : null,
-p_confirm_override_supervisor: !!override });
+p_confirm_override_supervisor: !!override, p_new_week_start: newWeek });
 return (!error && Array.isArray(data) && data[0]) ? data[0] : (data && !Array.isArray(data) ? data : { ok:false, message:(error&&error.message) });
 };
 let r = await save(false);
