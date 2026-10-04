@@ -11,7 +11,7 @@
     "format": "npx prettier --write \"public/**/*.{html,css,js}\" \"*.{json,md}\"",
     "validate": "node scripts/validate.js",
     "check:rpc": "node scripts/check-rpc-sources.js",
-    "test": "node scripts/run-tests.js && node scripts/test-session-client.js",
+    "test": "node scripts/run-tests.js && node scripts/test-session-client.js && node scripts/test-cg-reports.js",
     "test:sql": "node scripts/test-security-sql.mjs"
   },
   "keywords": [

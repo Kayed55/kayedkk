@@ -3459,12 +3459,14 @@ return `<div class="page-header"><div><div class="page-title">📝 تقرير ا
 async function loadCgActionsReport() {
 const host = document.getElementById('cg-actions-body'); if (!host) return;
 await loadDepartments();
-let q = window.sb.from('creative_gene_actions').select('*').order('taken_at', { ascending:false });
-const { data, error } = await q;
-if (error) { if(!handleSessionError(error.message)) host.innerHTML = `<div class="alert alert-danger">${Utils.escape(error.message)}</div>`; return; }
-let acts = data || [];
-acts = acts.filter(a => a.supervisor_id != null && a.superseded_at == null);   // ★ #70: إجراءات المشرف النشطة فقط (توصية الجودة ليست إجراءً مُتخذاً + استبعاد المُلغى)
-if (currentUser.role === 'supervisor') acts = acts.filter(a => a.supervisor_id === currentUser.id);
+let acts;
+try {
+acts = await cgReadPages('creative_gene_actions', q => {
+q = q.not('supervisor_id','is',null).is('superseded_at',null);
+return currentUser.role === 'supervisor' ? q.eq('supervisor_id',currentUser.id) : q;
+});
+acts.sort((a,b) => String(b.taken_at||'').localeCompare(String(a.taken_at||'')));
+} catch(error) { host.innerHTML = '<div class="alert alert-danger">تعذّر تحميل جميع الإجراءات. أعد فتح التقرير للمحاولة.</div>'; return; }
 if (!acts.length) { host.innerHTML = '<div class="alert alert-info">لا توجد إجراءات في هذا القسم.</div>'; return; }
 const rows = acts.map(a => { const emp = DB.getUser(a.employee_id), sup = DB.getUser(a.supervisor_id), ev = DB.getEvaluation(a.evaluation_id);
 return `<tr><td>${emp?Utils.escape(emp.full_name):'-'}</td><td>${ev?('#'+ev.id+' ('+ev.percentage+'%)'):'-'}</td><td>${actionTypeLabel(a.action_type)}</td><td>${Utils.escape(a.action_details||'')}</td><td>${sup?Utils.escape(sup.full_name):'—'}</td><td>${Utils.formatDate(a.taken_at)}</td></tr>`;
@@ -4446,33 +4448,81 @@ return `
 </div></div></div>
 <div id="cg-reports-body"><div class="card"><div class="card-body">⏳ جارٍ التحميل…</div></div></div>`;
 }
+// Fetch through the actual server page size; an empty page marks completion.
+async function cgReadPages(table, configure = q => q) {
+const rows = []; let offset = 0;
+for (;;) {
+const { data, error } = await configure(window.sb.from(table).select('*')).order('id', { ascending:true }).range(offset, offset + 499);
+if (error) throw error;
+if (!Array.isArray(data)) throw new Error('استجابة غير مكتملة');
+if (!data.length) return rows;
+rows.push(...data); offset += data.length;
+}
+}
+async function cgReadByIds(table, column, ids) {
+const rows = [], unique = [...new Set(ids)];
+for (let i=0; i<unique.length; i+=100) rows.push(...await cgReadPages(table, q => q.in(column, unique.slice(i,i+100))));
+return rows;
+}
+function cgInReportPeriod(value, params) {
+const day = String(value || '').slice(0,10);
+if (!params.period || params.period === 'all') return true;
+if (!day) return false;
+if (params.period === 'month') return !params.month || day.slice(0,7) === params.month;
+return (!params.from || day >= params.from) && (!params.to || day <= params.to);
+}
+function cgReportCriteria(evals) {
+const columns = new Map();
+evals.forEach(e => (e.template_snapshot?.criteria || []).forEach(c => {
+const key = JSON.stringify([usedTemplateLabel(e), String(c.id), c.name, c.weight]);
+if (!columns.has(key)) columns.set(key, { key, id:c.id, name:`${usedTemplateLabel(e)} — ${c.name} (${c.weight})` });
+}));
+return [...columns.values()];
+}
+function cgReportScore(e, column) {
+const matching = (e.template_snapshot?.criteria || []).some(c => JSON.stringify([usedTemplateLabel(e), String(c.id), c.name, c.weight]) === column.key);
+return matching ? (e.section_scores || e.items || {})[column.id] : null;
+}
 async function loadCgReports() {
 const host = document.getElementById('cg-reports-body'); if (!host) return;
+const request = (window._cgReportRequest || 0) + 1; window._cgReportRequest = request;
+window._cgReportData = [];
+const params = { ...currentParams };
+if (params.period === 'month' && !params.month) params.month = document.getElementById('rep-month')?.value || new Date().toISOString().slice(0,7);
+const buttons = ['rep-export-xlsx','rep-export-pdf'].map(id => document.getElementById(id)).filter(Boolean);
+buttons.forEach(b => b.disabled = true);
+host.innerHTML = '<div class="alert alert-info">جارٍ تحميل التقرير كاملًا…</div>';
+try {
 await loadDepartments();
-const tpl = await loadTemplateFor(cgDeptId());
-const criteria = (tpl && tpl.ok && tpl.exists && Array.isArray(tpl.template.criteria)) ? tpl.template.criteria : [];
-const period = currentParams.period||'all', month = currentParams.month||'', fromDate = currentParams.from||'', toDate = currentParams.to||'', empF = currentParams.emp?parseInt(currentParams.emp):null;
-let cgEmpIds = new Set(DB.getUsers({ role:'employee' }).filter(e => e.department_id === cgDeptId() && (currentUser.role!=='supervisor' || e.supervisor_id===currentUser.id || e.supervisor_name===currentUser.full_name)).map(e => e.id));
-let evals = (DB.data.evaluations||[]).filter(e => e.template_type==='pdf_based_weekly' && cgEmpIds.has(e.employee_id));
-if (empF) evals = evals.filter(e => e.employee_id === empF);
-const inPeriod = (dstr) => { if (period==='all' || !dstr) return true; const d=new Date(dstr); if (period==='month'&&month){const[y,m]=month.split('-').map(Number);return d.getFullYear()===y&&d.getMonth()===m-1;} if (period==='custom'&&fromDate&&toDate){return d>=new Date(fromDate)&&d<=new Date(toDate);} return true; };
-evals = evals.filter(e => inPeriod(e.week_start||e.evaluation_date)).sort((a,b)=> String(b.week_start||'').localeCompare(String(a.week_start||'')));
+if (params.from && params.to && params.from > params.to) throw new Error('تاريخ البداية يجب أن يسبق تاريخ النهاية');
+const empF = params.emp ? Number(params.emp) : null;
+const cgEmpIds = DB.getUsers({ role:'employee' }).filter(e => e.department_id === cgDeptId() && (!empF || e.id === empF) && (currentUser.role !== 'supervisor' || e.supervisor_id === currentUser.id)).map(e => e.id);
+const allEvals = await cgReadByIds('evaluations','employee_id',cgEmpIds);
+const evals = allEvals.filter(e => e.template_type === 'pdf_based_weekly' && cgInReportPeriod(e.week_start || e.evaluation_date,params)).sort((a,b) => String(b.week_start||'').localeCompare(String(a.week_start||'')));
+const criteria = cgReportCriteria(evals);
 const evalIds = evals.map(e => e.id);
+const [objs, acts, uploadsRows] = await Promise.all([
+cgReadByIds('creative_gene_objections','evaluation_id',evalIds),
+cgReadByIds('creative_gene_actions','evaluation_id',evalIds),
+cgReadByIds('creative_gene_weekly_status','employee_id',cgEmpIds)
+]);
+if (window._cgReportRequest !== request || document.getElementById('cg-reports-body') !== host) return;
 const objMap = {}, actMap = {};
-if (evalIds.length) { try { const [{ data:objs },{ data:acts }] = await Promise.all([window.sb.from('creative_gene_objections').select('*').in('evaluation_id',evalIds), window.sb.from('creative_gene_actions').select('*').in('evaluation_id',evalIds)]); (objs||[]).forEach(o=>objMap[o.evaluation_id]=o); (acts||[]).filter(a=>a.supervisor_id!=null && a.superseded_at==null).forEach(a=>actMap[a.evaluation_id]=a); } catch(_){} }   // ★ #70: إجراء المشرف النشط فقط
-let uploads = 0, openObj = 0;
-try { const { data:st } = await window.sb.from('creative_gene_weekly_status').select('employee_id,pdf_file_path'); uploads = (st||[]).filter(s => s.pdf_file_path && cgEmpIds.has(s.employee_id)).length; } catch(_){}
-try { const { data:ob } = await window.sb.from('creative_gene_objections').select('status,employee_id'); openObj = (ob||[]).filter(o => o.status==='pending' && cgEmpIds.has(o.employee_id)).length; } catch(_){}
+objs.forEach(o => objMap[o.evaluation_id] = o);
+acts.filter(a => a.supervisor_id != null && a.superseded_at == null).forEach(a => actMap[a.evaluation_id] = a);
+// All report dates refer to the evaluation/upload week, not the time of review.
+const uploads = uploadsRows.filter(s => s.pdf_file_path && cgInReportPeriod(s.week_start,params)).length;
+const openObj = objs.filter(o => o.status === 'pending').length;
 const evalCount = evals.length;
 const avg = evalCount ? Math.round(evals.reduce((s,e)=> s+(+e.percentage||0), 0)/evalCount*10)/10 : 0;
 const actionsCount = Object.keys(actMap).length;
 const objLabel = (o) => o ? (o.status==='accepted'?'مقبول':(o.status==='rejected'?'مرفوض':'قيد المراجعة')) : '—';
 const exportRows = [];
 const rowsHtml = evals.map(e => { const emp=DB.getUser(e.employee_id); const scores=e.section_scores||e.items||{}; const o=objMap[e.id], a=actMap[e.id];
-const critCells = criteria.map(c => `<td style="text-align:center">${scores[c.id]!=null?scores[c.id]:'—'}</td>`).join('');
+const critCells = criteria.map(c => { const value=cgReportScore(e,c); return `<td style="text-align:center">${value!=null?Utils.escape(String(value)):'—'}</td>`; }).join('');
 const tplLabel = usedTemplateLabel(e);
 const row = { 'الموظف': emp?emp.full_name:'-', 'المسمى الوظيفي': (emp&&emp.job_title)?emp.job_title:'-', 'الأسبوع': (e.week_start||'')+' - '+(e.week_end||''), 'النموذج المُستخدم': tplLabel };
-criteria.forEach(c => { row[c.name] = scores[c.id]!=null?scores[c.id]:''; });
+criteria.forEach(c => { const value=cgReportScore(e,c); row[c.name] = value!=null?value:''; });
 row['الدرجة الكلية'] = e.percentage; row['الملاحظات'] = e.evaluation_notes||''; row['الاعتراض'] = objLabel(o); row['الإجراء'] = a ? actionTypeLabel(a.action_type).replace(/[^؀-ۿ ]/g,'').trim() : '—';
 exportRows.push(row);
 return `<tr><td>${emp?Utils.escape(emp.full_name):'-'}</td><td>${jobTitleCell(emp)}</td><td>${e.week_start||''} ← ${e.week_end||''}</td><td style="font-size:12px;color:var(--muted)">${Utils.escape(tplLabel)}</td><td><button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${e.id})">📄 فتح</button></td>${critCells}<td style="text-align:center"><strong>${e.percentage} / 100</strong></td><td>${e.evaluation_notes?Utils.escape(e.evaluation_notes):'—'}</td><td>${objLabel(o)}</td><td>${a?actionTypeLabel(a.action_type):'—'}</td></tr>`;
@@ -4490,6 +4540,12 @@ host.innerHTML = `
 <div class="card" style="margin-top:20px"><div class="card-header"><div class="card-title">📄 التقييمات الأسبوعية</div></div>
 <div style="overflow-x:auto"><table class="table"><thead><tr><th>الموظف</th><th>المسمى الوظيفي</th><th>الأسبوع</th><th>النموذج المُستخدم</th><th>PDF</th>${critHeaders}<th>الدرجة الكلية</th><th>الملاحظات</th><th>الاعتراض</th><th>الإجراء</th></tr></thead>
 <tbody>${rowsHtml || `<tr><td colspan="${9+criteria.length}" style="text-align:center;padding:20px;color:var(--muted)">لا توجد بيانات</td></tr>`}</tbody></table></div></div>`;
+buttons.forEach(b => b.disabled = false);
+} catch(error) {
+if (window._cgReportRequest !== request || document.getElementById('cg-reports-body') !== host) return;
+window._cgReportData = [];
+host.innerHTML = '<div class="alert alert-danger">تعذّر تحميل التقرير كاملًا. أعد اختيار الفلتر للمحاولة؛ التصدير متوقف لتجنب بيانات ناقصة.</div>';
+}
 }
 function exportCgReportsXLSX() {
 const data = window._cgReportData || [];

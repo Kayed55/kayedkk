@@ -1,0 +1,21 @@
+'use strict';
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const source=fs.readFileSync(require('node:path').join(__dirname,'../public/js/04-pages.js'),'utf8');
+const fragment=source.slice(source.indexOf('async function cgReadPages('),source.indexOf('function exportCgReportsXLSX('));
+const host={innerHTML:''},buttons=[{},{}];let fail=false;
+const evals=[{id:1,employee_id:1,template_type:'pdf_based_weekly',week_start:'2026-09-05',percentage:90,template_snapshot:{name:'content',criteria:[{id:'a',name:'Creativity',weight:100}]},section_scores:{a:90}},{id:2,employee_id:2,template_type:'pdf_based_weekly',week_start:'2026-08-01',percentage:40,template_snapshot:{name:'sales',criteria:[{id:'a',name:'Deals',weight:50}]},section_scores:{a:20}}];
+const tables={evaluations:evals,creative_gene_actions:[],creative_gene_objections:[{id:1,evaluation_id:1,status:'pending'},{id:2,evaluation_id:2,status:'pending'}],creative_gene_weekly_status:[{id:1,employee_id:1,week_start:'2026-09-05',pdf_file_path:'x'},{id:2,employee_id:1,week_start:'2026-08-01',pdf_file_path:'x'},{id:3,employee_id:2,week_start:'2026-09-05',pdf_file_path:'x'}],large:Array.from({length:1203},(_,id)=>({id,employee_id:id}))};
+const calls=[];
+const sb={from:table=>{let rows=tables[table];const q={select:()=>q,in:(col,ids)=>{assert(ids.length<=100);rows=rows.filter(r=>ids.includes(r[col]));return q},order:()=>q,range:async(a,b)=>{calls.push({table,a,b});return fail?{error:Error('network')}:{data:rows.slice(a,Math.min(b+1,a+137))}}};return q;}};
+const ctx={window:{sb},document:{getElementById:id=>id==='cg-reports-body'?host:id==='rep-export-xlsx'?buttons[0]:buttons[1]},currentParams:{period:'month',month:'2026-09',emp:'1'},currentUser:{role:'admin'},loadDepartments:async()=>{},cgDeptId:()=>7,DB:{getUsers:()=>[{id:1,department_id:7},{id:2,department_id:7}],getUser:()=>({full_name:'fixture'})},usedTemplateLabel:e=>e.template_snapshot.name,Utils:{escape:String},jobTitleCell:()=>'',actionTypeLabel:()=>'',console};
+vm.createContext(ctx);vm.runInContext(fragment,ctx);
+(async()=>{
+ assert.equal((await ctx.cgReadPages('large')).length,1203,'handles server caps smaller than requested');
+ assert.equal((await ctx.cgReadByIds('large','employee_id',Array.from({length:205},(_,i)=>i))).length,205,'batch IDs');
+ const columns=ctx.cgReportCriteria(evals);assert.equal(columns.length,2);assert.equal(ctx.cgReportScore(evals[0],columns[1]),null);assert.equal(ctx.cgReportScore(evals[0],columns[0]),90);
+ assert.equal(ctx.cgInReportPeriod('2026-09-01',{period:'custom',from:'2026-09-01'}),true);assert.equal(ctx.cgInReportPeriod(null,{period:'month',month:'2026-09'}),false);
+ await ctx.loadCgReports();assert.equal(ctx.window._cgReportData.length,1);assert(host.innerHTML.includes('Creativity'));assert(!host.innerHTML.includes('Deals'));
+ const values=[...host.innerHTML.matchAll(/class="stat-value"[^>]*>([^<]*)/g)].map(m=>m[1]);assert.deepEqual(values,['1','1','90%','1','0']);assert.equal(buttons[0].disabled,false);
+ fail=true;await ctx.loadCgReports();assert.equal(ctx.window._cgReportData.length,0);assert.equal(buttons[0].disabled,true);assert(host.innerHTML.includes('تعذّر تحميل'));
+ console.log('CG reports: pagination, batching, snapshots, filters and failed-export checks passed');
+})().catch(e=>{console.error(e);process.exitCode=1;});
