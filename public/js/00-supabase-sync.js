@@ -112,7 +112,7 @@ window.SupabaseSync = {
    * - يستخدم pendingPull لمنع pulls متزامنة (deduplication)
    */
   async pullAll(force) {
-    if (!window.sb) return false;
+    if (!window.sb || this.suspended || !window.getSessionToken || !window.getSessionToken()) return false;
     // مع force: لا نُعيد عملية سحب قديمة قد تكون بدأت قبل آخر كتابة (تفادي بيانات غير محدّثة)
     if (this.pendingPull && !force) return this.pendingPull;
 
@@ -126,6 +126,21 @@ window.SupabaseSync = {
         for (const table of this.TABLES) {
           // أمان: نقرأ من users_public (view بدون كلمات السر) بدلاً من users
           // كلمات السر يجب ألا تصل للمتصفح أبداً عبر anon key.
+          if (table === 'notifications') {
+            const token = window.getSessionToken && window.getSessionToken();
+            results.notifications = [];
+            if (token) {
+              let offset = 0;
+              for (;;) {
+                const res = await window.sb.rpc('list_my_notifications', {p_token:token,p_offset:offset,p_limit:1000});
+                if (res.error || !Array.isArray(res.data)) throw new Error('Unable to read notifications');
+                results.notifications.push(...res.data);
+                if (res.data.length < 1000) break;
+                offset += res.data.length;
+              }
+            }
+            continue;
+          }
           const readFrom = (table === 'users') ? 'users_public' : table;
 
           // ★ #66: تخطّي الجلب إن كان TTL طازجاً والبيانات موجودة في الذاكرة (إلا مع force) — cache-hit.
@@ -189,7 +204,7 @@ window.SupabaseSync = {
           }
           data = all;
           console.log(`  ✓ [pullAll] Table: ${table} (${readFrom}) | Pages: ${pages} | Total rows: ${all.length}`);
-          if (pages >= MAX_PAGES) console.warn(`⚠️ [pullAll] Table: ${table} — بلغ MAX_PAGES (${MAX_PAGES})؛ قد تكون هناك صفوف إضافية غير مُحمَّلة.`);
+          if (pages >= MAX_PAGES && all.length === PAGE * MAX_PAGES) throw new Error('Incomplete source: ' + table + ' exceeded pagination safety limit');
           results[table] = data || [];
           if (ttlMs) localStorage.setItem('qe_ttl_' + readFrom, String(Date.now()));   // ★ #66
         }
@@ -276,7 +291,8 @@ window.SupabaseSync = {
    * حارس _pullSeq يمنع كتابة سحب قديم فوق أحدث.
    */
   async pullTable(table) {
-    if (!window.sb || !this.TABLES.includes(table)) return false;
+    if (!window.sb || this.suspended || !window.getSessionToken || !window.getSessionToken() || !this.TABLES.includes(table)) return false;
+    if (table === 'notifications') return this.pullAll(true);
     const self = this;
     const seq = ++this._pullSeq;
     const readFrom = (table === 'users') ? 'users_public' : table;
@@ -297,6 +313,7 @@ window.SupabaseSync = {
           all = all.concat(batch);
           if (batch.length < PAGE) break;
         }
+        if (all.length === PAGE * MAX_PAGES) throw new Error('Incomplete source: ' + table);
         rows = all;
       }
     } catch (e) {

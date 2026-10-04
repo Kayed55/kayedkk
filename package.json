@@ -11,7 +11,8 @@
     "format": "npx prettier --write \"public/**/*.{html,css,js}\" \"*.{json,md}\"",
     "validate": "node scripts/validate.js",
     "check:rpc": "node scripts/check-rpc-sources.js",
-    "test": "node scripts/run-tests.js"
+    "test": "node scripts/run-tests.js && node scripts/test-session-client.js",
+    "test:sql": "node scripts/test-security-sql.mjs"
   },
   "keywords": [
     "quality",
@@ -38,5 +39,8 @@
   },
   "bugs": {
     "url": "https://github.com/USERNAME/mahzam-quality-system/issues"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8"
   }
 }

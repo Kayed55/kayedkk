@@ -30,12 +30,20 @@ return _p;
 return {
 available: function () { try { return typeof indexedDB !== 'undefined' && !!indexedDB; } catch (e) { return false; } },
 get: async function (key) { const db = await open(); return new Promise(function (res, rej) { const r = db.transaction(STORE, 'readonly').objectStore(STORE).get(key); r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); }; }); },
+remove: async function (key) { const db = await open(); return new Promise(function(res,rej) { const tx=db.transaction(STORE,'readwrite'); tx.objectStore(STORE).delete(key); tx.oncomplete=()=>res(true); tx.onerror=()=>rej(tx.error); tx.onabort=()=>rej(tx.error); }); },
 set: async function (key, val) { const db = await open(); return new Promise(function (res, rej) { const tx = db.transaction(STORE, 'readwrite'); tx.objectStore(STORE).put(val, key); tx.oncomplete = function () { res(true); }; tx.onerror = function () { rej(tx.error); }; tx.onabort = function () { rej(tx.error); }; }); }
 };
 })();
 
 const DB = {
 KEY: 'qe_system_v6',
+async clearPrivateCache() {
+  this.data = {users:[],evaluations:[],notifications:[],objections:[],audit_logs:[],evaluation_templates:[],criteria:{}};
+  this._hadCache = false;
+  const keys=[]; for(let i=0;i<localStorage.length;i++) keys.push(localStorage.key(i));
+  keys.filter(k=>k && (k.startsWith('qe_') || k.startsWith('mahzam_session_'))).forEach(k=>localStorage.removeItem(k));
+  if (_IDB.available()) await _IDB.remove(this.KEY);
+},
 data: null,
 _storageType: 'localStorage',   // ★ #67-B: يُضبط في initAsync (indexeddb|localStorage)
 _hadCache: false,               // ★ #67-B: هل حُمِّلت بيانات حقيقية (warm) أم seed؟

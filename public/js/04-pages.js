@@ -100,11 +100,21 @@ localStorage.removeItem('mahzam_session_expires_at');
 }
 if (typeof window !== 'undefined') { window.getSessionToken = getSessionToken; window.clearSession = clearSession; }
 
-function logout() {
+async function logout() {
+const token = getSessionToken();
+if (window.SupabaseSync) {
+  window.SupabaseSync.suspended = true;
+  window.SupabaseSync._appliedSeq = ++window.SupabaseSync._pullSeq;
+}
 currentUser = null;
 localStorage.removeItem('qe_current_user');
 clearSession();
 navigate('login');
+const revoke = token && window.sb ? Promise.resolve(window.sb.rpc('logout_session', { p_token: token })).catch(error=>({error})) : Promise.resolve({error:null});
+try { if (typeof DB !== 'undefined' && DB.clearPrivateCache) await DB.clearPrivateCache(); }
+catch (_) { Toast.error('تعذر مسح ذاكرة الجهاز؛ أغلق المتصفح وامسح بيانات الموقع.'); }
+try { const result = await revoke; if (result.error) throw result.error; }
+catch (_) { Toast.error('تم الخروج من الجهاز، لكن تعذر إلغاء الجلسة على الخادم. اطلب من مسؤول النظام إبطال جلسات حسابك.'); }
 }
 
 // تسجيل حدث عميل في التدقيق عبر RPC (fire-and-forget) — بديل addAudit بعد سحب anon
@@ -567,6 +577,7 @@ if (result.session_token) {
 localStorage.setItem('mahzam_session_token', result.session_token);
 if (result.session_expires_at) localStorage.setItem('mahzam_session_expires_at', result.session_expires_at);
 }
+if (window.SupabaseSync) { window.SupabaseSync.suspended = false; await window.SupabaseSync.pullAll(true); }
 logEvent('login', `دخول مع OTP: ${u.full_name} (${u.email})`, 'login', u.id);
 Toast.success('مرحباً بك ' + u.full_name);
 if (_otpTimer) { clearInterval(_otpTimer); _otpTimer = null; }

@@ -1,0 +1,5 @@
+'use strict';
+const fs=require('node:fs'),path=require('node:path'),{spawnSync}=require('node:child_process');
+const root=path.resolve(__dirname,'..'),pub=path.join(root,'public');let failures=0,checked=0;
+function walk(dir){for(const ent of fs.readdirSync(dir,{withFileTypes:true})){const file=path.join(dir,ent.name);if(ent.isDirectory())walk(file);else if(file.endsWith('.js')){checked++;const r=spawnSync(process.execPath,['--check',file],{encoding:'utf8'});if(r.status!==0){failures++;console.error(r.stderr)}}else if(file.endsWith('.html')){const html=fs.readFileSync(file,'utf8');for(const m of html.matchAll(/(?:src|href)=["']([^"']+)["']/g)){const ref=m[1];if(/^(?:[a-z]+:|\/\/|#)/i.test(ref)||ref.includes('${'))continue;const target=ref.split(/[?#]/)[0];if(!target)continue;const full=path.resolve(target.startsWith('/')?pub:path.dirname(file),target.replace(/^\//,''));if(!fs.existsSync(full)){failures++;console.error('Missing asset: '+ref)}}}}}
+walk(pub);console.log(JSON.stringify({javascriptFiles:checked,failures}));process.exitCode=failures?1:0;

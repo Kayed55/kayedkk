@@ -75,7 +75,7 @@ async function bootApp() {
 // تحديد الوجهة وفق وجود جلسة محفوظة (منطق الإقلاع الأصلي — يُعاد استخدامه في المسارين).
 function routeInitial() {
   const saved = localStorage.getItem('qe_current_user');
-  if (saved) {
+  if (saved && (!window.sb || (window.getSessionToken && window.getSessionToken()))) {
     try { currentUser = JSON.parse(saved); navigate('dashboard'); }
     catch (e) { navigate('login'); }
   } else {
