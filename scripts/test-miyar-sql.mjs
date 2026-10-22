@@ -19,6 +19,7 @@ const dashboard=source.slice(source.indexOf('CREATE OR REPLACE FUNCTION public.g
 await db.exec(dashboard);
 await db.exec(await readFile(new URL('../security-migration/77_miyar_classifications.sql',import.meta.url),'utf8'));
 await db.exec(await readFile(new URL('../security-migration/79_report_and_date_guards.sql',import.meta.url),'utf8'));
+await db.exec(await readFile(new URL('../security-migration/81_weekly_date_guard.sql',import.meta.url),'utf8'));
 const value=async q=>(await db.query(q)).rows[0].v;
 let s=await value("select _dash_section(2,array[2]::bigint[]) as v");assert.deepEqual(s.miyar_counts,{below:2,near:2,meets:2,excellent:2,review:1});assert.equal(s.total,9);assert.equal(s.pass,5,'legacy aggregate retained');
 let q=await value("select get_quality_report('admin',current_date,current_date,2,1) as v");assert.deepEqual(q.sections[0].miyar_counts,{below:2,near:2,meets:2,excellent:1,review:1});assert.equal(q.sections[0].conformance_rate,37.5);assert.equal(q.conformance_rate,37.5);assert.equal(q.line[0].conformance_rate,37.5);
@@ -30,4 +31,6 @@ const aggregate=await value("select get_quality_report('admin',current_date,curr
 await assert.rejects(db.exec("insert into evaluations(id,evaluation_date) values(99,'0206-08-15')"));
 await assert.rejects(db.exec("insert into evaluations(id,evaluation_date) values(99,current_date+1)"));
 await db.exec("insert into evaluations(id,evaluation_date) values(99,current_date)");
+await db.exec("alter table evaluations add template_type text; insert into evaluations(id,evaluation_date,template_type) values(100,current_date+1,'task_based_weekly')");
+await assert.rejects(db.exec("insert into evaluations(id,evaluation_date,template_type) values(101,current_date+7,'task_based_weekly')"));
 await db.close();console.log('Miyar SQL: boundaries, nulls, date/evaluator filters, legacy fields and role scopes passed');
