@@ -1,6 +1,6 @@
 const fs=require('fs'),vm=require('vm'),assert=require('assert/strict'),path=require('path');
 const root=path.join(__dirname,'../public/js/');const html=[],sheets=[],charts=[];
-const c={console,window:{},document:{addEventListener(){},getElementById(){return {}}},localStorage:{getItem(){return null}},setTimeout(){},setInterval(){},URL,Date,Chart:function(el,config){charts.push(config)},XLSX:{utils:{book_new:()=>({}),book_append_sheet(){},json_to_sheet:r=>(sheets.push(r),{}),aoa_to_sheet:r=>(sheets.push(r),{})},writeFile(){}}};vm.createContext(c);
+const c={console,window:{addEventListener(){}},document:{addEventListener(){},getElementById(){return {}}},localStorage:{getItem(){return null}},setTimeout(){},setInterval(){},URL,Date,Chart:function(el,config){charts.push(config)},XLSX:{utils:{book_new:()=>({}),book_append_sheet(){},json_to_sheet:r=>(sheets.push(r),{}),aoa_to_sheet:r=>(sheets.push(r),{})},writeFile(){}}};vm.createContext(c);
 for(const f of ['01-constants.js','03-core.js','04-pages.js'])vm.runInContext(fs.readFileSync(root+f,'utf8'),c);
 c.capture=x=>html.push(x);
 vm.runInContext(`htmlToPDF=async h=>capture(h);Toast.success=()=>{};Toast.info=()=>{};Toast.error=e=>{throw Error(e)};
@@ -22,5 +22,8 @@ getMonthlyData=()=>window._reportData;
  const donut=charts.find(x=>x.type==='doughnut');assert.deepEqual(Array.from(donut.data.labels),labels);assert.deepEqual(Array.from(donut.data.datasets[0].data),[1,2,2,1]);
  const classified=sheets.flat().filter(r=>r['التقدير']);assert(classified.length>=12);assert(classified.every(r=>labels.includes(r['التقدير'])));
  const distribution=vm.runInContext('getOverallEval(window._reportData).distribution',c);assert.deepEqual(JSON.parse(JSON.stringify(distribution)),{below:1,near:2,meets:2,excellent:1,review:0});
+ vm.runInContext("getActionsReportData=()=>({evals:[{action_taken:'لا يوجد إجراء'},{action_taken:'تنبيه شفهي'}],topObservations:[],improvements:[],improvementByAction:{}})",c);
+ await vm.runInContext('exportActionsReportPDF()',c);
+ const actionsPdf=html.at(-1);assert(actionsPdf.includes('color:#1D5BD8\">2</div>'));assert(actionsPdf.includes('color:#d97706\">1</div>'));
  console.log('Miyar UI: PDF/Excel classifications, chart buckets, monthly distribution and logo paths passed');
 })().catch(e=>{console.error(e);process.exitCode=1});

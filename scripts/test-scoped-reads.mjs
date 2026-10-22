@@ -1,0 +1,52 @@
+import {readFile} from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import {PGlite} from '@electric-sql/pglite';
+const db=new PGlite();let checks=0;
+await db.exec(`
+CREATE ROLE anon; CREATE ROLE authenticated;
+CREATE TABLE users(id bigint primary key,full_name text,role text,department_id bigint,supervisor_id bigint,email text,password text,is_active boolean);
+CREATE VIEW users_public AS SELECT id,full_name,role,department_id,supervisor_id,email,is_active FROM users;
+CREATE TABLE evaluations(id bigint,employee_id bigint,evaluator_id bigint,evaluation_date date);
+CREATE TABLE notifications(id bigint,user_id bigint);
+CREATE TABLE objections(id bigint,employee_id bigint,evaluation_id bigint);
+CREATE TABLE creative_gene_actions(like objections);
+CREATE TABLE creative_gene_objections(like objections); ALTER TABLE creative_gene_objections ADD raised_at timestamptz;
+CREATE TABLE creative_gene_weekly_status(id bigint,employee_id bigint,week_start date);
+CREATE TABLE evaluation_templates(id bigint,department_id bigint,is_active boolean,job_role text);
+CREATE TABLE audit_logs(id bigint);
+CREATE FUNCTION verify_session(token text) RETURNS TABLE(user_id bigint,role text,is_valid boolean) LANGUAGE sql AS $$
+ SELECT id,role,is_active FROM users WHERE id::text=token UNION ALL SELECT null::bigint,null::text,false WHERE NOT EXISTS(SELECT 1 FROM users WHERE id::text=token) $$;
+INSERT INTO users VALUES(1,'Admin','admin',2,null,'admin','secret',true),(2,'QA','quality_officer',2,null,'qa','secret',true),(3,'Supervisor','supervisor',2,null,'sup','secret',true),(4,'Mine','employee',2,3,'mine','secret',true),(5,'Other','employee',3,6,'other','secret',true),(6,'Other Supervisor','supervisor',3,null,'otherSup','secret',true),(7,'Disabled','employee',2,3,'disabled','secret',false);
+INSERT INTO evaluations VALUES(10,4,2,current_date),(11,5,2,current_date),(12,7,2,current_date);
+INSERT INTO notifications VALUES(1,4),(2,5);
+INSERT INTO objections VALUES(1,4,10),(2,5,11);
+INSERT INTO creative_gene_actions SELECT * FROM objections;
+INSERT INTO creative_gene_objections SELECT *,now() FROM objections;
+INSERT INTO creative_gene_weekly_status VALUES(1,4,current_date),(2,5,current_date);
+INSERT INTO evaluation_templates VALUES(1,2,true,null),(2,3,true,'designer');
+INSERT INTO audit_logs VALUES(1);
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon,authenticated;
+GRANT SELECT(id) ON users TO anon;
+`);
+await db.exec(await readFile('security-migration/78_scoped_reads.sql','utf8'));
+const read=async(token,table,filters=[],order='id',asc=true,offset=0,limit=1000)=>(await db.query('select read_scoped_data($1,$2,$3,$4,$5,$6,$7) as v',[token,table,JSON.stringify(filters),order,asc,offset,limit])).rows[0].v;
+const eq=(a,b)=>{assert.deepEqual(a,b);checks++};
+eq((await read('4','evaluations')).map(x=>x.id),[10]);
+eq((await read('3','evaluations')).map(x=>x.id),[10,12]);
+eq((await read('1','evaluations')).length,3);eq((await read('2','evaluations')).length,3);
+for(const table of ['objections','creative_gene_actions','creative_gene_objections','creative_gene_weekly_status'])eq((await read('4',table)).map(x=>x.id),[1]);
+eq((await read('4','notifications')).map(x=>x.id),[1]);eq((await read('1','notifications')).length,0);
+eq((await read('4','evaluation_templates')).map(x=>x.id),[1]);
+const directory=await read('4','users_public');eq(directory.map(x=>x.id),[2,3,4]);eq(directory.find(x=>x.id===2).email,undefined);eq(directory.find(x=>x.id===4).email,'mine');assert(!JSON.stringify(directory).includes('secret'));checks++;
+eq((await read('4','evaluations',[{column:'employee_id',op:'eq',value:5}])).length,0);
+eq((await read('1','evaluations',[{column:'id',op:'in',value:[10,12]}])).length,2);
+eq((await read('1','evaluations',[],'id',false,1,1)).map(x=>x.id),[11]);
+eq((await read('1','evaluation_templates',[{column:'job_role',op:'is',value:null}])).map(x=>x.id),[1]);
+for(const args of [['bad','evaluations'],['7','evaluations'],['4','sessions'],['4','audit_logs'],['1','users;drop table users'],['1','evaluations',[{column:'id) OR true--',op:'eq',value:1}]],['1','evaluations',[],'id; select 1']]) {await assert.rejects(read(...args));checks++;}
+await db.exec(await readFile('security-migration/80_close_public_reads.sql','utf8'));
+await db.exec('set role anon');
+for(const table of ['users','users_public','evaluations','notifications','objections','audit_logs']) {await assert.rejects(db.query('select id from '+table));checks++;}
+eq((await read('4','evaluations')).length,1);
+await assert.rejects(read('bad','evaluations'));checks++;
+await db.exec('reset role');
+await db.close();console.log(`Scoped reads: ${checks} checks passed (roles, filters, directory privacy, injection rejection, column grants and anonymous denial)`);

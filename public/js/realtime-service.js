@@ -48,7 +48,9 @@
       }
       this.started = true;
       this._ensureIndicator();
-      this._subscribeAll();
+      // Custom sessions cannot authorize postgres_changes; use authenticated polling.
+      this.status = window.SupabaseSync.ready ? 'connected' : 'connecting';
+      this._renderIndicator();
       console.log('📡 RealtimeService بدأ — جداول:', this.TABLES.join(', '));
     },
 
@@ -90,10 +92,7 @@
           // جداول غير مُدارة (CG/objection_comments) → لا سحب؛ صفحات CG تجلب بياناتها عند الطلب، وإعادة الرسم أدناه تكفي.
         } catch (_) {}
         try {
-          if (typeof navigate === 'function' && typeof currentPage !== 'undefined'
-              && currentPage && currentPage !== 'login') {
-            navigate(currentPage, (typeof currentParams !== 'undefined' ? currentParams : {}));
-          }
+          window.SupabaseSync.scheduleUIRefresh();
         } catch (_) {}
       }, delay);
     },
@@ -114,7 +113,7 @@
             clearTimeout(this._timer);
             this._timer = setTimeout(async () => {
               try { await window.SupabaseSync.pullAll(true); } catch (_) {}
-              try { if (typeof navigate === 'function' && typeof currentPage !== 'undefined' && currentPage && currentPage !== 'login') navigate(currentPage, (typeof currentParams !== 'undefined' ? currentParams : {})); } catch (_) {}
+              try { window.SupabaseSync.scheduleUIRefresh(); } catch (_) {}
             }, this.debounceMs);
           } else { console.log('⏳ تخطّي catch-up (cooldown 10s) — تذبذب اتصال'); }
         }

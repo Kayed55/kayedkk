@@ -22,7 +22,7 @@
 const SUPABASE_CONFIG = {
   url: 'https://hobhajqtgcyctfmcxkel.supabase.co',         // ← من Settings → API → Project URL
   anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhvYmhhanF0Z2N5Y3RmbWN4a2VsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4ODkzMDIsImV4cCI6MjA5NzQ2NTMwMn0.mTWqRmUyxShOSbwpnlHcmRU3FZ_KQ8OSLyG6sQzgmBY',                // ← من Settings → API → anon public key
-  syncInterval: 120000,                                 // ★ #65-hotfix: 30s→120s (تقليل حِمل CPU الدوري 4×؛ Realtime يغطّي الحيّ)
+  syncInterval: 60000,                                 // ★ #65-hotfix: 30s→120s (تقليل حِمل CPU الدوري 4×؛ Realtime يغطّي الحيّ)
   enableAutoSync: true,                                 // فعّل/عطّل المزامنة الدورية
   enableRealtime: true,                                 // فعّل/عطّل Realtime subscriptions
   uiRefreshDebounce: 250                                // تأخير إعادة رسم الواجهة (ms)
@@ -99,7 +99,7 @@ window.SupabaseSync = {
         const _nav = (typeof navigate === 'function') ? navigate : null;
         const _page = (typeof currentPage !== 'undefined') ? currentPage : null;
         const _params = (typeof currentParams !== 'undefined') ? currentParams : {};
-        if (_nav && _page && _page !== 'login' && !(typeof _formDirty !== 'undefined' && _formDirty)) {
+        if (_nav && _page && _page !== 'login' && !(typeof hasUnsavedWork === 'function' ? hasUnsavedWork() : (typeof _formDirty !== 'undefined' && _formDirty)) && !(typeof document !== 'undefined' && (document.querySelector('#modal-container .modal-overlay') || Array.from(document.querySelectorAll('.content input[type=search], .content input[id*=search]')).some(el => el.value)))) {
           _nav(_page, _params);
         }
       } catch (e) {
@@ -157,7 +157,7 @@ window.SupabaseSync = {
           if (limitN) {
             let lData = null, lErr = null, lStatus = null;
             for (let attempt = 1; attempt <= 3; attempt++) {
-              const res = await window.sb.from(readFrom).select('*').order('id', { ascending: false }).limit(limitN);
+              const res = await window.secureRead(readFrom).select('*').order('id', { ascending: false }).limit(limitN);
               lData = res.data; lErr = res.error; lStatus = res.status;
               if (!lErr) break;
               console.error(`[pullAll] Table: ${table} | Limited: ${limitN} | Status: ${lStatus} | Attempt: ${attempt}/3 | Error: ${lErr.message}`);
@@ -185,7 +185,7 @@ window.SupabaseSync = {
             // إعادة محاولة ذكية داخل كل دفعة: حتى 3 محاولات بفاصل 500ms قبل الاستسلام
             let pData = null, pErr = null, pStatus = null;
             for (let attempt = 1; attempt <= 3; attempt++) {
-              const res = await window.sb.from(readFrom).select('*').order('id', { ascending: true }).range(start, end);
+              const res = await window.secureRead(readFrom).select('*').order('id', { ascending: true }).range(start, end);
               pData = res.data; pErr = res.error; pStatus = res.status;
               if (!pErr) break;
               console.error(`[pullAll] Table: ${table} | Page: ${page} | Status: ${pStatus} | Attempt: ${attempt}/3 | Error: ${pErr.message}`);
@@ -274,10 +274,13 @@ window.SupabaseSync = {
         self._lastPullError = null;
 
         this.ready = true;
+        if (window.RealtimeService) { window.RealtimeService.status='connected'; window.RealtimeService._renderIndicator(); }
         this.lastSync = Date.now();
         console.log('✅ Pull complete.');
         return true;
       } catch (e) {
+        self._lastPullError = {message:e.message,at:new Date().toISOString()};
+        if (window.RealtimeService) { window.RealtimeService.status='disconnected'; window.RealtimeService._renderIndicator(); }
         console.error('❌ Pull failed:', e);
         return false;
       }
@@ -305,14 +308,14 @@ window.SupabaseSync = {
     let rows = null;
     try {
       if (limitN) {
-        const res = await window.sb.from(readFrom).select('*').order('id', { ascending: false }).limit(limitN);
+        const res = await window.secureRead(readFrom).select('*').order('id', { ascending: false }).limit(limitN);
         if (res.error) throw res.error;
         rows = res.data || [];
       } else {
         const PAGE = 1000, MAX_PAGES = 50; let all = [];
         for (let page = 0; page < MAX_PAGES; page++) {
           const start = page * PAGE, end = start + PAGE - 1;
-          const res = await window.sb.from(readFrom).select('*').order('id', { ascending: true }).range(start, end);
+          const res = await window.secureRead(readFrom).select('*').order('id', { ascending: true }).range(start, end);
           if (res.error) throw res.error;
           const batch = res.data || [];
           all = all.concat(batch);

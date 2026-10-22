@@ -9,6 +9,7 @@ function fixture() {
     from(table){return {select(){return this;},order(){return this;},range(){return read(table);}};},
     rpc:async()=>({data:[],error:null})
   }};
+  window.secureRead=window.sb.from;
   const ctx={window,DB:{data:{},_persist(){}},localStorage:{getItem(){return null;},setItem(){}},navigator:{}, console:{log(){},warn(){},error(){}},setTimeout:fn=>{timers.push(fn);return timers.length;},clearTimeout(){},setInterval:fn=>intervals.push(fn),currentPage:'evaluations',currentParams:{dept:2},navigate:(...args)=>navigations.push(args),_formDirty:false};
   vm.createContext(ctx);vm.runInContext(fs.readFileSync('public/js/00-supabase-sync.js','utf8'),ctx);
   return {ctx,sync:window.SupabaseSync,setRead(fn){read=fn;},timers,intervals,navigations};

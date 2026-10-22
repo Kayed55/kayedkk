@@ -18,6 +18,7 @@ const source=await readFile(new URL('../security-migration/70_pr73_azwa_dashboar
 const dashboard=source.slice(source.indexOf('CREATE OR REPLACE FUNCTION public.get_dashboard_stats'),source.indexOf('REVOKE ALL ON FUNCTION public.get_dashboard_stats'));
 await db.exec(dashboard);
 await db.exec(await readFile(new URL('../security-migration/77_miyar_classifications.sql',import.meta.url),'utf8'));
+await db.exec(await readFile(new URL('../security-migration/79_report_and_date_guards.sql',import.meta.url),'utf8'));
 const value=async q=>(await db.query(q)).rows[0].v;
 let s=await value("select _dash_section(2,array[2]::bigint[]) as v");assert.deepEqual(s.miyar_counts,{below:2,near:2,meets:2,excellent:2,review:1});assert.equal(s.total,9);assert.equal(s.pass,5,'legacy aggregate retained');
 let q=await value("select get_quality_report('admin',current_date,current_date,2,1) as v");assert.deepEqual(q.sections[0].miyar_counts,{below:2,near:2,meets:2,excellent:1,review:1});assert.equal(q.sections[0].conformance_rate,37.5);assert.equal(q.conformance_rate,37.5);assert.equal(q.line[0].conformance_rate,37.5);
@@ -25,4 +26,8 @@ assert.equal((await value("select get_quality_report('employee',current_date,cur
 assert.equal((await value("select get_quality_report('bad',current_date,current_date) as v")).ok,false);
 for(const role of ['employee','supervisor']){const d=await value(`select get_dashboard_stats('${role}') as v`);assert.equal(d.sections.mahzam.total,9);assert.equal(d.sections.mahzam.miyar_counts.excellent,2)}
 const d=await value("select get_dashboard_stats('admin') as v");assert.equal(d.sections.mahzam.total,10);assert.equal(d.sections.mahzam.miyar_counts.excellent,3);
+const aggregate=await value("select get_quality_report('admin',current_date,current_date) as v");assert.equal(aggregate.conformance_rate,44.4,'empty departments excluded');
+await assert.rejects(db.exec("insert into evaluations(id,evaluation_date) values(99,'0206-08-15')"));
+await assert.rejects(db.exec("insert into evaluations(id,evaluation_date) values(99,current_date+1)"));
+await db.exec("insert into evaluations(id,evaluation_date) values(99,current_date)");
 await db.close();console.log('Miyar SQL: boundaries, nulls, date/evaluator filters, legacy fields and role scopes passed');

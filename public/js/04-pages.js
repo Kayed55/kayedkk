@@ -22,7 +22,9 @@ let charts = [];
 let _formDirty = false;
 let _navToken = 0;
 let _navDebounce = null;
-const _FORM_PAGES = ['new-evaluation', 'edit-evaluation'];
+const _FORM_PAGES = ['new-evaluation', 'edit-evaluation', 'cg-upload', 'cg-eval', 'new-objection', 'profile', 'settings', 'departments'];
+function hasUnsavedWork() { return _formDirty || !!document.querySelector('#modal-container .modal-overlay'); }
+window.addEventListener('beforeunload', e => { if (hasUnsavedWork()) { e.preventDefault(); e.returnValue=''; } });
 // عناوين الأقسام — تُستخدم في الشريط العلوي وفي عنوان تبويب المتصفّح
 const PAGE_TITLES = {dashboard:'لوحة التحكم', employees:'إدارة الموظفين', 'view-employee':'بيانات الموظف', evaluations:'التقييمات', 'new-evaluation':'تقييم جديد', 'cg-week':'أسبوع Creative Gene', 'cg-eval':'تفاصيل تقييم Creative Gene', 'cg-objections':'اعتراضات Creative Gene', 'cg-my-team':'موظفوني — Creative Gene', 'cg-frequent-errors':'المعايير الأدنى أداءً — Creative Gene', 'cg-actions-report':'تقرير الإجراءات — Creative Gene', 'cg-upload':'رفع تقييم جديد', 'cg-requests':'طلبات التقييم — Creative Gene', 'cg-pending-approval':'بانتظار الاعتماد — Creative Gene', 'view-evaluation':'تفاصيل التقييم', 'edit-evaluation':'تعديل التقييم', reports:'التقارير', 'monthly-report':'التقرير الشهري', 'actions-report':'تقرير الإجراءات المتخذة', 'errors-report':'الأخطاء المتكررة الشهرية', objections:'الاعتراضات', 'view-objection':'تفاصيل الاعتراض', 'new-objection':'تقديم اعتراض', 'audit-log':'سجل العمليات', 'quality-report':'تقرير الجودة', users:'إدارة المستخدمين', 'deleted-users':'المستخدمون المحذوفون', profile:'الملف الشخصي', notifications:'الإشعارات', settings:'الإعدادات', login:'تسجيل الدخول'};
 
@@ -139,7 +141,7 @@ DB.addAudit({ action: action, entity_type: entityType || 'login', entity_id: ent
 if (!window.__dirtyTrackerBound) {
 window.__dirtyTrackerBound = true;
 const markDirty = e => {
-if (_FORM_PAGES.indexOf(currentPage) !== -1 && e.target && e.target.closest && e.target.closest('.content')) {
+if (e.target && e.target.closest && _FORM_PAGES.indexOf(currentPage) !== -1 && e.target.closest('.content')) {
 _formDirty = true;
 }
 };
@@ -1155,7 +1157,7 @@ return `<div class="page-header"><div><div class="page-title">📊 تقرير ا
 <div class="form-group" style="margin:0;min-width:160px"><label class="form-label">الفترة</label><select class="form-control" id="qr-period"><option value="month">هذا الشهر</option><option value="last">الشهر الماضي</option><option value="3m" selected>آخر 3 أشهر</option><option value="custom">مخصّص</option></select></div>
 <div class="form-group qr-custom" style="margin:0;display:none"><label class="form-label">من</label><input type="date" class="form-control" id="qr-from"></div>
 <div class="form-group qr-custom" style="margin:0;display:none"><label class="form-label">إلى</label><input type="date" class="form-control" id="qr-to"></div>
-<div class="form-group" style="margin:0;min-width:150px"><label class="form-label">القسم</label><select class="form-control" id="qr-dept"><option value="">الكل</option>${(window._departments||[]).filter(d=>d.is_visible_in_ui && d.code).map(d=>`<option value="${d.id}">${Utils.escape(d.name)}</option>`).join('')}</select></div>
+<div class="form-group" style="margin:0;min-width:150px"><label class="form-label">القسم</label><select class="form-control" id="qr-dept"><option value="">الكل</option>${(window._departments||[]).filter(d=>d.is_visible_in_ui !== false && d.code).map(d=>`<option value="${d.id}">${Utils.escape(d.name)}</option>`).join('')}</select></div>
 <div class="form-group" style="margin:0;min-width:160px"><label class="form-label">موظف الجودة</label><select class="form-control" id="qr-qo"><option value="">الكل</option>${qoOpts}</select></div>
 <button class="btn btn-primary" id="qr-apply">تطبيق</button>
 </div></div></div>
@@ -1183,7 +1185,7 @@ const secCards = (j.sections||[]).map(s=>{ const cfg=DASH_SECTIONS[s.key]||{colo
 return `<div class="card" style="border-top:4px solid ${cfg.color}"><div class="card-body">
 <div style="font-weight:800;font-size:16px;color:${cfg.color};margin-bottom:10px">${cfg.icon} ${Utils.escape(s.name)}</div>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:14px">
-<div>نسبة المطابقة: <b style="color:${cfg.color}">${s.conformance_rate}%</b></div><div>الإجمالي: <b>${s.total}</b></div>
+<div>نسبة المطابقة: <b style="color:${cfg.color}">${s.total ? s.conformance_rate + '%' : 'لم يقيّم'}</b></div><div>الإجمالي: <b>${s.total}</b></div>
 <div class="miyar-distribution" style="grid-column:1/-1">${miyarDistributionHTML(s.miyar_counts)}</div>
 <div>المتوسط: <b>${s.avg}%</b></div><div>الاعتراضات: <b>${s.objections}</b></div>
 </div><div style="font-size:11px;color:var(--muted);margin-top:8px">المطابقة: 90 إلى 100 · التميز: 100</div></div></div>`; }).join('');
@@ -1193,7 +1195,7 @@ host.innerHTML = `
 <div class="card" style="border-top:5px solid ${ovColor};margin-bottom:18px;background:${ovColor}0d"><div class="card-body" style="text-align:center;padding:26px">
 <div style="font-size:14px;color:var(--muted);font-weight:600">النسبة العامة للجودة</div>
 <div style="font-size:56px;font-weight:800;color:${ovColor};line-height:1.1">${ov}%</div>
-<div style="font-size:12px;color:var(--muted)">متوسط نسب مطابقة الأقسام · ${j.from} ← ${j.to}</div></div></div>
+<div style="font-size:12px;color:var(--muted)">متوسط نسب مطابقة الأقسام التي لديها تقييمات · ${j.from} ← ${j.to}</div></div></div>
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-bottom:18px">${secCards||'<div class="alert alert-info">لا أقسام</div>'}</div>
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:18px">
 <div class="card"><div class="card-header"><div class="card-title">📊 مقارنة نسب المطابقة</div></div><div class="card-body"><div style="height:220px"><canvas id="qr-bar"></canvas></div></div></div>
@@ -1579,7 +1581,7 @@ const JOB_TITLE_SUGGEST = { real_estate_marketer:'مسوق عقاري', designer
 // تحميل الأقسام (مع تخزين) عبر RPC
 const _DEPT_CACHE_KEY = 'qe_departments_cache', _DEPT_TTL = 24 * 60 * 60 * 1000;   // ★ #67-C-0: الأقسام شبه ثابتة
 async function loadDepartments(force) {
-  if (window._departments && !force) return window._departments;
+  if (window._departments && window._departments.length && !force) return window._departments;
   // ★ #67-C-0: كاش localStorage (TTL 24h) — يجعل الأقسام متاحة فوراً بعد Hard Refresh؛ تعديلات الأدمن تستدعي force.
   if (!force) {
     try {
@@ -1589,7 +1591,8 @@ async function loadDepartments(force) {
   }
   try {
     const tok = window.getSessionToken ? window.getSessionToken() : null;
-    const { data } = await window.sb.rpc('list_departments', { p_session_token: tok });
+    const { data, error } = await window.sb.rpc('list_departments', { p_session_token: tok });
+    if (error || !data || !data.ok || !Array.isArray(data.departments)) throw new Error('تعذّر تحميل الأقسام');
     window._departments = (data && data.departments) ? data.departments : [];
     try { if (window._departments.length) localStorage.setItem(_DEPT_CACHE_KEY, JSON.stringify({ d: window._departments, at: Date.now() })); } catch (_) {}
   } catch (_) { if (!window._departments) window._departments = []; }   // ★ #67-C-0: لا تمسح الكاش القائم عند فشل RPC
@@ -2676,7 +2679,7 @@ return `
 <div class="card-body">
 <div class="grid grid-2">
 <div class="form-group"><label class="form-label">الموظف *</label><select class="form-control" id="ef-employee" required><option value="">-- اختر --</option>${empOpts}</select></div>
-<div class="form-group"><label class="form-label">تاريخ التقييم *</label><input type="date" class="form-control" id="ef-date" required value="${new Date().toISOString().substring(0,10)}"></div>
+<div class="form-group"><label class="form-label">تاريخ التقييم *</label><input type="date" class="form-control" id="ef-date" min="2000-01-01" max="${new Date().toISOString().slice(0,10)}" required value="${new Date().toISOString().substring(0,10)}"></div>
 </div>
 ${employees.length ? '' : '<div class="alert alert-info" style="margin-top:10px">لا يوجد موظفون في هذا القسم.</div>'}
 </div>
@@ -2912,7 +2915,7 @@ const { data, error } = await window.sb.rpc('create_weekly_evaluation', { p_sess
 const row = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!row || !row.ok) { const m = (row && row.message) || (error && error.message) || 'تعذّر حفظ التقييم'; if (!handleSessionError(m)) Toast.error(m); return false; }
 if (window.SupabaseSync && SupabaseSync.pullAll) { try { await SupabaseSync.pullAll(true); } catch(_){} }
-try { if (row.evaluation_id && !DB.getEvaluation(row.evaluation_id) && window.sb) { const { data: ne } = await window.sb.from('evaluations').select('*').eq('id', row.evaluation_id).maybeSingle(); if (ne) { DB.data.evaluations = (DB.data.evaluations || []).filter(x => x.id !== ne.id).concat(ne); localStorage.setItem(DB.KEY, JSON.stringify(DB.data)); } } } catch(_){}
+try { if (row.evaluation_id && !DB.getEvaluation(row.evaluation_id) && window.sb) { const { data: ne } = await window.secureRead('evaluations').select('*').eq('id', row.evaluation_id).maybeSingle(); if (ne) { DB.data.evaluations = (DB.data.evaluations || []).filter(x => x.id !== ne.id).concat(ne); localStorage.setItem(DB.KEY, JSON.stringify(DB.data)); } } } catch(_){}
 Toast.success(`تم حفظ التقييم الأسبوعي — ${row.percentage}% (${Utils.gradeLabel(row.percentage)})`);
 navigate('view-evaluation', { id: row.evaluation_id });
 return true;
@@ -2999,7 +3002,7 @@ if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullA
 // وادمجه في الذاكرة قبل فتح صفحته — حتى لا تظهر "التقييم غير موجود" إطلاقاً.
 try {
   if (newEvalId && !DB.getEvaluation(newEvalId) && window.sb) {
-    const { data: ne } = await window.sb.from('evaluations').select('*').eq('id', newEvalId).maybeSingle();
+    const { data: ne } = await window.secureRead('evaluations').select('*').eq('id', newEvalId).maybeSingle();
     if (ne) {
       DB.data.evaluations = (DB.data.evaluations || []).filter(e => e.id !== ne.id).concat(ne);
       localStorage.setItem(DB.KEY, JSON.stringify(DB.data));
@@ -3043,7 +3046,7 @@ return !!(d && d.code === 'creative_gen');
 }
 function weekEndStr(ws) { const d = new Date(ws + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate()+6); return d.toISOString().substring(0,10); }  // #30: UTC صريح — مستقل عن المنطقة الزمنية
 async function fetchCgStatusRow(employeeId, weekStart) {
-try { const { data } = await window.sb.from('creative_gene_weekly_status').select('*').eq('employee_id', employeeId).eq('week_start', weekStart).maybeSingle(); return data || null; }
+try { const { data } = await window.secureRead('creative_gene_weekly_status').select('*').eq('employee_id', employeeId).eq('week_start', weekStart).maybeSingle(); return data || null; }
 catch(_) { return null; }
 }
 async function uploadCreativeGenePdf(employeeId, weekStart, file) {
@@ -3110,8 +3113,8 @@ if (ev.objection_deadline) return new Date(ev.objection_deadline);
 const c = new Date(ev.created_at); c.setHours(c.getHours() + hours); return c;
 }
 function objectionWindowOpen(ev) { try { return new Date() < objectionDeadline(ev); } catch(_) { return false; } }
-async function fetchObjection(evalId) { try { const { data } = await window.sb.from('creative_gene_objections').select('*').eq('evaluation_id', evalId).maybeSingle(); return data || null; } catch(_) { return null; } }
-async function fetchAction(evalId) { try { const { data } = await window.sb.from('creative_gene_actions').select('*').eq('evaluation_id', evalId).order('id', { ascending:false }).limit(1); return (data && data[0]) || null; } catch(_) { return null; } }
+async function fetchObjection(evalId) { try { const { data } = await window.secureRead('creative_gene_objections').select('*').eq('evaluation_id', evalId).maybeSingle(); return data || null; } catch(_) { return null; } }
+async function fetchAction(evalId) { try { const { data } = await window.secureRead('creative_gene_actions').select('*').eq('evaluation_id', evalId).order('id', { ascending:false }).limit(1); return (data && data[0]) || null; } catch(_) { return null; } }
 // ★ PR #72 (عزل الأقسام): زر «رجوع» لقائمة التقييمات يحمل قسم الموظف → يعيد الفلتر ويمنع اختلاط محزم/كريتف جين عند الرجوع
 function _evalBackBtn(ev) {
   const _emp = ev ? DB.getUser(ev.employee_id) : null;
@@ -3139,7 +3142,7 @@ Modal.close(); Toast.success('تم تقديم الاعتراض'); if (onDone) on
 
 async function fetchCgRoleTemplate(jobRole) {
 try {
-let q = window.sb.from('evaluation_templates').select('*').eq('department_id', cgDeptId()).eq('is_active', true);
+let q = window.secureRead('evaluation_templates').select('*').eq('department_id', cgDeptId()).eq('is_active', true);
 q = jobRole ? q.eq('job_role', jobRole) : q.is('job_role', null);
 const { data } = await q.limit(1);
 return (data && data[0]) ? data[0] : null;
@@ -3149,7 +3152,7 @@ return (data && data[0]) ? data[0] : null;
 // ★ #59: جلب أي نموذج بالـid (محايد للنوع) — المصدر الوحيد للحقيقة = users.template_id
 async function fetchTemplateById(id) {
 if (id == null) return null;
-try { const { data } = await window.sb.from('evaluation_templates').select('*').eq('id', id).limit(1); return (data && data[0]) ? data[0] : null; }
+try { const { data } = await window.secureRead('evaluation_templates').select('*').eq('id', id).limit(1); return (data && data[0]) ? data[0] : null; }
 catch(_) { return null; }
 }
 function fetchCgTemplateById(id) { return fetchTemplateById(id); }   // ★ #59 alias — صفر كسر لمستدعيات CG
@@ -3266,7 +3269,7 @@ p_evaluation_notes: notes, p_week_start: ws
 const rr = (!error && Array.isArray(data) && data[0]) ? data[0] : null;
 if (!rr || !rr.ok) { const m=(rr&&rr.message)||(error&&error.message)||'تعذّر حفظ التقييم'; if(!handleSessionError(m)) Toast.error(m); return false; }
 if (window.SupabaseSync && SupabaseSync.pullAll) { try{ await SupabaseSync.pullAll(true); }catch(_){} }
-try { if (rr.evaluation_id && !DB.getEvaluation(rr.evaluation_id) && window.sb) { const { data: ne } = await window.sb.from('evaluations').select('*').eq('id', rr.evaluation_id).maybeSingle(); if (ne) { DB.data.evaluations = (DB.data.evaluations || []).filter(x => x.id !== ne.id).concat(ne); localStorage.setItem(DB.KEY, JSON.stringify(DB.data)); } } } catch(_){}
+try { if (rr.evaluation_id && !DB.getEvaluation(rr.evaluation_id) && window.sb) { const { data: ne } = await window.secureRead('evaluations').select('*').eq('id', rr.evaluation_id).maybeSingle(); if (ne) { DB.data.evaluations = (DB.data.evaluations || []).filter(x => x.id !== ne.id).concat(ne); localStorage.setItem(DB.KEY, JSON.stringify(DB.data)); } } } catch(_){}
 // حفظ الإجراء الذي حدّده موظف الجودة مع التقييم
 try {
 const { data: ad, error: aerr } = await window.sb.rpc('cg_set_eval_action', { p_session_token: cgToken(), p_evaluation_id: rr.evaluation_id, p_action_type: actionType, p_action_details: actionDetails });
@@ -3311,7 +3314,7 @@ const obj = await fetchObjection(id);
 //   توصية الجودة = supervisor_id NULL · إجراء المشرف = supervisor_id NOT NULL وغير مُلغى (superseded_at NULL)
 let qoAct = null, supAct = null;
 try {
-  const { data } = await window.sb.from('creative_gene_actions').select('*').eq('evaluation_id', id).order('id', { ascending:false });
+  const { data } = await window.secureRead('creative_gene_actions').select('*').eq('evaluation_id', id).order('id', { ascending:false });
   const rows = data || [];
   qoAct  = rows.find(a => a.supervisor_id == null) || null;
   supAct = rows.find(a => a.supervisor_id != null && a.superseded_at == null) || null;
@@ -3348,7 +3351,7 @@ return `<div style="background:#f8fafc;padding:10px;border-radius:8px;margin-bot
 async function loadCgObjections() {
 const host = document.getElementById('cgobj-list');
 if (!host) return;
-const { data, error } = await window.sb.from('creative_gene_objections').select('*').order('raised_at', { ascending:false });
+const { data, error } = await window.secureRead('creative_gene_objections').select('*').order('raised_at', { ascending:false });
 if (error) { if(!handleSessionError(error.message)) host.innerHTML = `<div class="alert alert-danger">${Utils.escape(error.message)}</div>`; return; }
 const objs = data || [];
 const pending = objs.filter(o => o.status === 'pending');
@@ -3379,12 +3382,12 @@ function deptPassScore(deptId) { const d=(window._departments||[]).find(x=>x.id=
 function passFailBadge(percentage, deptId) { return Utils.gradeBadge(percentage); }
 async function reviewObjectionModal(objId) {
 if (!(currentUser.role === 'quality_officer' || currentUser.role === 'admin')) { Toast.error('مراجعة الاعتراض للجودة أو المدير فقط'); return; }
-const { data } = await window.sb.from('creative_gene_objections').select('*').eq('id', objId).maybeSingle();
+const { data } = await window.secureRead('creative_gene_objections').select('*').eq('id', objId).maybeSingle();
 if (!data) { Toast.error('الاعتراض غير موجود'); return; }
 if (data.status !== 'pending') { Toast.info('تمت مراجعة هذا الاعتراض مسبقاً'); return; }
 const emp = DB.getUser(data.employee_id);
 let ev = DB.getEvaluation(data.evaluation_id);
-if (!ev && window.sb) { try { const { data:e } = await window.sb.from('evaluations').select('*').eq('id', data.evaluation_id).maybeSingle(); ev = e; } catch(_){} }
+if (!ev && window.sb) { try { const { data:e } = await window.secureRead('evaluations').select('*').eq('id', data.evaluation_id).maybeSingle(); ev = e; } catch(_){} }
 const crit = (ev && ev.template_snapshot && ev.template_snapshot.criteria) || [];
 const scores = (ev && (ev.section_scores || ev.items)) || {};
 const scoreInputs = crit.map(c => `<div class="form-group" style="margin-bottom:8px"><label class="form-label" style="font-size:13px">${Utils.escape(c.name)} <span style="color:var(--muted);font-size:11px">(0 - ${c.weight})</span></label><input type="number" min="0" max="${c.weight}" step="0.5" class="form-control ro-score" data-cid="${c.id}" data-weight="${c.weight}" value="${scores[c.id]!=null?scores[c.id]:''}"></div>`).join('');
@@ -3490,7 +3493,7 @@ const lastByEmp = {};
 emps.forEach(e => { const evs=(DB.data.evaluations||[]).filter(x=>x.employee_id===e.id&&x.template_type==='pdf_based_weekly').sort((a,b)=>String(b.week_start||'').localeCompare(String(a.week_start||''))); lastByEmp[e.id]=evs[0]||null; });
 const evalIds = Object.values(lastByEmp).filter(Boolean).map(e=>e.id);
 const objMap = {}, actMap = {};
-if (evalIds.length) { try { const [{ data:objs },{ data:acts }] = await Promise.all([window.sb.from('creative_gene_objections').select('*').in('evaluation_id',evalIds), window.sb.from('creative_gene_actions').select('*').in('evaluation_id',evalIds)]); (objs||[]).forEach(o=>objMap[o.evaluation_id]=o); (acts||[]).filter(a=>a.supervisor_id!=null && a.superseded_at==null).forEach(a=>actMap[a.evaluation_id]=a); } catch(_){} }   // ★ #70: إجراء المشرف النشط فقط
+if (evalIds.length) { try { const [{ data:objs },{ data:acts }] = await Promise.all([window.secureRead('creative_gene_objections').select('*').in('evaluation_id',evalIds), window.secureRead('creative_gene_actions').select('*').in('evaluation_id',evalIds)]); (objs||[]).forEach(o=>objMap[o.evaluation_id]=o); (acts||[]).filter(a=>a.supervisor_id!=null && a.superseded_at==null).forEach(a=>actMap[a.evaluation_id]=a); } catch(_){} }   // ★ #70: إجراء المشرف النشط فقط
 const rows = emps.map(e => { const last = lastByEmp[e.id];
 if (!last) return `<tr><td>${Utils.escape(e.full_name)}</td><td>${jobTitleCell(e)}</td><td colspan="4" style="color:var(--muted)">لا يوجد تقييم</td><td>—</td></tr>`;
 const o = objMap[last.id], a = actMap[last.id];
@@ -3508,7 +3511,7 @@ if (ev) return ev;
 for (let i = 0; i < tries && !ev; i++) {
 try {
 if (window.sb) {
-const { data } = await window.sb.from('evaluations').select('*').eq('id', evalId).maybeSingle();
+const { data } = await window.secureRead('evaluations').select('*').eq('id', evalId).maybeSingle();
 if (data) { DB.data.evaluations = (DB.data.evaluations || []).filter(x => x.id !== data.id).concat(data); try { localStorage.setItem(DB.KEY, JSON.stringify(DB.data)); } catch(_){} ev = data; break; }
 }
 } catch (e) { console.warn('[ensureEvalLoaded] محاولة ' + (i+1) + ' فشلت:', e && e.message); }
@@ -3526,7 +3529,7 @@ const obj = await fetchObjection(evalId);
 // ★ Bug#115: اقتراح الجودة = صفّ creative_gene_actions بـsupervisor_id NULL (نفس تقسيم loadPdfViewExtra) —
 //   يُعرض كبطاقة مرجعية للقراءة فقط. حقول المشرف تبدأ فارغة دائماً (لا تعطيل، لا زر تعديل) وتُحفظ كإجراء مستقل عبر take_action.
 let qoAct = null;
-try { const { data } = await window.sb.from('creative_gene_actions').select('*').eq('evaluation_id', evalId).order('id', { ascending:false }); qoAct = (data||[]).find(a => a.supervisor_id == null) || null; } catch(_){}
+try { const { data } = await window.secureRead('creative_gene_actions').select('*').eq('evaluation_id', evalId).order('id', { ascending:false }); qoAct = (data||[]).find(a => a.supervisor_id == null) || null; } catch(_){}
 const qoBy = (qoAct && qoAct.created_by) ? DB.getUser(qoAct.created_by) : null;
 Modal.show('مراجعة واعتماد التقييم', `
 <div style="margin-bottom:10px"><strong>الموظف:</strong> ${emp?Utils.escape(emp.full_name):'-'} — <strong>الأسبوع:</strong> ${ev.week_start||''} — <strong>الدرجة:</strong> ${ev.percentage}% ${passFailBadge(ev.percentage, emp?emp.department_id:cgDeptId())}</div>
@@ -3610,8 +3613,8 @@ const evalIds = rows.filter(r => r.evaluation_id).map(r => r.evaluation_id);
 if (evalIds.length) {
 try {
 const [{ data: objs }, { data: acts }] = await Promise.all([
-window.sb.from('creative_gene_objections').select('*').in('evaluation_id', evalIds),
-window.sb.from('creative_gene_actions').select('*').in('evaluation_id', evalIds)
+window.secureRead('creative_gene_objections').select('*').in('evaluation_id', evalIds),
+window.secureRead('creative_gene_actions').select('*').in('evaluation_id', evalIds)
 ]);
 (objs||[]).forEach(o => objMap[o.evaluation_id] = o);
 (acts||[]).filter(a => a.supervisor_id != null && a.superseded_at == null).forEach(a => actMap[a.evaluation_id] = a);   // ★ #70: إجراء المشرف النشط فقط
@@ -3874,7 +3877,7 @@ if (window.SupabaseSync && SupabaseSync.pullAll) { try { await SupabaseSync.pull
 navigate('new-evaluation', { dept: cgDeptId(), emp: empId, week: weekStart });
 }
 async function reviewObjectionByEval(evalId) {
-const { data } = await window.sb.from('creative_gene_objections').select('id').eq('evaluation_id', evalId).order('id', { ascending: false }).limit(1);
+const { data } = await window.secureRead('creative_gene_objections').select('id').eq('evaluation_id', evalId).order('id', { ascending: false }).limit(1);
 const o = (data && data[0]) || null;
 if (!o) { Toast.error('الاعتراض غير موجود'); return; }
 reviewObjectionModal(o.id);
@@ -4000,7 +4003,7 @@ window.__viewEvalRetry = id;
 (async () => {
 try { if (window.SupabaseSync && SupabaseSync.pullAll) await SupabaseSync.pullAll(true); } catch(_){}
 if (!DB.getEvaluation(id)) {
-try { const { data: ne } = await window.sb.from('evaluations').select('*').eq('id', id).maybeSingle();
+try { const { data: ne } = await window.secureRead('evaluations').select('*').eq('id', id).maybeSingle();
 if (ne) { DB.data.evaluations = (DB.data.evaluations || []).filter(x => x.id !== ne.id).concat(ne); try { localStorage.setItem(DB.KEY, JSON.stringify(DB.data)); } catch(_){} } } catch(_){}
 }
 if (typeof currentPage !== 'undefined' && currentPage === 'view-evaluation' && currentParams && currentParams.id === id) navigate('view-evaluation', { id: id });
@@ -4448,7 +4451,7 @@ return `
 async function cgReadPages(table, configure = q => q) {
 const rows = []; let offset = 0;
 for (;;) {
-const { data, error } = await configure(window.sb.from(table).select('*')).order('id', { ascending:true }).range(offset, offset + 499);
+const { data, error } = await configure(window.secureRead(table).select('*')).order('id', { ascending:true }).range(offset, offset + 499);
 if (error) throw error;
 if (!Array.isArray(data)) throw new Error('استجابة غير مكتملة');
 if (!data.length) return rows;
@@ -4934,7 +4937,7 @@ const impRows = Object.entries(data.improvementByAction).sort((a,b)=>b[1].improv
 
 // ★ Bug#112: بطاقات الإحصاء تُحصر بقسم الصفحة (data.evals) — كانت تقرأ DB.data.evaluations العام فتُظهر أرقام محزم داخل عزوة
 const totalEvals = data.evals.length;
-const totalWithAction = data.evals.filter(e => e.action_taken).length;
+const totalWithAction = data.evals.filter(e => e.action_taken && e.action_taken !== 'لا يوجد إجراء').length;
 const totalObs = data.topObservations.reduce((s,[,n]) => s+n, 0);
 const improved = data.improvements.filter(im => im.change > 0).length;
 const overallImpRate = data.improvements.length ? Math.round((improved/data.improvements.length)*100) : 0;
@@ -5070,7 +5073,7 @@ Toast.success('تم تصدير التقرير');
 
 async function exportActionsReportPDF() {
 const data = getActionsReportData();
-const totalEvals = DB.data.evaluations.length;
+const totalEvals = data.evals.length;
 const totalObs = data.topObservations.reduce((s,[,n]) => s+n, 0);
 const improved = data.improvements.filter(im => im.change > 0).length;
 const overallImpRate = data.improvements.length ? Math.round((improved/data.improvements.length)*100) : 0;
@@ -5084,7 +5087,7 @@ ${buildPDFHeader('⚖️ تقرير الإجراءات المتخذة', 'تحل�
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:18px">
 <div style="background:#dbeafe;padding:12px;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:800;color:#1D5BD8">${totalEvals}</div><div style="color:#64748b;font-size:11px">إجمالي التقييمات</div></div>
 <div style="background:#cffafe;padding:12px;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:800;color:#0891b2">${totalObs}</div><div style="color:#64748b;font-size:11px">ملاحظات مرصودة</div></div>
-<div style="background:#fef3c7;padding:12px;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:800;color:#d97706">${DB.data.evaluations.filter(e => e.action_taken).length}</div><div style="color:#64748b;font-size:11px">إجراءات متخذة</div></div>
+<div style="background:#fef3c7;padding:12px;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:800;color:#d97706">${data.evals.filter(e => e.action_taken && e.action_taken !== 'لا يوجد إجراء').length}</div><div style="color:#64748b;font-size:11px">إجراءات متخذة</div></div>
 <div style="background:#d1fae5;padding:12px;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:800;color:#059669">${overallImpRate}%</div><div style="color:#64748b;font-size:11px">نسبة التحسن</div></div>
 </div>
 
@@ -5152,7 +5155,7 @@ const monthOpts = months.map(m => `<option value="${m}" ${m===currentMonth?'sele
 
 // ★ Bug#112: قائمة القسم تُبنى من departments (is_visible_in_ui) لا من أقسام الموظفين الموجودين —
 //   وإلّا لا يظهر قسم بلا موظفين (عزوة). يظهر تلقائياً أي قسم مستقبلي. (نفس نمط qr-dept في تقرير الجودة)
-const deptOpts = (window._departments||[]).filter(d => d.is_visible_in_ui && d.code)
+const deptOpts = (window._departments||[]).filter(d => d.is_visible_in_ui !== false && d.code)
 .map(d => `<option value="${Utils.escape(d.name)}" ${d.name===filterDept?'selected':''}>${Utils.escape(d.name)}</option>`).join('');
 
 const supSet = new Set();
@@ -5691,7 +5694,7 @@ async function loadAuditLog() {
 const tbody = document.getElementById('audit-tbody'); if (!tbody) return;
 let logs = [];
 try {
-const { data, error } = await window.sb.from('audit_logs').select('*').order('id', { ascending: false }).limit(500);
+const { data, error } = await window.secureRead('audit_logs').select('*').order('id', { ascending: false }).limit(500);
 if (error) throw error;
 logs = data || [];
 DB.data.audit_logs = logs;   // للبحث/التصدير (يُحمَّل عند الطلب فقط)
@@ -6428,7 +6431,7 @@ return `
 <div class="card-body">
 <div class="grid grid-3">
 <div class="form-group"><label class="form-label">الموظف *</label><select class="form-control" id="ef-employee" required>${empOpts}</select></div>
-<div class="form-group"><label class="form-label">تاريخ التقييم *</label><input type="date" class="form-control" id="ef-date" required value="${ev.evaluation_date}"></div>
+<div class="form-group"><label class="form-label">تاريخ التقييم *</label><input type="date" class="form-control" id="ef-date" min="2000-01-01" max="${new Date().toISOString().slice(0,10)}" required value="${ev.evaluation_date}"></div>
 <div class="form-group"><label class="form-label">🔍 الملاحظة المرصودة *</label>${buildObservedIssueSelect(ev.observed_issue||'', ev.observed_issue_other||'')}</div>
 </div>
 ${buildCommTypeField(ev)}
@@ -6824,7 +6827,7 @@ if (typeGuess === 'pdf_based_weekly') { if (isEdit) openCgWizard('edit', existin
 let deptId='', name='', jobRole='', sections=null;
 if (isEdit) {
 let tpl=null;
-try { const { data } = await window.sb.from('evaluation_templates').select('*').eq('id', existing.id).maybeSingle(); tpl=data; } catch(_){}
+try { const { data } = await window.secureRead('evaluation_templates').select('*').eq('id', existing.id).maybeSingle(); tpl=data; } catch(_){}
 if (!tpl) { Toast.error('تعذّر جلب النموذج'); return; }
 if (tpl.template_type === 'pdf_based_weekly') { openCgWizard('edit', tpl.job_role||''); return; }
 deptId=tpl.department_id; name=tpl.name||''; jobRole=tpl.job_role||'';
@@ -7630,7 +7633,7 @@ return loadTemplatesCards();   // م24-ج: موحّد على بطاقات list_t
 const host = document.getElementById('tmpl-tree'); if (!host) return;
 await loadDepartments();
 let tmpls = [];
-try { const { data } = await window.sb.from('evaluation_templates').select('id,department_id,job_role,template_type,version,is_active,template_jsonb'); tmpls = data || []; } catch(_){}
+try { const { data } = await window.secureRead('evaluation_templates').select('id,department_id,job_role,template_type,version,is_active,template_jsonb'); tmpls = data || []; } catch(_){}
 const byDept = {}; tmpls.forEach(t => { (byDept[t.department_id] = byDept[t.department_id]||[]).push(t); });
 let html = '';
 (window._departments||[]).forEach(d => {

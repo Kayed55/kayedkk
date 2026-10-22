@@ -108,6 +108,10 @@ this._hadCache = had;
 },
 
 init() {
+if (window.sb) {
+ this.data={users:[],evaluations:[],notifications:[],objections:[],audit_logs:[],evaluation_templates:[],criteria:JSON.parse(JSON.stringify(DEFAULT_CRITERIA)),nextUserId:1,nextEvalId:1,nextNotifId:1,nextObjectionId:1,nextAuditId:1};
+ CRITERIA=this.data.criteria; return;
+}
 const saved = localStorage.getItem(this.KEY);
 if (saved) {
 try { this._applyLoaded(JSON.parse(saved)); return; } catch(e){}

@@ -48,7 +48,12 @@ async function bootApp() {
   await DB.initAsync();   // ★ #67-B: تهيئة async (IndexedDB مع fallback لـlocalStorage) — قراءة محلية سريعة
   // ★ #67-C-0: حمّل الأقسام مبكّراً (من كاش localStorage فوراً، أو RPC مرة) — جاهزة قبل أي تنقّل لصفحة CG (لا fallback في cgDeptId)
   try { if (typeof loadDepartments === 'function') loadDepartments(); } catch (_) {}
-  const hasCache = !!(DB._hadCache && DB.data);
+  // Never render a previous user's or legacy unscoped cache before authorization.
+  DB.data = {users:[],evaluations:[],notifications:[],objections:[],audit_logs:[],evaluation_templates:[],criteria:{}};
+  DB._hadCache=false;
+  localStorage.removeItem(DB.KEY);
+  if (typeof _IDB !== 'undefined' && _IDB.available()) { try { await _IDB.remove(DB.KEY); } catch (_) {} }
+  const hasCache = false;
 
   if (hasCache) {
     // ✅ Warm: رسم فوري من الكاش، ثم سحب خلفي غير حاجب.
@@ -138,14 +143,14 @@ if (document.readyState === 'loading') {
   if (!loaded) return;
   var busy = false, triggered = false;
   async function check() {
-    if (busy || triggered) return; busy = true;
+    if (busy || triggered || (typeof hasUnsavedWork === 'function' && hasUnsavedWork()) || document.querySelector('#modal-container .modal-overlay')) return; busy = true;
     try {
       var res = await fetch('/?_cv=' + Date.now(), { cache: 'no-store' });
       var deployed = parseV(await res.text());
       if (deployed && deployed > loaded) {
         triggered = true;
         try { if (window.Toast && Toast.info) Toast.info('🔄 تتوفّر نسخة محدّثة — يُعاد التحميل…'); } catch (_) {}
-        setTimeout(function () { location.reload(); }, 1500);
+        setTimeout(function () { if (typeof hasUnsavedWork === 'function' && hasUnsavedWork()) { triggered=false; return; } location.reload(); }, 1500);
       }
     } catch (_) {} finally { busy = false; }
   }
