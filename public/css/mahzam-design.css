@@ -127,3 +127,9 @@ input[type=checkbox],input[type=radio]{accent-color:var(--primary)}
 @media print{.dashboard-heading{display:block}.dashboard-actions,.sidebar,.topbar{display:none!important}.layout{display:block}.content{padding:0}.card,.metric-card,.dashboard-charts>div{break-inside:avoid}.dashboard-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.dashboard-charts{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 @media(max-width:768px){.sidebar:not(.show){box-shadow:none}}
+/* Quiet action controls keep the records, rather than button colors, prominent. */
+.table .btn{background:#fff;border:1px solid #D8DEE8;color:var(--text);border-radius:8px;min-height:32px;padding:4px 10px}
+.table .btn-primary{color:#1D5BD8}
+.table .btn-danger{color:#C8372D}
+.table .btn:hover{background:#F7F9FC}
+.page-header .btn[id*="pdf"],.page-header .btn[id*="xlsx"]{background:#fff;border:1px solid #D8DEE8;color:var(--text)}
