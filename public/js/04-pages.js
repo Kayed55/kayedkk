@@ -2395,6 +2395,15 @@ ${canDelete ? `<button class="btn btn-sm btn-danger" data-del-eval="${e.id}">ح�
 </tr>`;
 }
 // ★ #64: تُوحِّد الترقيم على الأداة العامة (paginate + renderPagination من #62) — أُزيلت evalPaginationHTML المكرّرة
+function evaluationEmptyMessage() {
+  const sync = window.SupabaseSync;
+  if (sync && !sync.ready) {
+    if (sync.pendingPull) return 'جارٍ تحميل التقييمات…';
+    if (sync._lastPullError) return 'تعذّر تحميل التقييمات. يرجى تحديث الصفحة للمحاولة مجددًا.';
+    return 'جارٍ تحميل التقييمات…';
+  }
+  return 'لا توجد نتائج مطابقة';
+}
 function paintEvalPage() {
   const tb = document.querySelector('#eval-table tbody');
   if (!tb) return;
@@ -2402,7 +2411,7 @@ function paintEvalPage() {
   _evalPage = r.page;
   tb.innerHTML = r.items.length
     ? r.items.map(evalRowHTML).join('')
-    : '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--muted)">لا توجد نتائج مطابقة</td></tr>';
+    : `<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--muted)">${evaluationEmptyMessage()}</td></tr>`;
   renderPagination(document.getElementById('eval-pagination'), {
     page: _evalPage, total: _evalFiltered.length, size: EVAL_PAGE_SIZE,
     onChange: (n) => { _evalPage = n; paintEvalPage(); }
@@ -2449,7 +2458,7 @@ ${deptF ? '' : deptFilterHTML}
 <div style="overflow-x:auto">
 <table class="table" id="eval-table">
 <thead><tr><th>#</th><th>الموظف</th><th>المسمى الوظيفي</th><th>القسم</th><th>التاريخ</th><th>المقيِّم</th><th>الدرجة</th><th>التقدير</th><th>إجراءات</th></tr></thead>
-<tbody>${rows || '<tr><td colspan="9" style="text-align:center;padding:20px">لا توجد تقييمات</td></tr>'}</tbody>
+<tbody>${rows || `<tr><td colspan="9" style="text-align:center;padding:20px">${evaluationEmptyMessage()}</td></tr>`}</tbody>
 </table>
 </div>
 <div id="eval-pagination"></div>

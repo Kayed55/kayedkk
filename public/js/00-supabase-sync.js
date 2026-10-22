@@ -64,7 +64,8 @@ window.SupabaseSync = {
   deletedEvalIds: [],            // tombstones: تقييمات حُذفت في هذه الجلسة لا يجب أن تعود عبر أي pull متأخّر
   writeViaRpcOnly: true,         // 2-ب-2: تعطيل رفع pushAll المباشر — الكتابة عبر RPCs فقط
   _pullSeq: 0,                   // ترقيم عمليات السحب لمنع سحب قديم من الكتابة فوق بيانات أحدث
-  _appliedSeq: 0,
+  _appliedSeq: 0,                // invalidation barrier for logout/local mutations
+  _tableAppliedSeq: {},         // independent ordering for each table
 
   // قائمة الجداول التي ستتم مزامنتها (الترتيب مهم بسبب foreign keys)
   // audit_logs مُزال عمداً: كبير (آلاف الصفوف) وغير مستخدم يومياً — يُجلب عند الطلب في صفحة السجل.
@@ -98,7 +99,7 @@ window.SupabaseSync = {
         const _nav = (typeof navigate === 'function') ? navigate : null;
         const _page = (typeof currentPage !== 'undefined') ? currentPage : null;
         const _params = (typeof currentParams !== 'undefined') ? currentParams : {};
-        if (_nav && _page && _page !== 'login') {
+        if (_nav && _page && _page !== 'login' && !(typeof _formDirty !== 'undefined' && _formDirty)) {
           _nav(_page, _params);
         }
       } catch (e) {
@@ -238,11 +239,11 @@ window.SupabaseSync = {
         };
 
         // حارس التسلسل: لا تكتب فوق بيانات طبّقها سحبٌ أحدث (سحب قديم اكتمل متأخّراً)
-        if (seq < self._appliedSeq) {
+        if (self.suspended || seq < self._appliedSeq) {
           console.log('  ⏭️ تجاهل سحب قديم اكتمل متأخّراً (seq ' + seq + ' < ' + self._appliedSeq + ')');
           return true;
         }
-        self._appliedSeq = seq;
+
 
         // ★ #67-B: التخزين انتقل إلى DB._persist() (IndexedDB — حصّة كبيرة، بلا تقليم) بعد إسناد DB.data أدناه،
         //   بدل نُسخ localStorage lite التي كانت تقصّ التقييمات عند تجاوز 5MB (سبب تعطّل warm SWR مع 1119 تقييم).
@@ -255,12 +256,16 @@ window.SupabaseSync = {
           // مصدر الحقيقة = الذاكرة: أسند البيانات الكاملة الطازجة (تُدهَس أي نسخة مُقلّمة)
           const d = DB.data;
           if (d) {
-            d.users = dbData.users; d.evaluations = dbData.evaluations; d.notifications = dbData.notifications;
-            d.objections = dbData.objections; d.criteria = dbData.criteria;
-            d.evaluation_templates = dbData.evaluation_templates;   // ★ #58: يُفعّل _tplById (تسميات النماذج في العرض/الفلتر)
-            // audit_logs لا يُسحب هنا (يُجلب عند الطلب في صفحة السجل) — لا نَدهس ما حمّلته loadAuditLog.
-            d.nextUserId = dbData.nextUserId; d.nextEvalId = dbData.nextEvalId;
-            d.nextNotifId = dbData.nextNotifId; d.nextObjectionId = dbData.nextObjectionId;
+            const nextIds = {users:'nextUserId', evaluations:'nextEvalId', notifications:'nextNotifId', objections:'nextObjectionId'};
+            for (const table of self.TABLES) {
+              // A newer users refresh must not discard evaluations from this pull.
+              if (seq < (self._tableAppliedSeq[table] || 0)) continue;
+              d[table] = dbData[table];
+              self._tableAppliedSeq[table] = seq;
+              if (nextIds[table]) d[nextIds[table]] = dbData[nextIds[table]];
+              if (table === 'evaluation_templates') d.criteria = dbData.criteria;
+            }
+            // audit_logs is loaded separately; preserve its current cache.
           }
           if (typeof DB._persist === 'function') { try { DB._persist(); } catch (_) {} }   // ★ #67-B: حفظ كامل لـIndexedDB
         }
@@ -321,8 +326,8 @@ window.SupabaseSync = {
       console.warn('[pullTable] فشل سحب ' + table + ': ' + ((e && e.message) || e));
       return false;
     }
-    if (seq < self._appliedSeq) { console.log('  ⏭️ [pullTable] تجاهل سحب قديم (seq ' + seq + ' < ' + self._appliedSeq + ')'); return true; }
-    self._appliedSeq = seq;
+    if (self.suspended || seq < self._appliedSeq || seq < (self._tableAppliedSeq[table] || 0)) { console.log('  ⏭️ [pullTable] تجاهل سحب قديم (seq ' + seq + ' < ' + self._appliedSeq + ')'); return true; }
+    self._tableAppliedSeq[table] = seq;
     if (typeof DB !== 'undefined' && DB && DB.data) {
       const d = DB.data;
       if (table === 'users') { d.users = rows; d.nextUserId = Math.max(0, ...rows.map(u => u.id || 0)) + 1; }
@@ -413,7 +418,8 @@ window.SupabaseSync = {
     setInterval(async () => {
       if (this.syncInProgress || this.pendingPull) return;
       await this.pushAll();
-      await this.pullAll();
+      const pulled = await this.pullAll();
+      if (pulled !== false) this.scheduleUIRefresh();
     }, SUPABASE_CONFIG.syncInterval);
     console.log(`🔄 Auto-sync enabled (every ${SUPABASE_CONFIG.syncInterval / 1000}s)`);
   },
