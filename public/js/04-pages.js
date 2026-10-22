@@ -37,7 +37,7 @@ _formDirty = false;   // صفحة جديدة = لا تعديلات معلّقة
 currentPage = page;
 currentParams = params;
 // عنوان تبويب المتصفّح يتغيّر حسب القسم
-document.title = (PAGE_TITLES[page] ? PAGE_TITLES[page] + ' | ' : '') + 'نظام الجودة - شركة محزم';
+document.title = (PAGE_TITLES[page] ? PAGE_TITLES[page] + ' | ' : '') + 'مِعيار — نظام الجودة';
 const app = document.getElementById('app');
 
 if (page === 'login') { app.innerHTML = renderLogin(); attachLogin(); return; }
