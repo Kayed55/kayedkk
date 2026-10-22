@@ -156,3 +156,22 @@ h1,h2,.page-title,.dashboard-heading h1{font-family:'Noto Kufi Arabic','IBM Plex
 @media(max-width:600px){.login-brand-copy h2{font-size:26px}.metric-card .card-body{padding:14px}.metric-heading{font-size:12px}.miyar-grade{white-space:normal}}
 
 .login-brand-panel::after{display:none}.login-brand-panel::before{right:auto}.login-logo svg{width:100%;height:100%}
+
+/* Login layout aligned with the supplied page reference. */
+.login-password-label{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+.login-password-label .form-label{margin:0}.login-password-label a{font-size:13px;font-weight:500;text-decoration:none}
+.login-input-wrap{display:flex;align-items:center;gap:10px;height:48px;padding:0 14px;border:1px solid #D8DEE8;border-radius:10px;background:white}
+.login-input-wrap:focus-within{border-color:var(--primary);box-shadow:0 0 0 3px #1d5bd812}
+.login-input-wrap>.ui-icon{font-size:20px;color:#8A93A3}
+.login-input-wrap .form-control{flex:1;width:0;min-width:0;height:46px;min-height:0;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none!important}
+.login-password-toggle{display:flex;align-items:center;justify-content:center;flex:none;width:30px;height:40px;padding:0;border:0;background:none;color:#8A93A3;cursor:pointer}
+.login-remember{display:flex;align-items:center;gap:8px;font-size:14px;color:#3A4456;margin:0 0 28px;cursor:pointer}
+.login-remember input{width:16px;height:16px;margin:0;accent-color:var(--primary)}
+.login-connection{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-top:28px}
+#login-connection-dot{width:8px;height:8px;flex:none;border-radius:50%;background:#B76E00}
+body:has(.login-redesign) #rt-indicator{display:none!important}
+.login-redesign .login-logo{width:132px!important;height:44px!important}
+.login-redesign .login-brand-panel>img{width:120px!important;height:40px!important}
+.login-redesign .login-header h1{font-family:'IBM Plex Sans Arabic',sans-serif;font-size:28px;font-weight:700}
+.login-redesign .login-brand-copy h2{font-size:40px;font-weight:700;line-height:1.5}
+@media(max-width:768px){.login-password-label{gap:8px}.login-form-panel{padding:32px 24px}}

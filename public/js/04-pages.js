@@ -327,11 +327,12 @@ return `
 <div class="login-header"><h1>تسجيل الدخول</h1><p>${SYSTEM_NAME} — ${COMPANY_NAME}</p></div>
 <form id="login-form">
 <div class="form-group"><label class="form-label" for="login-email">البريد الإلكتروني</label>
-<input type="email" class="form-control" id="login-email" required placeholder="name@mhzm.sa" autocomplete="email"></div>
-<div class="form-group"><label class="form-label" for="login-password">كلمة المرور</label>
-<input type="password" class="form-control" id="login-password" required placeholder="••••••••" autocomplete="current-password"></div>
-<div class="login-forgot"><a href="#" id="forgot-pw-link">نسيت كلمة المرور؟</a></div>
+<div class="login-input-wrap"><span class="ui-icon" aria-hidden="true">mail</span><input type="email" class="form-control" id="login-email" required placeholder="name@mhzm.sa" autocomplete="email"></div></div>
+<div class="form-group"><div class="login-password-label"><label class="form-label" for="login-password">كلمة المرور</label><a href="#" id="forgot-pw-link">نسيت كلمة المرور؟</a></div>
+<div class="login-input-wrap"><span class="ui-icon" aria-hidden="true">lock</span><input type="password" class="form-control" id="login-password" required placeholder="••••••••" autocomplete="current-password"><button type="button" id="login-toggle-password" class="login-password-toggle" aria-label="إظهار كلمة المرور" aria-pressed="false"><span class="ui-icon" aria-hidden="true">visibility</span></button></div></div>
+<label class="login-remember"><input type="checkbox" id="login-remember-email">تذكر بريدي على هذا الجهاز</label>
 <button type="submit" class="btn btn-primary login-submit">دخول <span class="ui-icon" aria-hidden="true">arrow_back</span></button>
+<div class="login-connection" role="status"><span id="login-connection-dot"></span><span id="login-connection-text">جارٍ الاتصال…</span></div>
 </form>
 </div></div>
 <aside class="login-brand-panel"><img src="/assets/miyar-logo-white.svg" alt="مِعيار">
@@ -350,6 +351,20 @@ if (!form) return;
 // منع تكرار event listener عند إعادة الرسم
 if (form.dataset.bound === '1') return;
 form.dataset.bound = '1';
+const emailInput = document.getElementById('login-email');
+const rememberEmail = document.getElementById('login-remember-email');
+try { const savedEmail = localStorage.getItem('miyar_remembered_email'); if (savedEmail) { emailInput.value = savedEmail; rememberEmail.checked = true; } } catch (_) {}
+rememberEmail.addEventListener('change', () => { if (!rememberEmail.checked) { try { localStorage.removeItem('miyar_remembered_email'); } catch (_) {} } });
+const togglePassword = document.getElementById('login-toggle-password');
+togglePassword.addEventListener('click', () => {
+ const input = document.getElementById('login-password');
+ const visible = input.type === 'password';
+ input.type = visible ? 'text' : 'password';
+ togglePassword.setAttribute('aria-pressed', String(visible));
+ togglePassword.setAttribute('aria-label', visible ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور');
+ togglePassword.querySelector('.ui-icon').textContent = visible ? 'visibility_off' : 'visibility';
+});
+if (window.RealtimeService) window.RealtimeService._renderIndicator();
 
 form.addEventListener('submit', async e => {
 e.preventDefault();
@@ -357,6 +372,7 @@ const btn = form.querySelector('button[type=submit]');
 const email = document.getElementById('login-email').value.trim();
 const password = document.getElementById('login-password').value;
 if (!Utils.validateEmail(email)) { Toast.error('البريد الإلكتروني غير صالح'); return; }
+try { if (rememberEmail.checked) localStorage.setItem('miyar_remembered_email', email); else localStorage.removeItem('miyar_remembered_email'); } catch (_) {}
 if (btn && btn.dataset.busy === '1') return;
 if (btn) { btn.dataset.busy='1'; btn.disabled = true; btn.textContent = 'جاري التحقق...'; }
 

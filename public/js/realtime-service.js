@@ -145,15 +145,13 @@
     },
 
     _renderIndicator() {
-      const dot = document.getElementById('rt-dot');
-      const txt = document.getElementById('rt-text');
-      if (!dot || !txt) return;
-      if (this.status === 'connected') {
-        dot.style.background = '#2ecc71'; txt.textContent = 'متصل لحظياً';
-      } else if (this.status === 'disconnected') {
-        dot.style.background = '#e74c3c'; txt.textContent = 'غير متصل — إعادة المحاولة…';
-      } else {
-        dot.style.background = '#f0ad4e'; txt.textContent = 'جارٍ الاتصال…';
+      const connected = this.status === 'connected';
+      const disconnected = this.status === 'disconnected';
+      for (const [dotId,textId] of [['rt-dot','rt-text'],['login-connection-dot','login-connection-text']]) {
+        const dot = document.getElementById(dotId), txt = document.getElementById(textId);
+        if (!dot || !txt) continue;
+        dot.style.background = connected ? '#12805C' : disconnected ? '#C8372D' : '#B76E00';
+        txt.textContent = connected ? 'الخادم متصل' : disconnected ? 'غير متصل — إعادة المحاولة…' : 'جارٍ الاتصال…';
       }
     },
 
