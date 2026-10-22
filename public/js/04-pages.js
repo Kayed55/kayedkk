@@ -321,23 +321,21 @@ return `<span class="ui-icon" aria-hidden="true">${names[icon] || 'description'}
 
 function renderLogin() {
 return `
-<div class="login-page login-redesign">
+<div class="login-page login-redesign login-pattern-layout">
 <div class="login-form-panel"><div class="login-card">
-<img class="login-logo" src="/assets/miyar-logo.svg" alt="مِعيار">
-<div class="login-header"><h1>تسجيل الدخول</h1><p>${SYSTEM_NAME} — ${COMPANY_NAME}</p></div>
-<form id="login-form">
+<div class="login-stacked-brand"><img class="login-symbol" src="/assets/miyar-icon.svg" alt=""><h1><img src="/assets/miyar-wordmark.svg" alt="مِعيار"></h1><p>نظام الجودة للتدريب والتقييم</p></div>
+<form id="login-form" aria-label="تسجيل الدخول">
 <div class="form-group"><label class="form-label" for="login-email">البريد الإلكتروني</label>
-<div class="login-input-wrap"><span class="ui-icon" aria-hidden="true">mail</span><input type="email" class="form-control" id="login-email" required placeholder="name@mhzm.sa" autocomplete="email"></div></div>
-<div class="form-group"><div class="login-password-label"><label class="form-label" for="login-password">كلمة المرور</label><a href="#" id="forgot-pw-link">نسيت كلمة المرور؟</a></div>
+<div class="login-input-wrap"><span class="ui-icon" aria-hidden="true">mail</span><input type="email" class="form-control" id="login-email" required placeholder="name@company.sa" autocomplete="email"></div></div>
+<div class="form-group"><label class="form-label" for="login-password">كلمة المرور</label>
 <div class="login-input-wrap"><span class="ui-icon" aria-hidden="true">lock</span><input type="password" class="form-control" id="login-password" required placeholder="••••••••" autocomplete="current-password"><button type="button" id="login-toggle-password" class="login-password-toggle" aria-label="إظهار كلمة المرور" aria-pressed="false"><span class="ui-icon" aria-hidden="true">visibility</span></button></div></div>
-<label class="login-remember"><input type="checkbox" id="login-remember-email">تذكر بريدي على هذا الجهاز</label>
-<button type="submit" class="btn btn-primary login-submit">دخول <span class="ui-icon" aria-hidden="true">arrow_back</span></button>
-<div class="login-connection" role="status"><span id="login-connection-dot"></span><span id="login-connection-text">جارٍ الاتصال…</span></div>
+<div class="login-options"><label class="login-remember" title="حفظ البريد الإلكتروني على هذا الجهاز"><input type="checkbox" id="login-remember-email" aria-label="تذكر بريدي على هذا الجهاز">تذكرني</label><a href="#" id="forgot-pw-link">نسيت كلمة المرور؟</a></div>
+<button type="submit" class="btn btn-primary login-submit">تسجيل الدخول <span class="ui-icon" aria-hidden="true">arrow_back</span></button>
 </form>
+<div class="login-support">تواجه مشكلة؟ تواصل مع <button type="button" id="login-support-btn">مسؤول النظام</button></div>
 </div></div>
-<aside class="login-brand-panel"><img src="/assets/miyar-logo-white.svg" alt="مِعيار">
-<div class="login-brand-copy"><p>نظام الجودة للتدريب والتقييم</p><h2>قِس الأداء. طوّر الفريق.</h2><div>تقييمات، اعتراضات، وتقارير شهرية لأقسام محزم وCreative Gene وعزوة.</div></div>
-<footer>© ${new Date().getFullYear()} مِعيار — نظام الجودة للتدريب والتقييم</footer></aside>
+<footer class="login-page-footer">© ${new Date().getFullYear()} مِعيار</footer>
+<div class="login-connection" role="status"><span id="login-connection-dot"></span><span id="login-connection-text">جارٍ الاتصال…</span></div>
 </div>`;
 }
 
@@ -363,6 +361,9 @@ togglePassword.addEventListener('click', () => {
  togglePassword.setAttribute('aria-pressed', String(visible));
  togglePassword.setAttribute('aria-label', visible ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور');
  togglePassword.querySelector('.ui-icon').textContent = visible ? 'visibility_off' : 'visibility';
+});
+document.getElementById('login-support-btn').addEventListener('click', () => {
+ Modal.show('مساعدة تسجيل الدخول', '<p>إذا نسيت كلمة المرور، استخدم رابط «نسيت كلمة المرور؟» في صفحة الدخول.</p><p style="margin-top:12px">للمساعدة في تفعيل حسابك أو تحديث بريدك المسجل، تواصل مع مسؤول النظام في شركتك عبر قنوات التواصل الداخلية.</p>', '<button class="btn btn-primary" onclick="Modal.close()">حسنًا</button>');
 });
 if (window.RealtimeService) window.RealtimeService._renderIndicator();
 

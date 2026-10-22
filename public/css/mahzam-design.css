@@ -175,3 +175,28 @@ body:has(.login-redesign) #rt-indicator{display:none!important}
 .login-redesign .login-header h1{font-family:'IBM Plex Sans Arabic',sans-serif;font-size:28px;font-weight:700}
 .login-redesign .login-brand-copy h2{font-size:40px;font-weight:700;line-height:1.5}
 @media(max-width:768px){.login-password-label{gap:8px}.login-form-panel{padding:32px 24px}}
+
+/* Approved centered login composition from the latest PDF. */
+.login-pattern-layout{display:flex;position:relative;isolation:isolate;min-height:100svh;background:#F4F6FA url('/assets/miyar-login-pattern.svg') repeat;background-size:752px 752px;align-items:center;justify-content:center;padding:48px 20px 68px}
+.login-pattern-layout .login-form-panel{padding:0;width:100%;min-height:0;display:flex;justify-content:center}
+.login-pattern-layout .login-card{width:100%;max-width:448px;padding:38px 38px 40px;background:#fff;border-radius:26px;box-shadow:0 14px 22px #0e1a330a;text-align:right}
+.login-stacked-brand{display:flex;flex-direction:column;align-items:center;margin-bottom:26px}
+.login-stacked-brand .login-symbol{width:54px;height:54px;display:block}
+.login-stacked-brand h1{margin:10px 0 8px;line-height:1}
+.login-stacked-brand h1 img{display:block;width:78px;height:36px;object-fit:contain}
+.login-stacked-brand p{margin:0;font-size:13px;color:#5B6577;line-height:1.8}
+.login-pattern-layout .form-label{font-size:13px;font-weight:500;margin-bottom:8px;color:#34415A}
+.login-pattern-layout .form-group{margin-bottom:18px}
+.login-pattern-layout .login-input-wrap{height:48px;border-color:#D5DDED;border-radius:12px}
+.login-pattern-layout .login-input-wrap .form-control{font-size:14px}
+.login-pattern-layout .login-options{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 26px}
+.login-pattern-layout .login-remember{margin:0;font-size:13px;gap:10px}
+.login-pattern-layout .login-options>a{font-size:12px;text-decoration:none}
+.login-pattern-layout .login-submit{height:50px;min-height:50px;border-radius:12px;font-size:14px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:10px}
+.login-support{border-top:1px solid #EEF1F5;margin-top:24px;padding-top:24px;text-align:center;color:#8A93A3;font-size:12px}
+.login-support button{border:0;background:none;color:#1D5BD8;padding:0;cursor:pointer;font-size:inherit}
+.login-support button:hover{text-decoration:underline}
+.login-page-footer{position:absolute;bottom:24px;left:24px;color:#5B6577;font-size:12px;direction:rtl}
+.login-pattern-layout .login-connection{position:absolute;bottom:20px;right:24px;margin:0;padding:6px 12px;background:#fff;border-radius:22px;box-shadow:0 2px 6px #0e1a3308;font-size:12px;color:#34415A}
+@media(max-width:520px){.login-pattern-layout{padding:32px 20px 70px;background-size:600px 600px}.login-pattern-layout .login-card{padding:30px 26px;border-radius:24px}.login-page-footer{left:20px;bottom:24px}.login-pattern-layout .login-connection{right:20px}.login-stacked-brand{margin-bottom:24px}}
+@media(max-height:650px){.login-pattern-layout{align-items:flex-start}}
