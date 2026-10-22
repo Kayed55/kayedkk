@@ -40,7 +40,7 @@ const EMAILJS_CONFIG = {
 
   // تفضيلات عامة
   enabled:    true,                                       // مفتاح رئيسي لإيقاف الإرسال كله
-  fromName:   'نظام الجودة - شركة محزم',
+  fromName:   'مِعيار — نظام الجودة',
   replyTo:    '',                                         // اتركه فارغًا لاستخدام الإعداد الافتراضي
   systemName: 'نظام الجودة للتقييم والتدريب',
   companyName: COMPANY_NAME,
@@ -204,7 +204,7 @@ window.EmailService = (function() {
       _log('warn', '(evaluation) لا يوجد بريد للموظف. تم التخطي.');
       return { ok:false, skipped:true, reason:'no_email' };
     }
-    const grade = _grade(evaluation.grade, evaluation.status);
+    const grade = Utils.gradeLabel(evaluation.percentage);
     const extra = [
       `المُقيِّم: ${evaluator ? evaluator.full_name : '-'}`,
       `الرقم الوظيفي: ${employee.employee_number || '-'}`
@@ -234,7 +234,7 @@ window.EmailService = (function() {
       _log('warn', '(approval) لا يوجد بريد للموظف. تم التخطي.');
       return { ok:false, skipped:true, reason:'no_email' };
     }
-    const grade = _grade(evaluation.grade, evaluation.status);
+    const grade = Utils.gradeLabel(evaluation.percentage);
     return _sendUniversal(_buildParams({
       to_email:        employee.email,
       to_name:         _name(employee),

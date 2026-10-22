@@ -9,6 +9,27 @@
  */
 'use strict';
 
+// Miyar labels are derived from the unrounded percentage, independently of legacy storage status.
+const MIYAR_GRADES = [
+ {key:'below',label:'دون المعيار',color:'#C8372D',range:'أقل من 80'},
+ {key:'near',label:'قريب من المعيار',color:'#B76E00',range:'80 إلى أقل من 90'},
+ {key:'meets',label:'مطابق للمعيار',color:'#12805C',range:'90 إلى أقل من 100'},
+ {key:'excellent',label:'متميز',color:'#1D5BD8',range:'100'}
+];
+function miyarGrade(value) {
+ const n = typeof value === 'number' ? value : typeof value === 'string' && value.trim() !== '' ? Number(value) : NaN;
+ if (!Number.isFinite(n) || n < 0 || n > 100) return {key:'review',label:'قيد المراجعة',color:'#5B6577',range:'درجة غير متاحة'};
+ return MIYAR_GRADES[n < 80 ? 0 : n < 90 ? 1 : n < 100 ? 2 : 3];
+}
+function miyarCounts(values) {
+ const counts = {below:0,near:0,meets:0,excellent:0,review:0};
+ values.forEach(value => counts[miyarGrade(value).key]++);
+ return counts;
+}
+function miyarDistributionHTML(counts) {
+ if (!counts) return '<span>التصنيفات غير متاحة</span>';
+ return MIYAR_GRADES.map(g => `<span class="miyar-distribution-item" style="color:${g.color}">${g.label}: <b>${Number(counts[g.key])||0}</b></span>`).join(' · ');
+}
 // ============================================
 // حساب الدرجات
 // ============================================
@@ -73,18 +94,12 @@ formatDate(d) { if (!d) return '-'; const dt = new Date(d); return `${dt.getDate
 getInitials(n) { return (n||'?').split(' ').map(w=>w[0]).slice(0,2).join(''); },
 roleLabel(r) { return {admin:'مدير النظام', quality_officer:'موظف الجودة', supervisor:'مشرف', employee:'موظف', manager:'مدير قسم'}[r] || r; },
 roleBadge(r) { const colors = {admin:'#1e40af', quality_officer:'#0891b2', supervisor:'#7c3aed', employee:'#64748b'}; return `<span class="badge" style="background:${colors[r]||'#64748b'}33;color:${colors[r]||'#64748b'}">${this.roleLabel(r)}</span>`; },
-// التصنيف الثنائي حسب عتبة نجاح القسم (افتراضي 85 للتوافق الخلفي)
-// المرحلة 1 (م19): تقبل العتبة كمعامل اختياري؛ الاستدعاءات الحالية تبقى على 85
+// Miyar display classification. Legacy passScore arguments are retained for call-site compatibility.
 gradeBadge(p, passScore = 85) {
-const ps = (passScore != null) ? passScore : 85;
-let cls = 'badge-danger', txt = 'راسب';
-if (p >= ps) { cls = 'badge-success'; txt = 'ناجح'; }
-return `<span class="badge ${cls}">${txt} ${p}%</span>`;
+const g = miyarGrade(p);
+return `<span class="badge miyar-grade miyar-${g.key}" style="color:${g.color};background:${g.color}14" title="${g.range}"><i aria-hidden="true"></i>${g.label}${g.key==='review'?'':' '+this.escape(p)+'%'}</span>`;
 },
-gradeLabel(p, passScore = 85) {
-const ps = (passScore != null) ? passScore : 85;
-return p >= ps ? 'ناجح' : 'راسب';
-},
+gradeLabel(p, passScore = 85) { return miyarGrade(p).label; },
 timeAgo(d) {
 const diff = (Date.now() - new Date(d).getTime()) / 1000;
 if (diff < 60) return 'قبل لحظات';

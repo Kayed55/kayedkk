@@ -12,7 +12,8 @@
     "validate": "node scripts/validate.js",
     "check:rpc": "node scripts/check-rpc-sources.js",
     "test": "node scripts/run-tests.js && node scripts/test-session-client.js && node scripts/test-cg-reports.js",
-    "test:sql": "node scripts/test-security-sql.mjs"
+    "test:sql": "node scripts/test-security-sql.mjs",
+    "test:miyar": "node scripts/test-miyar-ui.js && node scripts/test-miyar-sql.mjs"
   },
   "keywords": [
     "quality",

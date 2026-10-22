@@ -117,18 +117,13 @@ test('قالب صحيح (فرعية=وزن القسم · قسمان حرجان +
   assert.ok(r.totalScore <= 100);
 });
 
-section('Utils.gradeLabel / gradeBadge (عتبة النجاح)');
+section('Miyar classification boundaries and legacy threshold independence');
 const U = core.exp.Utils;
-test('gradeLabel: فوق العتبة ناجح، دونها راسب', () => {
-  assert.strictEqual(U.gradeLabel(90, 85), 'ناجح'); assert.strictEqual(U.gradeLabel(80, 85), 'راسب');
-});
-test('gradeLabel: مساوٍ للعتبة = ناجح', () => { assert.strictEqual(U.gradeLabel(85, 85), 'ناجح'); });
-test('gradeLabel: العتبة الافتراضية 85', () => {
-  assert.strictEqual(U.gradeLabel(84), 'راسب'); assert.strictEqual(U.gradeLabel(85), 'ناجح');
-});
-test('gradeBadge يحوي التصنيف والنسبة', () => {
-  const b = U.gradeBadge(90, 85); assert.ok(b.includes('ناجح') && b.includes('90%'));
-});
+for (const [value,label] of [[0,'دون المعيار'],[79.99,'دون المعيار'],[80,'قريب من المعيار'],[89.5,'قريب من المعيار'],[90,'مطابق للمعيار'],[99.9,'مطابق للمعيار'],[100,'متميز'],['90','مطابق للمعيار']]) {
+ test('classification '+value,()=>{assert.equal(U.gradeLabel(value,60),label);assert.equal(U.gradeLabel(value,95),label);assert(U.gradeBadge(value).includes(label));});
+}
+for (const value of [null,undefined,'',' ',NaN,Infinity,-1,101]) test('invalid '+value,()=>assert.equal(U.gradeLabel(value),'قيد المراجعة'));
+test('badge escapes invalid input',()=>assert(!U.gradeBadge('<img src=x>').includes('<img')));
 
 section('teEqualWeights (توزيع مجموعه 100 بالضبط)');
 for (const n of [1, 2, 3, 4, 5, 7, 10]) {

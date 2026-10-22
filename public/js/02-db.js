@@ -289,8 +289,8 @@ this.data.evaluations.push(newEval);
 this.createNotification({
 user_id: data.employee_id,
 title: 'تم استلام تقييم جديد',
-message: `تم تقييمك بنسبة ${data.percentage}% - ${data.grade}`,
-type: data.status === 'ناجح' ? 'success' : 'warning'
+message: `تم تقييمك بنسبة ${data.percentage}% - ${Utils.gradeLabel(data.percentage)}`,
+type: Number(data.percentage)>=90 ? 'success' : 'warning'
 });
 
 this.save();
@@ -440,7 +440,7 @@ if (isEmp) evals = evals.filter(e => e.employee_id === userId);
 
 const total = evals.length;
 const avg = total ? Math.round(evals.reduce((s,e)=>s+e.percentage,0)/total*10)/10 : 0;
-const passed = evals.filter(e => e.status === 'ناجح').length;
+const passed = evals.filter(e => Number(e.percentage)>=90 && Number(e.percentage)<=100).length;
 const failed = total - passed;
 
 const now = new Date();
@@ -471,7 +471,7 @@ const top = isEmp ? [] : performers.slice().sort((a,b)=>b.avg-a.avg).slice(0,5);
 // "يحتاجون متابعة" = الموظفون الراسبون فقط (آخر تقييم ≤ 84%) بناءً على آخر تقييم معتمد
 // إذا لم يوجد تقييم معتمد، يُعتمد على آخر تقييم بشكل عام
 const low = isEmp ? [] : performers
-.filter(p => p.lastEvalPct !== null && p.lastEvalPct <= 84)
+.filter(p => p.lastEvalPct !== null && p.lastEvalPct < 90)
 .sort((a,b) => a.lastEvalPct - b.lastEvalPct)
 .slice(0,10);
 
@@ -489,8 +489,7 @@ avg: me.length ? Math.round(me.reduce((s,e)=>s+e.percentage,0)/me.length*10)/10 
 });
 }
 
-const grades = { 'ناجح':0, 'راسب':0 };
-evals.forEach(e => { if (grades[e.grade] !== undefined) grades[e.grade]++; });
+const grades = miyarCounts(evals.map(e=>e.percentage));
 
 const recent = evals.slice().sort((a,b) => new Date(b.created_at) - new Date(a.created_at)).slice(0,10);
 

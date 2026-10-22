@@ -133,3 +133,24 @@ input[type=checkbox],input[type=radio]{accent-color:var(--primary)}
 .table .btn-danger{color:#C8372D}
 .table .btn:hover{background:#F7F9FC}
 .page-header .btn[id*="pdf"],.page-header .btn[id*="xlsx"]{background:#fff;border:1px solid #D8DEE8;color:var(--text)}
+
+/* Miyar identity: title typography, frame motif and four result states. */
+h1,h2,.page-title,.dashboard-heading h1{font-family:'Noto Kufi Arabic','IBM Plex Sans Arabic',sans-serif;font-weight:800}
+.page-title,.dashboard-heading h1{font-size:24px}
+.sidebar-header{flex-direction:column;align-items:flex-start;gap:10px;padding:24px}
+.sidebar-logo{width:144px;height:48px;object-fit:contain}
+.sidebar-brand-text{border:0;padding:0}.sidebar-subtitle{color:#a9b7d0}
+.login-logo{width:180px!important;height:60px!important;object-fit:contain}
+.login-brand-panel>img{width:240px!important;height:80px!important;object-fit:contain}
+.login-brand-panel{background:#0E1A33!important;overflow:hidden;position:relative}
+.login-brand-panel::before{content:'';position:absolute;width:320px;height:320px;border:40px solid #3D86F012;border-radius:90px;left:-160px;bottom:-130px;pointer-events:none}
+.login-brand-copy h2{font-family:'Noto Kufi Arabic',sans-serif;font-size:36px;line-height:1.8}
+.dashboard-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}
+.metric-value{border-right:3px solid var(--metric-color);padding-right:12px;color:var(--mahzam-navy)}
+.miyar-grade{display:inline-flex;align-items:center;gap:7px;white-space:nowrap;font-size:12.5px}
+.miyar-grade i{display:inline-block;width:16px;height:16px;border:2px solid currentColor;border-radius:4px;position:relative;flex:none}
+.miyar-below i{border-style:dashed}.miyar-meets i:after,.miyar-excellent i:after{content:'';position:absolute;left:2px;bottom:2px;width:4px;height:4px;background:currentColor;border-radius:1px}
+.miyar-excellent i{background:currentColor}.miyar-excellent i:after{background:white}
+.miyar-distribution{display:flex;flex-wrap:wrap;gap:10px}.miyar-distribution-item{display:inline-block;font-size:12.5px}
+@media(max-width:1100px){.dashboard-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.login-brand-copy h2{font-size:26px}.metric-card .card-body{padding:14px}.metric-heading{font-size:12px}.miyar-grade{white-space:normal}}

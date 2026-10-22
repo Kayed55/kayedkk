@@ -1,0 +1,28 @@
+import {readFile} from 'node:fs/promises';import assert from 'node:assert/strict';import {PGlite} from '@electric-sql/pglite';
+const db=new PGlite();
+await db.exec(`
+create table departments(id int,code text,name text,pass_score int);
+create table users(id bigint,full_name text,role text,department_id int,supervisor_id bigint,is_active boolean);
+create table evaluations(id bigint,employee_id bigint,evaluator_id bigint,percentage numeric,evaluation_date date,evaluation_notes text,observed_issue text);
+create table objections(id bigint,employee_id bigint,evaluation_id bigint,status text);
+create table creative_gene_objections(like objections);
+create table creative_gene_weekly_status(employee_id bigint,workflow_state text);
+create table audit_logs(user_id bigint,action text,details text,user_name text,timestamp timestamptz,entity_type text);
+create function verify_session(t text) returns table(is_valid boolean,role text,user_id bigint) language sql as $$ select t in ('admin','employee','supervisor'),t,case when t='admin' then 1::bigint when t='supervisor' then 4 else 2 end $$;
+insert into departments values(2,'mahzam','محزم',85),(3,'cg','CG',80),(13,'azwa','عزوة',80);
+insert into users values(1,'admin','admin',2,null,true),(2,'employee','employee',2,4,true),(3,'other','employee',2,5,true),(4,'supervisor','supervisor',2,null,true);
+insert into evaluations select row_number() over(),2,1,p,current_date,null,null from (values(0),(79.9),(80),(89.5),(90),(99.9),(100),(null)) a(p);
+insert into evaluations values(9,3,99,100,current_date,null,null),(10,2,1,100,current_date-100,null,null);
+`);
+const source=await readFile(new URL('../security-migration/70_pr73_azwa_dashboard_quality_rpcs.sql',import.meta.url),'utf8');
+const dashboard=source.slice(source.indexOf('CREATE OR REPLACE FUNCTION public.get_dashboard_stats'),source.indexOf('REVOKE ALL ON FUNCTION public.get_dashboard_stats'));
+await db.exec(dashboard);
+await db.exec(await readFile(new URL('../security-migration/77_miyar_classifications.sql',import.meta.url),'utf8'));
+const value=async q=>(await db.query(q)).rows[0].v;
+let s=await value("select _dash_section(2,array[2]::bigint[]) as v");assert.deepEqual(s.miyar_counts,{below:2,near:2,meets:2,excellent:2,review:1});assert.equal(s.total,9);assert.equal(s.pass,5,'legacy aggregate retained');
+let q=await value("select get_quality_report('admin',current_date,current_date,2,1) as v");assert.deepEqual(q.sections[0].miyar_counts,{below:2,near:2,meets:2,excellent:1,review:1});assert.equal(q.sections[0].conformance_rate,37.5);assert.equal(q.conformance_rate,37.5);assert.equal(q.line[0].conformance_rate,37.5);
+assert.equal((await value("select get_quality_report('employee',current_date,current_date) as v")).ok,false);
+assert.equal((await value("select get_quality_report('bad',current_date,current_date) as v")).ok,false);
+for(const role of ['employee','supervisor']){const d=await value(`select get_dashboard_stats('${role}') as v`);assert.equal(d.sections.mahzam.total,9);assert.equal(d.sections.mahzam.miyar_counts.excellent,2)}
+const d=await value("select get_dashboard_stats('admin') as v");assert.equal(d.sections.mahzam.total,10);assert.equal(d.sections.mahzam.miyar_counts.excellent,3);
+await db.close();console.log('Miyar SQL: boundaries, nulls, date/evaluator filters, legacy fields and role scopes passed');
