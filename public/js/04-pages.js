@@ -4033,9 +4033,10 @@ if (ev.template_type === 'pdf_based_weekly') return renderPdfEvalView(ev);
 
 const emp = DB.getUser(ev.employee_id);
 const evr = DB.getUser(ev.evaluator_id);
-const A = CRITERIA.answers;
+const C = criteriaForEvaluation(ev);
+const A = C.answers;
 
-const sectionsHTML = CRITERIA.sections.map(s => {
+const sectionsHTML = C.sections.map(s => {
 const score = (ev.section_scores && ev.section_scores[s.key] !== undefined) ? ev.section_scores[s.key] : 0;
 return `
 <div class="card">
@@ -4047,8 +4048,9 @@ return `
 ${s.subsections.map(sub => `
 ${s.subsections.length > 1 || s.type === 'non-critical' ? `<div class="subsection-title">${Utils.escape(sub.title)}</div>` : ''}
 ${sub.items.map(it => {
-const ans = (ev.items && ev.items[it.key]) || A.OK;
-let badge = '<span class="badge badge-success">✅ لا يوجد خطأ</span>';
+const ans = ev.items && ev.items[it.key];
+let badge = '<span class="badge badge-warning">غير مسجّل</span>';
+if (ans === A.OK) badge = '<span class="badge badge-success">✅ لا يوجد خطأ</span>';
 if (ans === A.ERR) badge = '<span class="badge badge-danger">❌ يوجد خطأ</span>';
 else if (ans === A.NA) badge = '<span class="badge badge-info">⚪ لا ينطبق</span>';
 return `<div class="eval-item"><div class="eval-item-label">${Utils.escape(it.label)}</div><div>${badge}</div></div>`;
@@ -5941,7 +5943,8 @@ Toast.success('تم تصدير الملف بنجاح');
 function exportSingleXLSX(id) {
 const ev = DB.getEvaluation(id); if (!ev) return;
 const emp = DB.getUser(ev.employee_id), evr = DB.getUser(ev.evaluator_id);
-const A = CRITERIA.answers;
+const C = criteriaForEvaluation(ev);
+const A = C.answers;
 const observedDisplay = ev.observed_issue === 'أخرى' ? (ev.observed_issue_other||'أخرى') : (ev.observed_issue || ev.call_type || '-');
 const actionDisplay = ev.action_taken === 'أخرى' ? (ev.action_taken_other||'أخرى') : (ev.action_taken || '-');
 const summary = [
@@ -5951,9 +5954,9 @@ const summary = [
 ['التقدير', Utils.gradeLabel(ev.percentage)], ['الحالة', Utils.gradeLabel(ev.percentage)], ['ملاحظات إضافية', ev.notes||'-']
 ];
 const details = [];
-CRITERIA.sections.forEach(s => s.subsections.forEach(sub => sub.items.forEach(it => {
-const ans = (ev.items && ev.items[it.key]) || A.OK;
-details.push({ 'القسم':s.title, 'القسم الفرعي':sub.title, 'البند':it.label, 'النتيجة':ans });
+C.sections.forEach(s => s.subsections.forEach(sub => sub.items.forEach(it => {
+const ans = ev.items && ev.items[it.key];
+details.push({ 'القسم':s.title, 'القسم الفرعي':sub.title, 'البند':it.label, 'النتيجة':ans || 'غير مسجّل' });
 })));
 const wb = XLSX.utils.book_new();
 const ws1 = XLSX.utils.aoa_to_sheet([['الحقل','القيمة'], ...summary]);
@@ -6184,13 +6187,14 @@ function exportSinglePDF(id) {
 const ev = DB.getEvaluation(id);
 if (!ev) return;
 const emp = DB.getUser(ev.employee_id), evr = DB.getUser(ev.evaluator_id);
-const A = CRITERIA.answers;
+const C = criteriaForEvaluation(ev);
+const A = C.answers;
 const today = new Date();
 const dateStr = `${today.getDate().toString().padStart(2,'0')}/${(today.getMonth()+1).toString().padStart(2,'0')}/${today.getFullYear()}`;
 
 const gradeColor = miyarGrade(ev.percentage).color;
 
-const sectionsHTML = CRITERIA.sections.map(s => {
+const sectionsHTML = C.sections.map(s => {
 const score = (ev.section_scores && ev.section_scores[s.key] !== undefined) ? ev.section_scores[s.key] : 0;
 const scoreCls = score === s.weight ? '#d1fae5;color:#065f46' : score === 0 ? '#fee2e2;color:#991b1b' : '#fef3c7;color:#92400e';
 return `
@@ -6203,8 +6207,9 @@ return `
 ${s.subsections.map(sub => `
 ${s.subsections.length > 1 || s.type === 'non-critical' ? `<div style="padding:6px 12px;background:#dbeafe;color:#1D5BD8;font-size:12px;font-weight:700">📁 ${Utils.escape(sub.title)} ${sub.weight ? `<span style="font-weight:400;font-size:11px;opacity:0.7">(${sub.weight} نقطة)</span>` : ''}</div>` : ''}
 ${sub.items.map(it => {
-const ans = (ev.items && ev.items[it.key]) || A.OK;
-let badge = '<span style="background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700">✓ لا يوجد خطأ</span>';
+const ans = ev.items && ev.items[it.key];
+let badge = '<span style="color:#92400e">غير مسجّل</span>';
+if (ans === A.OK) badge = '<span style="background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700">✓ لا يوجد خطأ</span>';
 if (ans === A.ERR) badge = '<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700">✗ يوجد خطأ</span>';
 else if (ans === A.NA) badge = '<span style="background:#cffafe;color:#0e7490;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700">○ لا ينطبق</span>';
 return `<div style="padding:7px 14px;border-top:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:11px">
@@ -6405,8 +6410,9 @@ return `<div class="page-header">
 const employees = DB.getUsers({ role:'employee', active:true });
 const empOpts = employees.map(e => `<option value="${e.id}" ${e.id === ev.employee_id ? 'selected' : ''}>${Utils.escape(e.full_name)}</option>`).join('');
 
-const A = CRITERIA.answers;
-const sectionsHTML = CRITERIA.sections.map(s => `
+const C = criteriaForEvaluation(ev);
+const A = C.answers;
+const sectionsHTML = C.sections.map(s => `
 <div class="card">
 <div class="card-header">
 <div class="card-title">${Utils.escape(s.title)} ${s.type === 'critical' ? '<span class="badge badge-danger" style="margin-right:8px">حرج</span>' : ''}</div>
@@ -6481,10 +6487,11 @@ const evalId = parseInt(form.dataset.evalId);
 // م19-د: العتبة المجمّدة للتقييم قيد التعديل — تطابق ما يجمّده الخادم (admin_update_evaluation)
 const ev = DB.getEvaluation(evalId) || {};
 const _editPS = ev.pass_score_snapshot ?? 85;
+const C = criteriaForEvaluation(ev);
 
 const updateLive = () => {
-const items = collectItems();
-const r = calculateScores(items, _editPS);
+const items = collectItems(C);
+const r = calculateScores(items, _editPS, C);
 document.getElementById('live-score').textContent = `${r.totalScore} / 100`;
 document.getElementById('live-grade').innerHTML = Utils.gradeBadge(r.percentage, _editPS);
 };
@@ -6497,8 +6504,8 @@ const btn = form.querySelector('button[type=submit]');
 await submitWithFeedback(btn, 'جاري حفظ التعديلات...', null, async () => {
 const empId = parseInt(document.getElementById('ef-employee').value);
 if (!empId) { Toast.error('يرجى اختيار الموظف'); return false; }
-const items = collectItems();
-const r = calculateScores(items);
+const items = collectItems(C);
+const r = calculateScores(items, _editPS, C);
 
 const observed = document.getElementById('ef-observed').value;
 const observedOther = (document.getElementById('ef-observed-other')||{}).value || '';

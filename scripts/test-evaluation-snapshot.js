@@ -1,0 +1,22 @@
+'use strict';
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const pages=fs.readFileSync('public/js/04-pages.js','utf8'),core=fs.readFileSync('public/js/03-core.js','utf8');
+function fn(source,name){const start=source.indexOf('function '+name+'(');const end=source.indexOf('\nfunction ',start+1);return source.slice(start,end<0?source.length:end);}
+const answers={OK:'لا يوجد خطأ',ERR:'يوجد خطأ',NA:'لا ينطبق'};
+const section=(key,weight,item)=>({key,weight,type:'critical',title:key,subsections:[{title:'بنود',items:[{key:item,label:item+' frozen label'}]}]});
+const snapshot={answers,sections:[section('section1',30,'s1_8'),section('section2',70,'s2_1')]};
+const active={answers,sections:[section('section1',25,'different_key')]};
+const ev={id:1,employee_id:2,percentage:70,total_score:70,template_type:'section_based',template_snapshot:snapshot,items:{s1_8:answers.ERR,s2_1:answers.OK},section_scores:{section1:0,section2:70}};
+let rows,pdf;
+const ctx={CRITERIA:active,window:{},DB:{getEvaluation:()=>ev,getUser:()=>({full_name:'Test'}),getObjections:()=>[]},currentUser:{role:'admin'},Utils:{escape:s=>String(s??''),formatDate:()=>'',gradeLabel:()=>''},Perms:{can:()=>false},_evalBackBtn:()=>'',jobTitleCell:()=>'',deptBadgeHTML:()=>'',usedTemplateLabel:()=>'',renderCommDisplay:()=>'',isPositiveObservation:()=>false,miyarGrade:()=>({color:'#000'}),Toast:{info:()=>{},success:()=>{},error:()=>{}},buildPDFHeader:()=>'',buildPDFFooter:()=>'',htmlToPDF:async html=>{pdf=html;},XLSX:{utils:{book_new:()=>({}),aoa_to_sheet:()=>({}),json_to_sheet:r=>{rows=r;return{};},book_append_sheet:()=>{}},writeFile:()=>{}},console};
+vm.createContext(ctx);
+vm.runInContext(fn(core,'criteriaForEvaluation')+fn(core,'calculateScores').split('// ============================================')[0],ctx);
+['renderViewEvaluation','exportSingleXLSX','exportSinglePDF'].forEach(name=>vm.runInContext(fn(pages,name),ctx));
+const html=ctx.renderViewEvaluation(1);assert.match(html,/s1_8 frozen label/);assert.match(html,/❌ يوجد خطأ/);assert.match(html,/0 \/ 30/);assert.ok(!html.includes('different_key'));
+assert.equal(ctx.calculateScores(ev.items,85,ctx.criteriaForEvaluation(ev)).totalScore,70);
+ctx.exportSingleXLSX(1);assert.equal(rows[0]['النتيجة'],answers.ERR);assert.equal(rows[0]['البند'],'s1_8 frozen label');
+ctx.exportSinglePDF(1);assert.match(pdf,/s1_8 frozen label/);assert.match(pdf,/✗ يوجد خطأ/);assert.match(pdf,/0 \/ 30/);
+delete ev.items.s2_1;assert.match(ctx.renderViewEvaluation(1),/غير مسجّل/);
+assert.equal(ctx.criteriaForEvaluation({}),active);
+const edit=fn(pages,'attachEditEvalHandlers');assert.match(edit,/collectItems\(C\)/);assert.match(edit,/calculateScores\(items, _editPS, C\)/);
+console.log('PASS: frozen rubric in detail, PDF, Excel and edit calculations; missing answers are not marked correct');

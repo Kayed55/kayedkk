@@ -33,6 +33,13 @@ function miyarDistributionHTML(counts) {
 // ============================================
 // حساب الدرجات
 // ============================================
+// Historical evaluations must use their frozen rubric, not today's active template.
+function criteriaForEvaluation(ev) {
+const snapshot = ev && ev.template_snapshot;
+return snapshot && Array.isArray(snapshot.sections) && snapshot.sections.length && snapshot.answers
+  ? snapshot : CRITERIA;
+}
+
 function calculateScores(items, passScore = 85, tplJson) {
 const C = tplJson || CRITERIA;   // ★ #59: نموذج مُمرَّر (param اختياري) — متوافق رجعياً (الافتراضي = CRITERIA العام)
 const A = C.answers;

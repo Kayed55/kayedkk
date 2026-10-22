@@ -11,7 +11,7 @@
     "format": "npx prettier --write \"public/**/*.{html,css,js}\" \"*.{json,md}\"",
     "validate": "node scripts/validate.js",
     "check:rpc": "node scripts/check-rpc-sources.js",
-    "test": "node scripts/run-tests.js && node scripts/test-session-client.js && node scripts/test-cg-reports.js && node scripts/test-sync-races.js && node scripts/test-secure-client.js && node scripts/test-startup.js",
+    "test": "node scripts/run-tests.js && node scripts/test-session-client.js && node scripts/test-cg-reports.js && node scripts/test-sync-races.js && node scripts/test-secure-client.js && node scripts/test-startup.js && node scripts/test-evaluation-snapshot.js",
     "test:sql": "node scripts/test-security-sql.mjs && node scripts/test-scoped-reads.mjs",
     "test:miyar": "node scripts/test-miyar-ui.js && node scripts/test-miyar-sql.mjs"
   },
