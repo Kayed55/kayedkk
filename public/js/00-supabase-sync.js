@@ -124,7 +124,7 @@ window.SupabaseSync = {
         console.log('⬇️ Pulling data from Supabase...');
         const results = {};
 
-        for (const table of this.TABLES) {
+        await Promise.all(this.TABLES.map(async (table) => {
           // أمان: نقرأ من users_public (view بدون كلمات السر) بدلاً من users
           // كلمات السر يجب ألا تصل للمتصفح أبداً عبر anon key.
           if (table === 'notifications') {
@@ -140,7 +140,7 @@ window.SupabaseSync = {
                 offset += res.data.length;
               }
             }
-            continue;
+            return;
           }
           const readFrom = (table === 'users') ? 'users_public' : table;
 
@@ -149,7 +149,7 @@ window.SupabaseSync = {
           if (!force && ttlMs && this._ttlFresh(readFrom, ttlMs) && DB.data && Array.isArray(DB.data[table]) && DB.data[table].length) {
             results[table] = DB.data[table];
             if (window.__CACHE_DEBUG__) console.log('  ⚡ [cache-hit] ' + table + ' (TTL طازج) — تخطّي الجلب');
-            continue;
+            return;
           }
 
           // جداول محدودة: جلب أحدث N فقط (order id desc + limit) بدل ترقيم الكل — تخفيف الحمل.
@@ -166,12 +166,12 @@ window.SupabaseSync = {
             if (lErr) {
               self._lastPullError = { table: readFrom, status: lStatus, message: lErr.message, at: new Date().toISOString(), ua: (navigator && navigator.userAgent) || '' };
               console.warn(`⚠️ فشلت قراءة ${table} بعد 3 محاولات — إيقاف السحب`);
-              return false;
+              throw new Error(lErr.message);
             }
             results[table] = lData || [];
             if (ttlMs) localStorage.setItem('qe_ttl_' + readFrom, String(Date.now()));   // ★ #66
             console.log(`  ✓ [pullAll] Table: ${table} (${readFrom}) | Limited: ${limitN} | Total rows: ${(lData||[]).length}`);
-            continue;
+            return;
           }
 
           // ترقيم صفحات: PostgREST يسقف الاستجابة (افتراضياً 1000 صف)، فنقرأ على دفعات
@@ -201,14 +201,14 @@ window.SupabaseSync = {
             // أوقف العملية كلها بدل الكتابة فوق بيانات سليمة ببيانات ناقصة/فارغة
             self._lastPullError = { table: readFrom, status: status, message: error.message, at: new Date().toISOString(), ua: (navigator && navigator.userAgent) || '' };
             console.warn(`⚠️ فشلت قراءة ${table} بعد 3 محاولات — إيقاف السحب`);
-            return false;
+            throw new Error(error.message);
           }
           data = all;
           console.log(`  ✓ [pullAll] Table: ${table} (${readFrom}) | Pages: ${pages} | Total rows: ${all.length}`);
           if (pages >= MAX_PAGES && all.length === PAGE * MAX_PAGES) throw new Error('Incomplete source: ' + table + ' exceeded pagination safety limit');
           results[table] = data || [];
           if (ttlMs) localStorage.setItem('qe_ttl_' + readFrom, String(Date.now()));   // ★ #66
-        }
+        }));
 
         // مصدر CRITERIA الآن = نموذج قسم محزم (section_based) من evaluation_templates
         // (بدلاً من criteria_config القديم — مصدر واحد للحقيقة لكل قسم)

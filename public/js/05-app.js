@@ -44,36 +44,29 @@ window.addEventListener('unhandledrejection', function(e){ reportClientError((e.
 
 // ★ #66: SWR عند الإقلاع — ارسم فوراً من كاش localStorage ثم حدّث بالخلفية (يزيل round-trip الحاجب من سيدني).
 async function bootApp() {
-  const _t0 = (window.performance && performance.now) ? performance.now() : 0;
-  await DB.initAsync();   // ★ #67-B: تهيئة async (IndexedDB مع fallback لـlocalStorage) — قراءة محلية سريعة
-  // ★ #67-C-0: حمّل الأقسام مبكّراً (من كاش localStorage فوراً، أو RPC مرة) — جاهزة قبل أي تنقّل لصفحة CG (لا fallback في cgDeptId)
-  try { if (typeof loadDepartments === 'function') loadDepartments(); } catch (_) {}
-  // Never render a previous user's or legacy unscoped cache before authorization.
-  DB.data = {users:[],evaluations:[],notifications:[],objections:[],audit_logs:[],evaluation_templates:[],criteria:{}};
-  DB._hadCache=false;
-  localStorage.removeItem(DB.KEY);
-  if (typeof _IDB !== 'undefined' && _IDB.available()) { try { await _IDB.remove(DB.KEY); } catch (_) {} }
-  const hasCache = false;
-
-  if (hasCache) {
-    // ✅ Warm: رسم فوري من الكاش، ثم سحب خلفي غير حاجب.
-    routeInitial();
-    if (window.__CACHE_DEBUG__ && _t0) console.log('⚡ [boot] warm render خلال ' + Math.round(performance.now() - _t0) + 'ms (من الكاش)');
-    backgroundSync();
-  } else {
-    // ❄️ Cold (مستخدم جديد / بلا كاش): سلوك اليوم — overlay ثم انتظار السحب ثم الرسم.
-    _showBootOverlay();
-    try {
-      if (window.sb && window.SupabaseSync && typeof window.SupabaseSync.pullAll === 'function') {
-        await window.SupabaseSync.pullAll();
-      }
-    } catch (e) {
-      console.warn('Supabase pull failed at boot, falling back to local cache:', e && e.message);
+  _showBootOverlay();
+  try {
+    // Never load a previous user's persisted data, or wait for IndexedDB to open.
+    if (!window.sb) throw new Error('تعذّر تحميل خدمة الاتصال');
+    DB.init();
+    DB._hadCache = false;
+    DB._storageType = (typeof _IDB !== 'undefined' && _IDB.available()) ? 'indexeddb' : 'localStorage';
+    try { localStorage.removeItem(DB.KEY); } catch (_) {}
+    if (typeof _IDB !== 'undefined' && _IDB.available()) _IDB.remove(DB.KEY).catch(function(){});
+    const token = window.getSessionToken && window.getSessionToken();
+    if (token) {
+      // Only authorized, complete results may become visible.
+      const ok = await window.SupabaseSync.pullAll();
+      if (!ok) throw new Error('تعذّر تحميل البيانات');
+      if (typeof loadDepartments === 'function') loadDepartments();
     }
-    if (!(window.SupabaseSync && window.SupabaseSync.ready === true) || !DB.data) DB.init();
-    _hideBootOverlay();
     routeInitial();
-    if (window.__CACHE_DEBUG__ && _t0) console.log('❄️ [boot] cold render خلال ' + Math.round(performance.now() - _t0) + 'ms (بعد السحب)');
+    clearTimeout(window.bootWatchdog);
+    _hideBootOverlay();
+  } catch (e) {
+    console.warn('[boot]', e && e.message);
+    clearTimeout(window.bootWatchdog);
+    if (window.showBootFailure) window.showBootFailure();
   }
 }
 

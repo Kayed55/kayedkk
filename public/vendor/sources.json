@@ -1,0 +1,44 @@
+[
+  {
+    "file": "chart-4.4.0.js",
+    "source": "https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js",
+    "version": "4.4.0",
+    "bytes": 205222
+  },
+  {
+    "file": "xlsx-0.18.5.js",
+    "source": "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js",
+    "version": "0.18.5",
+    "bytes": 881727
+  },
+  {
+    "file": "jspdf-2.5.1.js",
+    "source": "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
+    "version": null,
+    "bytes": 364463
+  },
+  {
+    "file": "jspdf-autotable-3.7.0.js",
+    "source": "https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.7.0/jspdf.plugin.autotable.min.js",
+    "version": null,
+    "bytes": 38194
+  },
+  {
+    "file": "html2canvas-1.4.1.js",
+    "source": "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js",
+    "version": null,
+    "bytes": 198689
+  },
+  {
+    "file": "supabase-v2.js",
+    "source": "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2",
+    "version": "2.118.0",
+    "bytes": 218544
+  },
+  {
+    "file": "emailjs-v4.js",
+    "source": "https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js",
+    "version": "4.4.1",
+    "bytes": 3941
+  }
+]
