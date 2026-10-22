@@ -313,33 +313,30 @@ restore();
 // ============================================
 // Login
 // ============================================
+// Presentation icons shared by the navigation and dashboard.
+function uiIcon(icon) {
+const names = {'🏠':'space_dashboard','📊':'insights','📋':'fact_check','⚖️':'gavel','⚠️':'report','📝':'task_alt','📈':'bar_chart','📅':'calendar_month','📥':'inbox','👥':'groups','⚙️':'account_tree','🛡️':'manage_accounts','🗑':'person_off','📜':'history','👤':'person','🚪':'logout','✅':'check_circle','❌':'cancel','⭐':'star','🔔':'notifications','🎨':'palette','📤':'upload_file','🏆':'emoji_events'};
+return `<span class="ui-icon" aria-hidden="true">${names[icon] || 'description'}</span>`;
+}
+
 function renderLogin() {
 return `
-<div class="login-page">
-<div class="login-card">
-<div class="login-logo">${MAHZAM_LOGO_SVG}</div>
-<div class="login-header">
-<h1 style="color:#06579F;font-weight:800">${SYSTEM_NAME}</h1>
-<p style="font-size:14px;color:#475569;margin-top:8px;font-weight:600">${COMPANY_NAME} • Mahzam</p>
-<div style="height:3px;width:60px;background:linear-gradient(to left,#06579F,#202E4D);margin:14px auto;border-radius:2px"></div>
-</div>
+<div class="login-page login-redesign">
+<div class="login-form-panel"><div class="login-card">
+<img class="login-logo" src="/assets/mahzam-brand.png" alt="محزم">
+<div class="login-header"><h1>تسجيل الدخول</h1><p>${SYSTEM_NAME} — ${COMPANY_NAME}</p></div>
 <form id="login-form">
-<div class="form-group">
-<label class="form-label">📧 البريد الإلكتروني</label>
-<input type="email" class="form-control" id="login-email" required placeholder="your.email@company.com" autocomplete="email">
-</div>
-<div class="form-group">
-<label class="form-label">🔒 كلمة المرور</label>
-<input type="password" class="form-control" id="login-password" required placeholder="••••••••" autocomplete="current-password">
-</div>
-<div style="text-align:left;margin-bottom:12px"><a href="#" id="forgot-pw-link" style="color:var(--primary);font-size:13px;text-decoration:none;font-weight:600">🔑 نسيت كلمة المرور؟</a></div>
-<button type="submit" class="btn btn-primary" style="width:100%;padding:12px;font-size:15px">دخول</button>
+<div class="form-group"><label class="form-label" for="login-email">البريد الإلكتروني</label>
+<input type="email" class="form-control" id="login-email" required placeholder="name@mhzm.sa" autocomplete="email"></div>
+<div class="form-group"><label class="form-label" for="login-password">كلمة المرور</label>
+<input type="password" class="form-control" id="login-password" required placeholder="••••••••" autocomplete="current-password"></div>
+<div class="login-forgot"><a href="#" id="forgot-pw-link">نسيت كلمة المرور؟</a></div>
+<button type="submit" class="btn btn-primary login-submit">دخول <span class="ui-icon" aria-hidden="true">arrow_back</span></button>
 </form>
-<div style="margin-top:22px;padding:16px;background:linear-gradient(135deg,#06579F,#202E4D);color:white;border-radius:12px;text-align:center">
-<div style="font-size:15px;font-weight:700;margin-bottom:4px">🌟 مرحباً بكم في ${SYSTEM_NAME}</div>
-<div style="font-size:12px;opacity:0.9">${COMPANY_NAME} - منظومة متكاملة لإدارة جودة الأداء</div>
-</div>
-</div>
+</div></div>
+<aside class="login-brand-panel"><img src="/assets/mahzam-brand-white.png" alt="محزم">
+<div class="login-brand-copy"><p>نظام الجودة للتقييم والتدريب</p><h2>جودة أداء فريقك، في مكان واحد.</h2><div>تقييمات، اعتراضات، وتقارير شهرية لأقسام محزم وCreative Gene وعزوة.</div></div>
+<footer>© ${new Date().getFullYear()} شركة محزم — محزمك المليان</footer></aside>
 </div>`;
 }
 
@@ -731,7 +728,7 @@ const myDeptId = (_me && _me.department_id != null) ? _me.department_id : (curre
 if (myDeptId != null) currentUser.department_id = myDeptId; // ثبّته لبقية الجلسة (بطاقة الأسبوع...)
 // قائمة مبسّطة للموظف
 if (role === 'employee') {
-const it = (page,icon,label) => `<div class="menu-item ${currentPage===page?'active':''}" data-nav="${page}"><span>${icon}</span><span>${label}</span></div>`;
+const it = (page,icon,label) => `<div class="menu-item ${currentPage===page?'active':''}" data-nav="${page}">${uiIcon(icon)}<span>${label}</span></div>`;
 // "رفع التقييم" لموظفي Creative Gene فقط (على أساس department_id لا الاسم)
 const isCgEmp = (myDeptId != null) && (myDeptId === cId || isCreativeGeneDept(myDeptId));
 const cgUp = isCgEmp ? it('cg-upload','📤','رفع تقييم') : '';
@@ -778,13 +775,14 @@ return true;
 };
 let supDepts = null;
 if (role === 'supervisor') supDepts = new Set(DB.getUsers({role:'employee'}).filter(e => e.supervisor_id===currentUser.id || e.supervisor_name===currentUser.full_name).map(e => e.department_id));
-let html = `<div class="menu-item ${currentPage==='dashboard'?'active':''}" data-nav="dashboard"><span>🏠</span><span>الرئيسية</span></div>`;
+let html = `<div class="menu-item ${currentPage==='dashboard'?'active':''}" data-nav="dashboard">${uiIcon('🏠')}<span>الرئيسية</span></div>`;
+html += `<div class="nav-label">الأقسام</div>`;
 sections.forEach(sec => {
 if (role === 'supervisor' && supDepts && !supDepts.has(sec.dept)) return;
 const isOpen = sec.items.some(itemActive) || window._openSections[sec.key];
-const itemsHTML = sec.items.filter(it => (!it.roles || it.roles.indexOf(role) !== -1) && (!it.show || it.show())).map(it => `<div class="menu-item ${itemActive(it)?'active':''}" data-nav="${it.nav}" data-navparams='${JSON.stringify(it.params)}' style="padding-right:38px;font-size:13px;${itemActive(it)?'background:'+sec.color+'22;border-right:3px solid '+sec.color:''}"><span>${it.icon}</span><span>${it.label}</span></div>`).join('');
+const itemsHTML = sec.items.filter(it => (!it.roles || it.roles.indexOf(role) !== -1) && (!it.show || it.show())).map(it => `<div class="menu-item ${itemActive(it)?'active':''}" data-nav="${it.nav}" data-navparams='${JSON.stringify(it.params)}' style="padding-right:38px;font-size:13px;${itemActive(it)?'background:'+sec.color+'22;border-right:3px solid '+sec.color:''}">${uiIcon(it.icon)}<span>${it.label}</span></div>`).join('');
 html += `<div class="menu-section" data-section="${sec.key}">
-<div class="menu-item" data-section-toggle="${sec.key}" style="font-weight:700;border-right:3px solid ${sec.color};cursor:pointer"><span>${sec.icon}</span><span style="flex:1">${sec.label}</span><span class="sec-caret" style="display:inline-block;transition:.2s;${isOpen?'':'transform:rotate(-90deg)'}">▾</span></div>
+<div class="menu-item" data-section-toggle="${sec.key}" style="font-weight:700;border-right:3px solid ${sec.color};cursor:pointer"><span class="section-dot" style="background:${sec.color}"></span><span style="flex:1">${sec.label}</span><span class="sec-caret" style="display:inline-block;transition:.2s;${isOpen?'':'transform:rotate(-90deg)'}">▾</span></div>
 <div class="section-items" style="${isOpen?'':'display:none'}">${itemsHTML}</div>
 </div>`;
 });
@@ -796,8 +794,8 @@ if (role==='admin' || role==='quality_officer') bottom.push(['users','🛡️','
 if (role==='admin') bottom.push(['deleted-users','🗑','المستخدمون المحذوفون']);
 if (role==='admin' || role==='quality_officer') bottom.push(['audit-log','📜','سجل العمليات']);
 bottom.push(['profile','👤','حسابي']);
-html += `<div style="margin:12px;border-top:1px solid rgba(255,255,255,0.12)"></div>`;
-html += bottom.map(([k,ic,lb]) => `<div class="menu-item ${currentPage===k?'active':''}" data-nav="${k}"><span>${ic}</span><span>${lb}</span></div>`).join('');
+html += `<div class="nav-label">الإدارة</div>`;
+html += bottom.map(([k,ic,lb]) => `<div class="menu-item ${currentPage===k?'active':''}" data-nav="${k}">${uiIcon(ic)}<span>${lb}</span></div>`).join('');
 return html;
 }
 function renderLayout(content) {
@@ -812,13 +810,11 @@ return `
 <aside class="sidebar">
 <button class="sidebar-close" id="sidebar-close" aria-label="إغلاق القائمة">×</button>
 <div class="sidebar-header">
-<div class="sidebar-logo">${MAHZAM_LOGO_LIGHT_SVG}</div>
-<div class="sidebar-title">${SYSTEM_NAME}</div>
-<div class="sidebar-subtitle">${COMPANY_NAME}</div>
+<img class="sidebar-logo" src="/assets/mahzam-brand-white.png" alt="محزم"><div class="sidebar-brand-text"><div class="sidebar-title">نظام الجودة</div><div class="sidebar-subtitle">للتقييم والتدريب</div></div>
 </div>
 <nav class="sidebar-menu">${menuHTML}</nav>
 <div style="padding:16px 12px;border-top:1px solid rgba(255,255,255,0.1)">
-<div class="menu-item" id="logout-btn"><span>🚪</span><span>تسجيل الخروج</span></div>
+<div class="menu-item" id="logout-btn">${uiIcon('🚪')}<span>تسجيل الخروج</span></div>
 </div>
 </aside>
 <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
@@ -826,15 +822,15 @@ return `
 <header class="topbar">
 <div style="display:flex;align-items:center;gap:14px">
 <button class="menu-toggle" id="menu-toggle" aria-label="فتح القائمة">☰</button>
-<div style="width:42px;height:42px;background:linear-gradient(135deg,#06579F,#202E4D);border-radius:10px;padding:5px;display:flex;align-items:center;justify-content:center">${MAHZAM_LOGO_LIGHT_SVG}</div>
+
 <div>
 <div class="topbar-title">${titles[currentPage] || ''}</div>
 <div style="font-size:11px;color:var(--muted);font-weight:600">${SYSTEM_NAME} • ${COMPANY_NAME}</div>
 </div>
 </div>
 <div class="topbar-actions">
-<div style="position:relative;cursor:pointer;font-size:22px" data-nav="notifications">
-🔔${unread > 0 ? `<span style="position:absolute;top:-4px;left:-4px;background:var(--danger);color:#fff;border-radius:50%;min-width:18px;height:18px;font-size:11px;display:flex;align-items:center;justify-content:center;padding:0 4px;font-weight:700">${unread}</span>` : ''}
+<div aria-label="الإشعارات" style="position:relative;cursor:pointer;font-size:22px" data-nav="notifications">
+${uiIcon('🔔')}${unread > 0 ? `<span style="position:absolute;top:-4px;left:-4px;background:var(--danger);color:#fff;border-radius:50%;min-width:18px;height:18px;font-size:11px;display:flex;align-items:center;justify-content:center;padding:0 4px;font-weight:700">${unread}</span>` : ''}
 </div>
 <div class="user-info">
 <div class="user-avatar">${Utils.getInitials(currentUser.full_name)}</div>
@@ -945,20 +941,7 @@ if (h < 17) return 'مساء الخير';
 return 'مساء الخير';
 })();
 
-const welcomeBanner = `
-<div style="background:linear-gradient(135deg,#1B202C 0%,#202E4D 50%,#06579F 100%);border-radius:16px;padding:28px;color:white;margin-bottom:24px;position:relative;overflow:hidden;box-shadow:0 10px 30px rgba(27,32,44,0.35)">
-<div style="position:absolute;top:-40px;left:-40px;width:240px;height:240px;background:rgba(255,255,255,0.06);border-radius:50%"></div>
-<div style="position:absolute;bottom:-60px;left:30%;width:180px;height:180px;background:rgba(255,255,255,0.04);border-radius:50%"></div>
-<div style="position:relative;z-index:1;display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap">
-<div>
-<div style="font-size:14px;opacity:0.85;margin-bottom:4px">${greeting}</div>
-<div style="font-size:26px;font-weight:800;margin-bottom:6px">${Utils.escape(currentUser.full_name)} 👋</div>
-<div style="font-size:14px;opacity:0.9">${Utils.roleLabel(currentUser.role)} - ${new Date().toLocaleDateString('ar-SA',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</div>
-<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.18);font-size:13px;opacity:0.9">🌟 مرحباً بكم في <strong>${SYSTEM_NAME}</strong> - ${COMPANY_NAME}</div>
-</div>
-<div style="width:130px;height:auto;opacity:0.95;flex-shrink:0">${MAHZAM_LOGO_LIGHT_SVG}</div>
-</div>
-</div>`;
+const welcomeBanner = `<div class="dashboard-heading"><div><div class="page-subtitle">${new Date().toLocaleDateString('ar-SA',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</div><h1>${greeting}، ${Utils.escape(currentUser.full_name)}</h1></div>${dashQuickAction()}</div>`;
 
 const cards = `
 <div class="stats-grid">
@@ -1034,10 +1017,8 @@ const quickActions = !isEmp ? `
 </div>
 </div>` : '';
 
-const quickAction = dashQuickAction();
 return `
 ${welcomeBanner}
-${quickAction}
 ${currentUser.role === 'admin' ? cgNoSupervisorCardHTML() : ''}
 <div id="dash-body"><div class="card"><div class="card-body" style="text-align:center;padding:44px"><div class="spinner"></div><div style="margin-top:12px;color:var(--muted)">جارٍ تحميل الإحصائيات…</div></div></div></div>`;
 }
@@ -1048,7 +1029,7 @@ function dashQuickAction() {
 const role = currentUser.role;
 if (role !== 'quality_officer' && role !== 'admin') return '';
 const label = role === 'quality_officer' ? 'الطلبات المفتوحة' : 'طلبات التقييم';
-return `<div style="margin-bottom:20px"><button class="btn" style="background:#7b1fa2;color:#fff;padding:12px 22px;font-size:15px;box-shadow:0 4px 14px #7b1fa244" data-nav="cg-requests">📥 ${label} ←</button></div>`;
+return `<div class="dashboard-actions"><button class="btn btn-secondary" data-nav="cg-requests">${uiIcon("📥")} ${label}</button><button class="btn btn-primary" data-nav="new-evaluation"><span class="ui-icon" aria-hidden="true">add</span>تقييم جديد</button></div>`;
 }
 
 // ألوان القسمين
@@ -1071,18 +1052,13 @@ if (a.indexOf('login') !== -1) return ['🔑','#64748b'];
 return ['•','#94a3b8'];
 }
 function statCard(icon, value, label, color, sub, navTo) {
-return `<div class="card" ${navTo?`data-nav="${navTo}" style="cursor:pointer;border-top:3px solid ${color}"`:`style="border-top:3px solid ${color}"`}>
-<div class="card-body" style="padding:16px">
-<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><div style="font-size:22px">${icon}</div><div style="font-size:13px;color:var(--muted);font-weight:600">${label}</div></div>
-<div style="font-size:30px;font-weight:800;color:${color};line-height:1.1">${value}</div>
-${sub?`<div style="font-size:12px;color:var(--muted);margin-top:4px">${sub}</div>`:''}
-</div></div>`;
+return `<div class="card metric-card" ${navTo?`data-nav="${navTo}"`:''} style="--metric-color:${color}"><div class="card-body"><div class="metric-heading"><span>${label}</span><span class="metric-icon">${uiIcon(icon)}</span></div><div class="metric-value">${value}</div>${sub?`<div class="metric-note">${sub}</div>`:''}</div></div>`;
 }
 function sectionBlockHTML(key, s) {
 const cfg = DASH_SECTIONS[key];
 const passPct = s.total ? Math.round(s.pass/s.total*100) : 0;
 const failPct = s.total ? Math.round(s.fail/s.total*100) : 0;
-const cards = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
+const cards = `<div class="dashboard-metrics">
 ${statCard('📋', s.total, 'إجمالي التقييمات', cfg.color, `هذا الشهر: ${s.month}`)}
 ${statCard('✅', s.pass, 'ناجح', '#16a34a', `${passPct}% من الإجمالي`)}
 ${statCard('❌', s.fail, 'راسب', '#dc2626', `${failPct}% من الإجمالي`)}
@@ -1091,17 +1067,16 @@ ${statCard('⚖️', s.objections_open + ' / ' + s.objections_closed, 'اعتر�
 ${statCard('👥', s.active_employees, 'الموظفون النشطون', '#8b5cf6', '')}
 </div>`;
 const notes = (s.notes && s.notes.length) ? s.notes.map((n,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;${i<s.notes.length-1?'border-bottom:1px dashed var(--border)':''}"><span style="font-size:13px">${i+1}. ${Utils.escape(n.note||'—')}</span><span class="badge" style="background:${cfg.soft};color:${cfg.color}">${n.count}×</span></div>`).join('') : '<div style="color:var(--muted);font-size:13px;padding:10px 0">لا توجد ملاحظات كافية حالياً.</div>';
-return `<div class="card" style="border-top:4px solid ${cfg.color};margin-bottom:20px">
-<div class="card-header" style="background:linear-gradient(to left,${cfg.soft},transparent)"><div class="card-title" style="font-size:18px">${cfg.icon} إحصائيات ${cfg.name}</div></div>
-<div class="card-body">
+return `<section class="dashboard-section"><div class="dashboard-section-heading"><span class="section-dot" style="background:${cfg.color}"></span><h2>إحصائيات ${cfg.name}</h2></div>
+<div class="dashboard-section-body">
 ${cards}
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:18px">
+<div class="dashboard-charts">
 <div><div style="font-weight:700;font-size:13px;margin-bottom:6px;color:var(--muted)">📈 متوسط الدرجات (آخر 6 أسابيع)</div><div style="height:200px"><canvas id="chart-trend-${key}"></canvas></div></div>
 <div><div style="font-weight:700;font-size:13px;margin-bottom:6px;color:var(--muted)">🎯 الناجحون مقابل الراسبين</div><div style="height:200px"><canvas id="chart-donut-${key}"></canvas></div></div>
 <div><div style="font-weight:700;font-size:13px;margin-bottom:6px;color:var(--muted)">🏆 أعلى 5 موظفين (عدد التقييمات)</div><div style="height:200px"><canvas id="chart-bar-${key}"></canvas></div></div>
 </div>
-<div style="margin-top:18px"><div style="font-weight:700;font-size:14px;margin-bottom:8px">⚠️ أبرز الملاحظات المتكررة</div>${notes}</div>
-</div></div>`;
+<div class="dashboard-notes"><div style="font-weight:700;font-size:14px;margin-bottom:8px">⚠️ أبرز الملاحظات المتكررة</div>${notes}</div>
+</div></section>`;
 }
 function buildSectionCharts(key, s) {
 const cfg = DASH_SECTIONS[key];
