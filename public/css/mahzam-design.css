@@ -200,3 +200,28 @@ body:has(.login-redesign) #rt-indicator{display:none!important}
 .login-pattern-layout .login-connection{position:absolute;bottom:20px;right:24px;margin:0;padding:6px 12px;background:#fff;border-radius:22px;box-shadow:0 2px 6px #0e1a3308;font-size:12px;color:#34415A}
 @media(max-width:520px){.login-pattern-layout{padding:32px 20px 70px;background-size:600px 600px}.login-pattern-layout .login-card{padding:30px 26px;border-radius:24px}.login-page-footer{left:20px;bottom:24px}.login-pattern-layout .login-connection{right:20px}.login-stacked-brand{margin-bottom:24px}}
 @media(max-height:650px){.login-pattern-layout{align-items:flex-start}}
+
+/* Verification card from the approved OTP reference. */
+.otp-layout{padding:48px 20px 68px;color:#14213D}
+.otp-card{width:100%;max-width:448px;padding:42px 38px 38px;background:#fff;border-radius:26px;box-shadow:0 22px 44px #0e1a332b;text-align:center}
+.otp-emblem{width:62px;height:62px;border-radius:18px;background:#EAF1FF;color:#1D5BD8;display:grid;place-items:center;margin:0 auto 12px}
+.otp-emblem svg{width:25px;height:29px}
+.otp-card h1{font-family:'Noto Kufi Arabic','IBM Plex Sans Arabic',sans-serif;font-weight:800;font-size:27px;line-height:1.8;margin:0 0 14px;color:#14213D}
+.otp-description{font-size:14px;color:#66728A;line-height:1.8;margin:0 0 28px}
+.otp-description strong{display:inline-block;font-family:'IBM Plex Sans Arabic',sans-serif;color:#14213D;font-weight:700;font-size:15px}
+.otp-label-row{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;margin-bottom:12px;color:#34415A}
+#otp-status{display:flex;align-items:center;gap:4px;color:#66728A;font-size:12px}
+#otp-status svg{width:16px;height:16px;margin-left:2px}
+#otp-countdown{direction:ltr;unicode-bidi:isolate}
+.otp-digits{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin-bottom:24px}
+.otp-digit{width:100%;min-width:0;height:56px;border:1px solid #D5DDED;border-radius:12px;background:#fff;color:#14213D;text-align:center;font-family:inherit;font-size:24px;font-weight:600;outline:none;padding:0;transition:box-shadow .15s,border-color .15s}
+.otp-digit:focus{border-color:#1D5BD8;box-shadow:0 0 0 4px #1D5BD81A}
+.otp-submit,.otp-resend{width:100%;height:50px;border-radius:12px!important;display:flex;align-items:center;justify-content:center;gap:10px;font-family:inherit;font-size:14px;font-weight:600}
+.otp-submit{margin-bottom:10px}
+.otp-submit:disabled{background:#A9BFEA!important;border-color:#A9BFEA!important;opacity:1!important;color:white!important;cursor:not-allowed}
+.otp-resend{background:white;border:1px solid #D5DDED;color:#1D5BD8}
+.otp-resend:disabled{color:#8C96AA;opacity:1!important;cursor:not-allowed}
+.otp-back{border-top:1px solid #E7EBF2;margin-top:24px;padding-top:23px}
+.otp-back button{background:none;border:0;color:#66728A;font-family:inherit;font-size:13px;display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding:3px}
+.otp-back button:hover{color:#1D5BD8}
+@media(max-width:520px){.otp-card{padding:32px 24px;border-radius:24px}.otp-card h1{font-size:24px}.otp-digits{gap:7px}.otp-digit{height:50px}.otp-label-row{font-size:12px}#otp-status{font-size:11px}}

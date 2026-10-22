@@ -473,34 +473,24 @@ function showOTPScreen() {
 if (!_pendingOTP) { navigate('login'); return; }
 const app = document.getElementById('app');
 app.innerHTML = `
-<div class="login-page">
-<div class="login-card">
-<div class="login-logo">${MAHZAM_LOGO_SVG}</div>
-<div class="login-header">
-<h1 style="color:#1D5BD8;font-weight:800;font-size:22px">🔐 التحقق الثنائي</h1>
-<p style="font-size:14px;color:#475569;margin-top:10px;font-weight:600">
-أرسلنا كوداً مكوّناً من 6 أرقام إلى:<br>
-<strong style="color:#1D5BD8;direction:ltr;display:inline-block;margin-top:4px;font-family:monospace">${Utils.escape(_pendingOTP.masked_email)}</strong>
-</p>
-<div style="height:3px;width:60px;background:linear-gradient(to left,#1D5BD8,#202E4D);margin:14px auto;border-radius:2px"></div>
+<main class="login-pattern-layout otp-layout">
+<section class="otp-card" aria-labelledby="otp-title">
+<div class="otp-emblem" aria-hidden="true"><svg viewBox="0 0 32 36" fill="none"><path d="M16 2 28 7v10c0 8-5 13-12 17C9 30 4 25 4 17V7Z" stroke="currentColor" stroke-width="2.8" stroke-linejoin="round"/><rect x="11" y="15" width="10" height="9" rx="2" fill="currentColor"/><path d="M13 15v-3a3 3 0 0 1 6 0v3" stroke="currentColor" stroke-width="2"/></svg></div>
+<h1 id="otp-title">التحقق الثنائي</h1>
+<p class="otp-description">أرسلنا رمزًا من 6 أرقام إلى<br><strong dir="ltr">${Utils.escape(_pendingOTP.masked_email)}</strong></p>
+<form id="otp-form" aria-label="التحقق الثنائي">
+<div class="otp-label-row"><label id="otp-code-label" for="otp-digit-0">رمز التحقق</label><div id="otp-status" role="status"><svg aria-hidden="true" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor" stroke-width="1.7"/><path d="M10 5v5l3 2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>صالح لمدة <b id="otp-countdown">5:00</b></div></div>
+<input type="hidden" id="otp-code">
+<div class="otp-digits" dir="ltr" role="group" aria-labelledby="otp-code-label">
+${Array.from({length:6},(_,i)=>`<input id="otp-digit-${i}" class="otp-digit" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" aria-label="الرقم ${i+1} من رمز التحقق" autocomplete="${i===0?'one-time-code':'off'}">`).join('')}
 </div>
-<form id="otp-form">
-<div class="form-group">
-<label class="form-label" style="text-align:center;display:block;margin-bottom:10px">📨 أدخل الكود</label>
-<input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6"
-class="form-control" id="otp-code" required autocomplete="one-time-code"
-placeholder="000000"
-style="text-align:center;font-size:24px;letter-spacing:8px;font-family:monospace;font-weight:700;direction:ltr">
-</div>
-<div id="otp-status" style="text-align:center;margin-bottom:14px;font-size:13px;color:var(--muted);min-height:18px">
-الكود صالح لمدة <span id="otp-countdown" style="color:#1D5BD8;font-weight:700">5:00</span>
-</div>
-<button type="submit" class="btn btn-primary" style="width:100%;padding:12px;font-size:15px;margin-bottom:10px">تأكيد ودخول</button>
-<button type="button" id="otp-resend" class="btn btn-secondary" style="width:100%;padding:10px;font-size:13px" disabled>إعادة إرسال الكود (<span id="resend-countdown">60</span>ث)</button>
-<button type="button" id="otp-cancel" class="btn" style="width:100%;padding:8px;font-size:13px;background:transparent;color:#64748b;margin-top:8px">← الرجوع لتسجيل الدخول</button>
+<button type="submit" class="btn btn-primary otp-submit" disabled><span>تأكيد ودخول</span><span aria-hidden="true">←</span></button>
+<button type="button" id="otp-resend" class="btn otp-resend" disabled><span aria-hidden="true">⟳</span><span>إعادة إرسال الرمز (<span id="resend-countdown">60</span> ث)</span></button>
+<div class="otp-back"><button type="button" id="otp-cancel"><span aria-hidden="true">→</span> الرجوع لتسجيل الدخول</button></div>
 </form>
-</div>
-</div>`;
+</section>
+<footer class="login-page-footer">© ${new Date().getFullYear()} مِعيار</footer>
+</main>`;
 attachOTPHandlers();
 }
 
@@ -513,12 +503,32 @@ const resendBtn = document.getElementById('otp-resend');
 const resendCountEl = document.getElementById('resend-countdown');
 const cancelBtn = document.getElementById('otp-cancel');
 
-if (codeInput) {
-codeInput.focus();
-codeInput.addEventListener('input', e => {
-e.target.value = e.target.value.replace(/[^0-9]/g, '').slice(0,6);
-});
+const digits = Array.from(form.querySelectorAll('.otp-digit'));
+const submitBtn = form.querySelector('button[type=submit]');
+const normalizeCode = value => String(value).replace(/[٠-٩]/g,c=>String(c.charCodeAt(0)-1632)).replace(/[۰-۹]/g,c=>String(c.charCodeAt(0)-1776)).replace(/[^0-9]/g,'');
+function syncDigits() {
+  codeInput.value = digits.map(input=>input.value).join('');
+  submitBtn.disabled = codeInput.value.length !== 6 || submitBtn.dataset.busy === '1';
 }
+function fillDigits(value, index) {
+  const code = normalizeCode(value).slice(0,6);
+  if (!code) { digits[index].value=''; syncDigits(); return; }
+  const start = code.length === 6 ? 0 : index;
+  for (let n=0;n<code.length && start+n<6;n++) digits[start+n].value=code[n];
+  digits[Math.min(start+code.length,5)].focus();
+  syncDigits();
+}
+digits.forEach((input,index)=>{
+  input.addEventListener('focus',()=>input.select());
+  input.addEventListener('input',()=>fillDigits(input.value,index));
+  input.addEventListener('paste',event=>{ event.preventDefault(); fillDigits(event.clipboardData.getData('text'),index); });
+  input.addEventListener('keydown',event=>{
+    if (event.key==='Backspace' && !input.value && index>0) { event.preventDefault(); digits[index-1].value=''; digits[index-1].focus(); syncDigits(); }
+    if (event.key==='ArrowLeft' && index>0) { event.preventDefault(); digits[index-1].focus(); }
+    if (event.key==='ArrowRight' && index<5) { event.preventDefault(); digits[index+1].focus(); }
+  });
+});
+digits[0].focus();
 
 // Countdown timer
 if (_otpTimer) clearInterval(_otpTimer);
@@ -579,8 +589,8 @@ if (!result || !result.ok) {
 const msg = (result && result.message) || 'كود غير صحيح';
 Toast.error(msg);
 logEvent('failed_otp', `فشل OTP - ${_pendingOTP.user_email}`, 'login', _pendingOTP.user_id);
-codeInput.value=''; codeInput.focus();
-btn.dataset.busy='0'; btn.disabled = false; btn.textContent = 'تأكيد ودخول';
+digits.forEach(input=>input.value=''); digits[0].focus();
+btn.dataset.busy='0'; syncDigits(); btn.innerHTML = '<span>تأكيد ودخول</span><span aria-hidden="true">←</span>';
 return;
 }
 
@@ -607,7 +617,7 @@ navigate('dashboard');
 } catch(err) {
 console.error('OTP verify error:', err);
 Toast.error('فشل التحقق - حاول مرة أخرى');
-btn.dataset.busy='0'; btn.disabled = false; btn.textContent = 'تأكيد ودخول';
+btn.dataset.busy='0'; syncDigits(); btn.innerHTML = '<span>تأكيد ودخول</span><span aria-hidden="true">←</span>';
 }
 });
 }
