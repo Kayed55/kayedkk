@@ -1,0 +1,21 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const calls = [], audit = [];
+let fail = false;
+const context = { COMPANY_NAME: 'محزم', window: {emailjs: {init() {}, async send(...args) { calls.push(args); if(fail) throw {text:'test failure'}; return {status:200}; }}}, document: {readyState:'loading', addEventListener() {}}, console: {log(){},warn(){},error(){}}, DB: {addAudit(v){audit.push(v);}} };
+vm.runInNewContext(fs.readFileSync('public/js/services/email-service.js','utf8'),context);
+(async()=>{
+ const result = await context.window.EmailService.sendLoginCodeEmail({email:'test@example.com',name:'Test'},'654321',5);
+ assert.equal(result.ok,true);
+ const [service,template,params] = calls[0];
+ assert.equal(service,'service_iso6dyw'); assert.equal(template,'template_miyar_site_v1');
+ assert.equal(params.action_value,'654321'); assert.equal(params.to_email,'test@example.com');
+ const html=fs.readFileSync('email-templates/miyar-site.html','utf8');
+ for(const match of html.matchAll(/{{(\w+)}}/g)) assert.ok(Object.hasOwn(params,match[1]),`Missing ${match[1]}`);
+ assert.ok(html.includes('{{action_value}}')); assert.ok(!JSON.stringify(audit).includes('654321'));
+ fail=true;
+ assert.equal((await context.window.EmailService.sendLoginCodeEmail({email:'test@example.com'},'654321',5)).ok,false);
+ console.log('Email template routing, rendered OTP contract, and send failure checks passed');
+})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -3,7 +3,7 @@
  * Mahzam Quality Evaluation & Training System
  *
  * Module: EmailJS Service Layer (Universal Single-Template Edition)
- * طبقة بريد مركزية تستخدم قالبًا واحدًا (template_universal) لجميع أنواع الإشعارات.
+ * طبقة بريد مركزية تستخدم قالبًا واحدًا (template_miyar_site_v1) لجميع أنواع الإشعارات.
  *
  *  ✅ قالب واحد فقط في EmailJS — يتكيّف عبر مجموعة متغيّرات موحّدة.
  *  ✅ Safe no-op — إذا كانت الإعدادات فارغة، النظام يستمر بالعمل دون كسر.
@@ -24,11 +24,11 @@
 // ============================================
 // ثوابت القالب الموحّد
 // ============================================
-const UNIVERSAL_TEMPLATE_ID = 'template_universal';
+const UNIVERSAL_TEMPLATE_ID = 'template_miyar_site_v1';
 // ملاحظة: COMPANY_NAME معرّف عالميًا في 01-constants.js (يُحمّل قبل هذا الملف).
 // لا نُعيد تعريفه هنا بـ const وإلا حدث تعارض "Identifier already declared"
 // يُفشل تنفيذ الملف كله فلا يُعرَّف window.EmailService.
-const SYSTEM_URL   = 'https://kayedkk.vercel.app';
+const SYSTEM_URL   = 'https://mhzm-quality.com';
 
 // ============================================
 // إعدادات EmailJS — ✏️ عدّل هذه القيم من dashboard.emailjs.com
@@ -190,7 +190,7 @@ window.EmailService = (function() {
 
   // ============================================
   // الواجهة العامة - دوال الإرسال
-  // كلها تمرّ عبر _sendUniversal بقالب template_universal
+  // كلها تمرّ عبر _sendUniversal بقالب template_miyar_site_v1
   // ============================================
 
   /**
@@ -379,7 +379,7 @@ window.EmailService = (function() {
     return _sendUniversal(_buildParams({
       to_email:        target.email,
       to_name:         _name(target),
-      subject:         'رمز تسجيل الدخول',
+      subject:         'رمز الدخول إلى مِعيار',
       intro_message:   'تلقّينا طلب تسجيل دخول جديد لحسابك. استخدم الرمز التالي لإتمام عملية تسجيل الدخول.',
       action_label:    'رمز التحقّق',
       action_value:    code,
