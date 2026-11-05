@@ -10,7 +10,7 @@ vm.runInNewContext(fs.readFileSync('public/js/services/email-service.js','utf8')
  const result = await context.window.EmailService.sendLoginCodeEmail({email:'test@example.com',name:'Test'},'654321',5);
  assert.equal(result.ok,true);
  const [service,template,params] = calls[0];
- assert.equal(service,'service_iso6dyw'); assert.equal(template,'template_miyar_site_v1');
+ assert.equal(service,'service_mhzm_titan'); assert.equal(template,'template_miyar_site_v1');
  assert.equal(params.action_value,'654321'); assert.equal(params.to_email,'test@example.com');
  const html=fs.readFileSync('email-templates/miyar-site.html','utf8');
  for(const match of html.matchAll(/{{(\w+)}}/g)) assert.ok(Object.hasOwn(params,match[1]),`Missing ${match[1]}`);
