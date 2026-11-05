@@ -36,7 +36,7 @@ const SYSTEM_URL   = 'https://mhzm-quality.com';
 const EMAILJS_CONFIG = {
   // المفاتيح الأساسية (مطلوبة) — قالب واحد لكل النظام
   publicKey:  'ecgxEwtvUHeDhEehm',           // من Account → API Keys → Public Key
-  serviceId:  'service_iso6dyw',             // من Email Services → Service ID
+  serviceId:  'service_mhzm_titan',             // من Email Services → Service ID
 
   // تفضيلات عامة
   enabled:    true,                                       // مفتاح رئيسي لإيقاف الإرسال كله
