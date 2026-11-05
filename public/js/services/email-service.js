@@ -41,7 +41,7 @@ const EMAILJS_CONFIG = {
   // تفضيلات عامة
   enabled:    true,                                       // مفتاح رئيسي لإيقاف الإرسال كله
   fromName:   'مِعيار — نظام الجودة',
-  replyTo:    '',                                         // اتركه فارغًا لاستخدام الإعداد الافتراضي
+  replyTo:    'info@mhzm.sa',                              // البريد المعتمد للرد
   systemName: 'نظام الجودة للتقييم والتدريب',
   companyName: COMPANY_NAME,
   logLevel:   'warn'                                      // 'silent' | 'warn' | 'info'
