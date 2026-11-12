@@ -568,11 +568,24 @@ try {
 let result = null;
 // مسار Supabase
 if (window.sb && window.sb.rpc && !_pendingOTP._localCode) {
-const { data, error } = await window.sb.rpc('verify_login_code', {
+const controller = new AbortController();
+let timer;
+try {
+const request = window.sb.rpc('verify_login_code', {
 p_user_id: _pendingOTP.user_id, p_code: code
+}).abortSignal(controller.signal);
+const timeout = new Promise((_, reject) => {
+timer = setTimeout(() => {
+controller.abort();
+reject(new Error('verification timeout'));
+}, 20000);
 });
-if (error) console.warn('verify_login_code error:', error.message);
-if (Array.isArray(data) && data.length) result = data[0];
+const { data, error } = await Promise.race([request, timeout]);
+if (!form.isConnected) return;
+if (error || !Array.isArray(data) || !data.length) throw new Error('Verification unavailable');
+result = data[0];
+if (result.ok && (!result.user_data || !result.session_token)) throw new Error('Incomplete verification');
+} finally { clearTimeout(timer); }
 }
 // مسار محلي
 if (!result && _pendingOTP._localCode) {
@@ -603,20 +616,22 @@ if (result.session_token) {
 localStorage.setItem('mahzam_session_token', result.session_token);
 if (result.session_expires_at) localStorage.setItem('mahzam_session_expires_at', result.session_expires_at);
 }
-if (window.SupabaseSync) { window.SupabaseSync.suspended = false; await window.SupabaseSync.pullAll(true); }
+if (window.SupabaseSync) window.SupabaseSync.suspended = false;
 logEvent('login', `دخول مع OTP: ${u.full_name} (${u.email})`, 'login', u.id);
 Toast.success('مرحباً بك ' + u.full_name);
 if (_otpTimer) { clearInterval(_otpTimer); _otpTimer = null; }
 _pendingOTP = null;
-if (u.must_change_password) {
-if (Toast.info) Toast.info('يجب تغيير كلمة المرور');
-navigate('profile');
+if (u.must_change_password && Toast.info) Toast.info('يجب تغيير كلمة المرور');
+if (result.session_token) {
+form.remove();
+await bootApp(u.must_change_password ? 'profile' : 'dashboard');
 } else {
-navigate('dashboard');
+navigate(u.must_change_password ? 'profile' : 'dashboard');
 }
 } catch(err) {
+if (!form.isConnected) return;
 console.error('OTP verify error:', err);
-Toast.error('فشل التحقق - حاول مرة أخرى');
+Toast.error('تعذّر الاتصال للتحقق من الرمز. أعد المحاولة، أو اطلب رمزًا جديدًا إذا انتهت صلاحيته.');
 btn.dataset.busy='0'; syncDigits(); btn.innerHTML = '<span>تأكيد ودخول</span><span aria-hidden="true">←</span>';
 }
 });
