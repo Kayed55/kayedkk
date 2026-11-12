@@ -65,6 +65,7 @@ window.SupabaseSync = {
   writeViaRpcOnly: true,         // 2-ب-2: تعطيل رفع pushAll المباشر — الكتابة عبر RPCs فقط
   _pullSeq: 0,                   // ترقيم عمليات السحب لمنع سحب قديم من الكتابة فوق بيانات أحدث
   _appliedSeq: 0,                // invalidation barrier for logout/local mutations
+  _tableLoadedAt: {},
   _tableAppliedSeq: {},         // independent ordering for each table
 
   // قائمة الجداول التي ستتم مزامنتها (الترتيب مهم بسبب foreign keys)
@@ -112,10 +113,16 @@ window.SupabaseSync = {
    * جلب جميع البيانات من Supabase وحفظها في localStorage
    * - يستخدم pendingPull لمنع pulls متزامنة (deduplication)
    */
-  async pullAll(force) {
+  tablesForPage(page) {
+    if (page === 'dashboard' || page === 'notifications') return ['users', 'notifications'];
+    if (['objections', 'view-objection', 'new-objection', 'view-evaluation'].includes(page)) return this.TABLES;
+    return this.TABLES.filter(table => table !== 'objections');
+  },
+
+  async pullAll(force, tables = this.TABLES) {
     if (!window.sb || this.suspended || !window.getSessionToken || !window.getSessionToken()) return false;
     // مع force: لا نُعيد عملية سحب قديمة قد تكون بدأت قبل آخر كتابة (تفادي بيانات غير محدّثة)
-    if (this.pendingPull && !force) return this.pendingPull;
+    if (this.pendingPull && !force && tables.every(table => this.pendingTables.includes(table))) return this.pendingPull;
 
     const self = this;
     const seq = ++this._pullSeq;   // ترتيب بدء هذه العملية
@@ -124,7 +131,7 @@ window.SupabaseSync = {
         console.log('⬇️ Pulling data from Supabase...');
         const results = {};
 
-        await Promise.all(this.TABLES.map(async (table) => {
+        await Promise.all(tables.map(async (table) => {
           // أمان: نقرأ من users_public (view بدون كلمات السر) بدلاً من users
           // كلمات السر يجب ألا تصل للمتصفح أبداً عبر anon key.
           if (table === 'notifications') {
@@ -257,11 +264,12 @@ window.SupabaseSync = {
           const d = DB.data;
           if (d) {
             const nextIds = {users:'nextUserId', evaluations:'nextEvalId', notifications:'nextNotifId', objections:'nextObjectionId'};
-            for (const table of self.TABLES) {
+            for (const table of tables) {
               // A newer users refresh must not discard evaluations from this pull.
               if (seq < (self._tableAppliedSeq[table] || 0)) continue;
               d[table] = dbData[table];
               self._tableAppliedSeq[table] = seq;
+              self._tableLoadedAt[table] = Date.now();
               if (nextIds[table]) d[nextIds[table]] = dbData[nextIds[table]];
               if (table === 'evaluation_templates') d.criteria = dbData.criteria;
             }
@@ -286,6 +294,7 @@ window.SupabaseSync = {
       }
     })();
 
+    this.pendingTables = tables;
     this.pendingPull = p;
     // ننظّف pendingPull فقط إن كان لا يزال يشير لهذه العملية (يحمي عمليات force المتزامنة)
     p.then(function(){}, function(){}).then(function(){ if (self.pendingPull === p) self.pendingPull = null; });
@@ -331,6 +340,7 @@ window.SupabaseSync = {
     }
     if (self.suspended || seq < self._appliedSeq || seq < (self._tableAppliedSeq[table] || 0)) { console.log('  ⏭️ [pullTable] تجاهل سحب قديم (seq ' + seq + ' < ' + self._appliedSeq + ')'); return true; }
     self._tableAppliedSeq[table] = seq;
+    self._tableLoadedAt[table] = Date.now();
     if (typeof DB !== 'undefined' && DB && DB.data) {
       const d = DB.data;
       if (table === 'users') { d.users = rows; d.nextUserId = Math.max(0, ...rows.map(u => u.id || 0)) + 1; }
@@ -421,7 +431,7 @@ window.SupabaseSync = {
     setInterval(async () => {
       if (this.syncInProgress || this.pendingPull) return;
       await this.pushAll();
-      const pulled = await this.pullAll();
+      const pulled = await this.pullAll(false, this.tablesForPage(currentPage));
       if (pulled !== false) this.scheduleUIRefresh();
     }, SUPABASE_CONFIG.syncInterval);
     console.log(`🔄 Auto-sync enabled (every ${SUPABASE_CONFIG.syncInterval / 1000}s)`);
