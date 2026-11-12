@@ -113,11 +113,30 @@ window.SupabaseSync = {
    * جلب جميع البيانات من Supabase وحفظها في localStorage
    * - يستخدم pendingPull لمنع pulls متزامنة (deduplication)
    */
-  tablesForPage(page) {
-    if (['dashboard','notifications','cg-requests','quality-report'].includes(page)) return ['users', 'notifications'];
-    if (page === 'evaluations') return ['users', 'notifications', 'evaluation_list'];
-    if (['objections', 'view-objection', 'new-objection', 'view-evaluation'].includes(page)) return this.TABLES;
-    return this.TABLES.filter(table => table !== 'objections');
+  tablesForPage(page, params = {}) {
+    const base = ['users', 'notifications'];
+    switch (page) {
+      case 'dashboard': case 'profile': case 'users': case 'deleted-users':
+      case 'audit-log': case 'quality-report': case 'notifications':
+      case 'cg-requests': case 'cg-upload': case 'cg-pending-approval':
+        return base;
+      case 'departments': case 'new-evaluation':
+        return [...base, 'evaluation_templates'];
+      case 'employees':
+        return [...base, 'evaluation_list', 'evaluation_templates'];
+      case 'evaluations': case 'errors-report': case 'actions-report': case 'monthly-report':
+      case 'cg-actions-report': case 'cg-objections':
+        return [...base, 'evaluation_list'];
+      case 'objections': case 'view-objection':
+        return [...base, 'evaluation_list', 'objections'];
+      case 'reports':
+        return params.reportTab === 'cg' || !params.reportTab
+          ? [...base, 'evaluations', 'evaluation_templates'] : [...base, 'evaluation_list'];
+      case 'new-objection': case 'view-evaluation':
+        return this.TABLES;
+      default:
+        return [...base, 'evaluations', 'evaluation_templates'];
+    }
   },
 
   async readSectionRows(kind, token) {
@@ -459,7 +478,7 @@ window.SupabaseSync = {
     setInterval(async () => {
       if (this.syncInProgress || this.pendingPull) return;
       await this.pushAll();
-      const pulled = await this.pullAll(false, this.tablesForPage(currentPage));
+      const pulled = await this.pullAll(false, this.tablesForPage(currentPage, currentParams));
       if (pulled !== false) this.scheduleUIRefresh();
     }, SUPABASE_CONFIG.syncInterval);
     console.log(`🔄 Auto-sync enabled (every ${SUPABASE_CONFIG.syncInterval / 1000}s)`);
