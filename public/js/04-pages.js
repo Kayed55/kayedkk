@@ -47,7 +47,7 @@ if (!currentUser) { navigate('login'); return; }
 
 const sync = window.SupabaseSync;
 if (window.sb && sync && getSessionToken()) {
-  const missing = sync.tablesForPage(page).filter(table =>
+  const missing = sync.tablesForPage(page, params).filter(table =>
     !sync._tableAppliedSeq[table] || Date.now() - sync._tableLoadedAt[table] > SUPABASE_CONFIG.syncInterval
   );
   if (missing.length) {
@@ -858,7 +858,7 @@ if (role==='admin' || role==='quality_officer') bottom.push(['departments','⚙�
 bottom.push(['employees','👥','إدارة الموظفين']);
 if (role==='admin' || role==='quality_officer') bottom.push(['users','🛡️','إدارة المستخدمين']);
 if (role==='admin') bottom.push(['deleted-users','🗑','المستخدمون المحذوفون']);
-if (role==='admin' || role==='quality_officer') bottom.push(['audit-log','📜','سجل العمليات']);
+if (Perms.can('view_audit_log')) bottom.push(['audit-log','📜','سجل العمليات']);
 bottom.push(['profile','👤','حسابي']);
 html += `<div class="nav-label">الإدارة</div>`;
 html += bottom.map(([k,ic,lb]) => `<div class="menu-item ${currentPage===k?'active':''}" data-nav="${k}">${uiIcon(ic)}<span>${lb}</span></div>`).join('');
@@ -1429,8 +1429,9 @@ const EMP_PAGE_SIZE = 10;
 
 // صف موظف واحد (مُستخرَج حرفياً من renderEmployees — بلا closure على متغيّرات محلية؛ globals + u فقط)
 function empRowHTML(u) {
-  const avg = DB.getAvgScore(u.id);
-  const count = DB.data.evaluations.filter(e => e.employee_id === u.id).length;
+  const records = evaluationSummaries().filter(e => e.employee_id === u.id);
+  const count = records.length;
+  const avg = count ? Math.round(records.reduce((sum,e) => sum + e.percentage, 0) / count * 10) / 10 : 0;
   const uDept = (window._departments||[]).find(d => d.id === u.department_id);
   return `<tr data-search="${Utils.escape((u.full_name||'')+' '+(u.employee_number||'')+' '+(u.supervisor_name||'')+' '+(u.email||'')+' '+(u.department||''))}" data-status="${u.is_active?'active':'inactive'}" data-deptid="${u.department_id||''}" data-sup="${Utils.escape(u.supervisor_name||'')}" data-template="${u.template_id||''}">
 <td><strong>${Utils.escape(u.employee_number||'-')}</strong></td>
@@ -2311,7 +2312,7 @@ return 'النموذج الافتراضي';
 return '—';
 }
 // ★ #47 (Phase 3-B): المسمّى المعروض = override يدوي (job_title) ← تسمية النموذج المرتبط ← شرطة (ق2)
-function _tplById(id) { const a = (window.DB && DB.data && DB.data.evaluation_templates) || []; return id == null ? null : (a.find(t => t.id === id) || null); }
+function _tplById(id) { const a = (DB.data && DB.data.evaluation_templates) || []; return id == null ? null : (a.find(t => t.id === id) || null); }
 function empRoleDisplay(emp) {
   if (emp && emp.job_title && emp.job_title.trim()) return Utils.escape(emp.job_title.trim());   // override يدوي يفوز
   const t = _tplById(emp && emp.template_id);
@@ -2391,6 +2392,10 @@ function paintEvalPage() {
     page: _evalPage, total: _evalFiltered.length, size: EVAL_PAGE_SIZE,
     onChange: (n) => { _evalPage = n; paintEvalPage(); }
   });
+}
+
+function evaluationSummaries() {
+  return DB.data.evaluation_list || DB.data.evaluations;
 }
 
 function listEvaluations() {
@@ -3338,7 +3343,7 @@ const objs = data || [];
 const pending = objs.filter(o => o.status === 'pending');
 const history = objs.filter(o => o.status !== 'pending');
 const canReview = (currentUser.role==='quality_officer' || currentUser.role==='admin');
-const rowHtml = (o) => { const emp = DB.getUser(o.employee_id), ev = DB.getEvaluation(o.evaluation_id);
+const rowHtml = (o) => { const emp = DB.getUser(o.employee_id), ev = evaluationSummaries().find(e => e.id === o.evaluation_id);
 const stB = objBadge(o.status);
 const act = (o.status==='pending' && canReview)
 ? `<button class="btn btn-sm btn-primary" onclick="reviewObjectionModal(${o.id})">⚖️ الرد على الاعتراض</button> <button class="btn btn-sm btn-secondary" onclick="openCgPdfByEval(${o.evaluation_id})">📄</button>`
@@ -3445,14 +3450,13 @@ const host = document.getElementById('cg-actions-body'); if (!host) return;
 await loadDepartments();
 let acts;
 try {
-acts = await cgReadPages('creative_gene_actions', q => {
-q = q.not('supervisor_id','is',null).is('superseded_at',null);
-return currentUser.role === 'supervisor' ? q.eq('supervisor_id',currentUser.id) : q;
-});
+const scoped = await cgReadPages('creative_gene_actions');
+acts = scoped.filter(a => a.supervisor_id != null && a.superseded_at == null &&
+  (currentUser.role !== 'supervisor' || a.supervisor_id === currentUser.id));
 acts.sort((a,b) => String(b.taken_at||'').localeCompare(String(a.taken_at||'')));
 } catch(error) { host.innerHTML = '<div class="alert alert-danger">تعذّر تحميل جميع الإجراءات. أعد فتح التقرير للمحاولة.</div>'; return; }
 if (!acts.length) { host.innerHTML = '<div class="alert alert-info">لا توجد إجراءات في هذا القسم.</div>'; return; }
-const rows = acts.map(a => { const emp = DB.getUser(a.employee_id), sup = DB.getUser(a.supervisor_id), ev = DB.getEvaluation(a.evaluation_id);
+const rows = acts.map(a => { const emp = DB.getUser(a.employee_id), sup = DB.getUser(a.supervisor_id), ev = evaluationSummaries().find(e => e.id === a.evaluation_id);
 return `<tr><td>${emp?Utils.escape(emp.full_name):'-'}</td><td>${ev?('#'+ev.id+' ('+ev.percentage+'%)'):'-'}</td><td>${actionTypeLabel(a.action_type)}</td><td>${Utils.escape(a.action_details||'')}</td><td>${sup?Utils.escape(sup.full_name):'—'}</td><td>${Utils.formatDate(a.taken_at)}</td></tr>`;
 }).join('');
 host.innerHTML = `<div class="card"><div style="overflow-x:auto"><table class="table"><thead><tr><th>الموظف</th><th>التقييم</th><th>نوع الإجراء</th><th>التفاصيل</th><th>المشرف</th><th>التاريخ</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
@@ -4169,7 +4173,7 @@ if (filterSup) employees = employees.filter(e => (e.supervisor_name||'') === fil
 const empIdSet = new Set(employees.map(e => e.id));
 
 // Filter evaluations by period + حصر بموظفي محزم فقط
-let allEvals = DB.data.evaluations.filter(ev => empIdSet.has(ev.employee_id));
+let allEvals = evaluationSummaries().filter(ev => empIdSet.has(ev.employee_id));
 if (period === 'year') {
 allEvals = allEvals.filter(ev => new Date(ev.evaluation_date).getFullYear() === year);
 } else if (period === 'month' && month) {
@@ -4213,7 +4217,7 @@ else if (period === 'custom' && fromDate && toDate) periodLabel = `${Utils.forma
 
 // Available year list
 const allYears = new Set([new Date().getFullYear()]);
-DB.data.evaluations.forEach(ev => allYears.add(new Date(ev.evaluation_date).getFullYear()));
+evaluationSummaries().forEach(ev => allYears.add(new Date(ev.evaluation_date).getFullYear()));
 const yearOpts = Array.from(allYears).sort().reverse().map(y => `<option value="${y}" ${y===year?'selected':''}>${y}</option>`).join('');
 
 // Supervisor list (محزم فقط)
@@ -4223,7 +4227,7 @@ const supOpts = Array.from(supSet).map(s => `<option value="${s}" ${s===filterSu
 
 // Month options
 const monthSet = new Set();
-DB.data.evaluations.forEach(ev => { const d = new Date(ev.evaluation_date); monthSet.add(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`); });
+evaluationSummaries().forEach(ev => { const d = new Date(ev.evaluation_date); monthSet.add(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`); });
 const now2 = new Date();
 monthSet.add(`${now2.getFullYear()}-${String(now2.getMonth()+1).padStart(2,'0')}`);
 const monthOpts = Array.from(monthSet).sort().reverse().map(m => `<option value="${m}" ${m===month?'selected':''}>${arabicMonthName(m)}</option>`).join('');
@@ -4323,7 +4327,7 @@ function renderReportsCharts() {
 if (window._reportTab === 'cg') return; // تبويب CG له عرضه الخاص بلا رسوم محزم
 const employees = DB.getUsers({ role:'employee' }).filter(e => e.department_id === _reportDeptId());
 const empData = employees.map(e => {
-const ue = DB.data.evaluations.filter(ev => ev.employee_id === e.id);
+const ue = evaluationSummaries().filter(ev => ev.employee_id === e.id);
 return {
 name: e.full_name,
 avg: ue.length ? Math.round(ue.reduce((s,x)=>s+x.percentage,0)/ue.length*10)/10 : 0,
@@ -4360,7 +4364,7 @@ options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:
 function exportReportsXLSX() {
 if (window._reportTab === 'cg') return exportCgReportsXLSX();
 const employees = DB.getUsers({ role:'employee' }).filter(e => e.department_id === _reportDeptId());
-const allEvals = DB.data.evaluations;
+const allEvals = evaluationSummaries();
 const data = employees.map(e => {
 const ue = allEvals.filter(ev => ev.employee_id === e.id);
 const avg = ue.length ? Math.round(ue.reduce((s,x)=>s+x.percentage,0)/ue.length*10)/10 : 0;
@@ -4390,7 +4394,7 @@ Toast.success('تم تصدير ملف Excel');
 async function exportReportsPDF() {
 if (window._reportTab === 'cg') return exportCgReportsPDF();
 const employees = DB.getUsers({ role:'employee' }).filter(e => e.department_id === _reportDeptId());
-const allEvals = DB.data.evaluations;
+const allEvals = evaluationSummaries();
 const empData = employees.map(e => {
 const ue = allEvals.filter(ev => ev.employee_id === e.id);
 const avg = ue.length ? Math.round(ue.reduce((s,x)=>s+x.percentage,0)/ue.length*10)/10 : 0;
@@ -4479,7 +4483,8 @@ await loadDepartments();
 if (params.from && params.to && params.from > params.to) throw new Error('تاريخ البداية يجب أن يسبق تاريخ النهاية');
 const empF = params.emp ? Number(params.emp) : null;
 const cgEmpIds = DB.getUsers({ role:'employee' }).filter(e => e.department_id === cgDeptId() && (!empF || e.id === empF) && (currentUser.role !== 'supervisor' || e.supervisor_id === currentUser.id)).map(e => e.id);
-const allEvals = await cgReadByIds('evaluations','employee_id',cgEmpIds);
+const employeeIds = new Set(cgEmpIds);
+const allEvals = DB.data.evaluations.filter(e => employeeIds.has(e.employee_id));
 const evals = allEvals.filter(e => e.template_type === 'pdf_based_weekly' && cgInReportPeriod(e.week_start || e.evaluation_date,params)).sort((a,b) => String(b.week_start||'').localeCompare(String(a.week_start||'')));
 const criteria = cgReportCriteria(evals);
 const evalIds = evals.map(e => e.id);
@@ -4553,7 +4558,7 @@ await htmlToPDF(html, `تقرير_Creative_Gene_${new Date().toISOString().slice
 // ============================================
 function getMonthOptions() {
 const months = new Set();
-DB.data.evaluations.forEach(ev => {
+evaluationSummaries().forEach(ev => {
 const d = new Date(ev.evaluation_date);
 months.add(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
 });
@@ -4568,7 +4573,7 @@ let employees = DB.getUsers({ role:'employee' });
 if (deptId) employees = employees.filter(e => e.department_id === deptId);
 if (currentUser.role === 'supervisor') employees = employees.filter(e => e.supervisor_id === currentUser.id || e.supervisor_name === currentUser.full_name);
 return employees.map(e => {
-const evs = DB.data.evaluations.filter(ev => {
+const evs = evaluationSummaries().filter(ev => {
 if (ev.employee_id !== e.id) return false;
 const d = new Date(ev.evaluation_date);
 return d.getFullYear() === y && d.getMonth() === m - 1;
@@ -4789,7 +4794,7 @@ await htmlToPDF(html, `التقرير_الشهري_${monthKey}.pdf`);
 function getActionsReportData() {
 const employees = DB.getUsers({ role:'employee' }).filter(e => e.department_id === _reportDeptId());
 const _empIds = new Set(employees.map(e => e.id));
-const evals = DB.data.evaluations.filter(x => _empIds.has(x.employee_id));
+const evals = evaluationSummaries().filter(x => _empIds.has(x.employee_id));
 
 // 1. عدد الملاحظات لكل موظف (يتم استثناء "لا يوجد ملاحظات")
 const perEmployee = employees.map(e => {
@@ -4872,7 +4877,7 @@ x.avgChange = Math.round((x.totalChange/x.count)*10)/10;
 x.improvementRate = Math.round((x.improved/x.count)*100);
 });
 
-// ★ Bug#112: أعِد evals المحصورة بالقسم (_reportDeptId) ليستخدمها العرض/الرسوم بدل DB.data.evaluations العام
+// ★ Bug#112: أعِد evals المحصورة بالقسم (_reportDeptId) ليستخدمها العرض/الرسوم بدل evaluationSummaries() العام
 return { perEmployee, topObservations, actionsByObs, improvements, improvementByAction, evals };
 }
 
@@ -4918,7 +4923,7 @@ const impRows = Object.entries(data.improvementByAction).sort((a,b)=>b[1].improv
 </td>
 </tr>`).join('');
 
-// ★ Bug#112: بطاقات الإحصاء تُحصر بقسم الصفحة (data.evals) — كانت تقرأ DB.data.evaluations العام فتُظهر أرقام محزم داخل عزوة
+// ★ Bug#112: بطاقات الإحصاء تُحصر بقسم الصفحة (data.evals) — كانت تقرأ evaluationSummaries() العام فتُظهر أرقام محزم داخل عزوة
 const totalEvals = data.evals.length;
 const totalWithAction = data.evals.filter(e => e.action_taken && e.action_taken !== 'لا يوجد إجراء').length;
 const totalObs = data.topObservations.reduce((s,[,n]) => s+n, 0);
@@ -5095,7 +5100,7 @@ await htmlToPDF(html, `تقرير_الإجراءات_${new Date().toISOString().
 function getErrorsReportData(monthKey, filters={}) {
 const [y, m] = monthKey.split('-').map(Number);
 const _mahzamIds = new Set(DB.getUsers({ role:'employee' }).filter(e => e.department_id === _reportDeptId()).map(e => e.id));
-let evals = DB.data.evaluations.filter(ev => {
+let evals = evaluationSummaries().filter(ev => {
 const d = new Date(ev.evaluation_date);
 return d.getFullYear() === y && d.getMonth() === m - 1 && _mahzamIds.has(ev.employee_id);
 });
@@ -5318,7 +5323,7 @@ const closed = counts.accepted + counts.rejected;
 
 const rows = objections.map(o => {
 const emp = DB.getUser(o.employee_id);
-const ev = DB.getEvaluation(o.evaluation_id);
+const ev = evaluationSummaries().find(e => e.id === o.evaluation_id);
 return `<tr style="cursor:pointer" data-view-obj="${o.id}">
 <td><strong style="color:var(--primary)">${Utils.escape(o.ref_number)}</strong></td>
 <td><div style="display:flex;align-items:center;gap:8px"><div class="user-avatar">${Utils.getInitials(emp?emp.full_name:'-')}</div>${Utils.escape(emp?emp.full_name:'-')}</div></td>
@@ -5469,7 +5474,7 @@ function renderViewObjection(id) {
 const o = DB.getObjection(parseInt(id));
 if (!o) return '<div class="alert alert-danger">الاعتراض غير موجود</div>';
 const emp = DB.getUser(o.employee_id);
-const ev = DB.getEvaluation(o.evaluation_id);
+const ev = evaluationSummaries().find(e => e.id === o.evaluation_id);
 const isOwner = currentUser.id === o.employee_id;
 const canManage = Perms.can('manage_objections');
 const supName = emp ? emp.supervisor_name : '';

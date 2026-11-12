@@ -165,7 +165,7 @@ if (!currentUser) return false;
 const r = currentUser.role;
 const map = {
 'manage_users': ['admin'],
-'view_audit_log': ['admin','quality_officer'],
+'view_audit_log': ['admin'],
 'manage_settings': ['admin'],
 'create_evaluation': ['admin','quality_officer'],
 'edit_evaluation': ['admin','quality_officer'],
