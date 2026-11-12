@@ -359,7 +359,7 @@ return ev;
 // حذف ذرّي متزامن: السحابة أولاً (RPC) ثم مزامنة محلية لضمان اتساق كل الأقسام.
 // يُرجع: { ok, employee_name?, deleted_objections?, message? }
 async deleteEvaluation(id) {
-const ev = this.getEvaluation(id);
+const ev = this.getEvaluation(id) || this.data.evaluation_list?.find(row => row.id === id);
 if (!ev) return { ok:false, message:'التقييم غير موجود' };
 
 if (window.sb && window.sb.rpc) {
@@ -375,6 +375,7 @@ if (!row || !row.ok) return { ok:false, message:(row && row.message) || 'تعذ�
 // in-flight قد يُحيي التقييم (يحلّ محلّ آلية tombstone القديمة، ويتفادى حجب معرّف معاد).
 if (window.SupabaseSync) { window.SupabaseSync._appliedSeq = ++window.SupabaseSync._pullSeq; }
 this.data.evaluations = this.data.evaluations.filter(e => e.id !== id);
+if (this.data.evaluation_list) this.data.evaluation_list = this.data.evaluation_list.filter(e => e.id !== id);
 this.data.objections  = (this.data.objections||[]).filter(o => o.evaluation_id !== id);
 this._persist();   // ★ #67-B
 return { ok:true, employee_name:row.employee_name, deleted_objections:row.deleted_objections || 0 };

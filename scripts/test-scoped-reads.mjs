@@ -28,9 +28,32 @@ INSERT INTO audit_logs VALUES(1);
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon,authenticated;
 GRANT SELECT(id) ON users TO anon;
 `);
+await db.exec(`
+ ALTER TABLE evaluations ADD created_at timestamptz, ADD total_score numeric, ADD percentage numeric,
+ ADD template_type text, ADD communication_type text, ADD pass_score_snapshot numeric, ADD observed_issue text,
+ ADD observed_issue_other text, ADD call_type text, ADD action_taken text, ADD action_taken_other text, ADD notes text,
+ ADD template_snapshot jsonb, ADD items jsonb;
+ ALTER TABLE objections ADD ref_number text, ADD reason text, ADD status text, ADD comments jsonb, ADD decision text,
+ ADD resolved_at timestamptz, ADD resolved_by bigint, ADD created_at timestamptz, ADD updated_at timestamptz,
+ ADD reviewed_at timestamptz, ADD reviewed_by bigint, ADD attachments jsonb;
+ UPDATE evaluations SET template_snapshot='{"version":1}',items='{"a":1}';
+ UPDATE objections SET attachments='[{"name":"fixture","data":"file body"}]';
+`);
+await db.exec(await readFile('security-migration/82_section_reads.sql','utf8'));
 await db.exec(await readFile('security-migration/78_scoped_reads.sql','utf8'));
 const read=async(token,table,filters=[],order='id',asc=true,offset=0,limit=1000)=>(await db.query('select read_scoped_data($1,$2,$3,$4,$5,$6,$7) as v',[token,table,JSON.stringify(filters),order,asc,offset,limit])).rows[0].v;
 const eq=(a,b)=>{assert.deepEqual(a,b);checks++};
+const section=async(token,kind,offset=0,limit=4000)=>(await db.query('select read_section_page($1,$2,$3,$4) as v',[token,kind,offset,limit])).rows[0].v;
+for (const token of ['1','2','3','4','5','6']) {
+ const records=await read(token,'evaluations');
+ eq((await section(token,'evaluation_list')).map(x=>x.id),records.map(x=>x.id));
+ const expanded=(await section(token,'evaluations')).flatMap(g=>g.rows.map(r=>({...r,items:g.items,template_snapshot:g.template_snapshot}))).sort((a,b)=>a.id-b.id);
+ eq(expanded,records);
+ const objections=await read(token,'objections');
+ eq(await section(token,'objections'),objections.map(o=>({...o,attachments:[{name:'fixture'}]})));
+}
+eq((await section('1','evaluation_list',1,1)).map(x=>x.id),[11]);
+for(const kind of ['evaluation_list','evaluations','objections']) await assert.rejects(section('7',kind));
 eq((await read('4','evaluations')).map(x=>x.id),[10]);
 eq((await read('3','evaluations')).map(x=>x.id),[10,12]);
 eq((await read('1','evaluations')).length,3);eq((await read('2','evaluations')).length,3);

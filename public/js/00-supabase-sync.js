@@ -114,9 +114,26 @@ window.SupabaseSync = {
    * - يستخدم pendingPull لمنع pulls متزامنة (deduplication)
    */
   tablesForPage(page) {
-    if (page === 'dashboard' || page === 'notifications') return ['users', 'notifications'];
+    if (['dashboard','notifications','cg-requests','quality-report'].includes(page)) return ['users', 'notifications'];
+    if (page === 'evaluations') return ['users', 'notifications', 'evaluation_list'];
     if (['objections', 'view-objection', 'new-objection', 'view-evaluation'].includes(page)) return this.TABLES;
     return this.TABLES.filter(table => table !== 'objections');
+  },
+
+  async readSectionRows(kind, token) {
+    const limit = 4000;
+    const rows = [];
+    for (let offset = 0; ; offset += limit) {
+      const {data, error} = await window.sb.rpc('read_section_page', {
+        p_token: token, p_kind: kind, p_offset: offset, p_limit: limit
+      });
+      if (error || !Array.isArray(data)) throw new Error(error?.message || 'تعذّر تحميل بيانات القسم');
+      const batch = kind === 'evaluations' ? data.flatMap(group => group.rows.map(row => ({
+        ...row, template_snapshot: group.template_snapshot, items: group.items
+      }))).sort((a,b) => a.id-b.id) : data;
+      rows.push(...batch);
+      if (batch.length < limit) return rows;
+    }
   },
 
   async pullAll(force, tables = this.TABLES) {
@@ -124,6 +141,7 @@ window.SupabaseSync = {
     // مع force: لا نُعيد عملية سحب قديمة قد تكون بدأت قبل آخر كتابة (تفادي بيانات غير محدّثة)
     if (this.pendingPull && !force && tables.every(table => this.pendingTables.includes(table))) return this.pendingPull;
 
+    const token = window.getSessionToken();
     const self = this;
     const seq = ++this._pullSeq;   // ترتيب بدء هذه العملية
     const p = (async () => {
@@ -134,6 +152,10 @@ window.SupabaseSync = {
         await Promise.all(tables.map(async (table) => {
           // أمان: نقرأ من users_public (view بدون كلمات السر) بدلاً من users
           // كلمات السر يجب ألا تصل للمتصفح أبداً عبر anon key.
+          if (['evaluation_list','evaluations','objections'].includes(table)) {
+            results[table] = await this.readSectionRows(table, token);
+            return;
+          }
           if (table === 'notifications') {
             const token = window.getSessionToken && window.getSessionToken();
             results.notifications = [];
@@ -246,7 +268,7 @@ window.SupabaseSync = {
         };
 
         // حارس التسلسل: لا تكتب فوق بيانات طبّقها سحبٌ أحدث (سحب قديم اكتمل متأخّراً)
-        if (self.suspended || seq < self._appliedSeq) {
+        if (self.suspended || token !== window.getSessionToken() || seq < self._appliedSeq) {
           console.log('  ⏭️ تجاهل سحب قديم اكتمل متأخّراً (seq ' + seq + ' < ' + self._appliedSeq + ')');
           return true;
         }
@@ -267,11 +289,16 @@ window.SupabaseSync = {
             for (const table of tables) {
               // A newer users refresh must not discard evaluations from this pull.
               if (seq < (self._tableAppliedSeq[table] || 0)) continue;
-              d[table] = dbData[table];
+              d[table] = results[table];
               self._tableAppliedSeq[table] = seq;
               self._tableLoadedAt[table] = Date.now();
               if (nextIds[table]) d[nextIds[table]] = dbData[nextIds[table]];
               if (table === 'evaluation_templates') d.criteria = dbData.criteria;
+              if (table === 'evaluations' && seq >= (self._tableAppliedSeq.evaluation_list || 0)) {
+                d.evaluation_list = d.evaluations;
+                self._tableAppliedSeq.evaluation_list = seq;
+                self._tableLoadedAt.evaluation_list = Date.now();
+              }
             }
             // audit_logs is loaded separately; preserve its current cache.
           }
@@ -310,6 +337,7 @@ window.SupabaseSync = {
   async pullTable(table) {
     if (!window.sb || this.suspended || !window.getSessionToken || !window.getSessionToken() || !this.TABLES.includes(table)) return false;
     if (table === 'notifications') return this.pullAll(true);
+    if (['evaluations','objections'].includes(table)) return this.pullAll(true, [table]);
     const self = this;
     const seq = ++this._pullSeq;
     const readFrom = (table === 'users') ? 'users_public' : table;
