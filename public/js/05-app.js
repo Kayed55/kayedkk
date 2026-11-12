@@ -48,7 +48,7 @@ async function bootApp(destination) {
   if (destination) {
     document.getElementById('boot-message').textContent = 'تم التحقق. جاري تحميل بيانات حسابك…';
     clearTimeout(window.bootWatchdog);
-    window.bootWatchdog = setTimeout(window.showBootFailure, 20000);
+    window.bootWatchdog = setTimeout(window.showSlowBoot, 20000);
   }
   try {
     // Never load a previous user's persisted data, or wait for IndexedDB to open.
@@ -61,7 +61,9 @@ async function bootApp(destination) {
     const token = window.getSessionToken && window.getSessionToken();
     if (token) {
       // Only authorized, complete results may become visible.
-      const ok = await window.SupabaseSync.pullAll();
+      const sync = window.SupabaseSync;
+      sync._tableAppliedSeq = {};
+      const ok = await sync.pullAll(true, sync.tablesForPage('dashboard'));
       if (!ok) throw new Error('تعذّر تحميل البيانات');
       if (typeof loadDepartments === 'function') loadDepartments();
     }

@@ -150,6 +150,8 @@ save() {
 
   // ★ #67-B: التخزين — IndexedDB (حصّة كبيرة، بلا تقليم) مع fallback لـlocalStorage lite
   _persist() {
+    // Online sessions rebuild from authorized reads. Boot discards any disk snapshot.
+    if (window.sb) return;
     if (this._storageType === 'indexeddb' && _IDB.available()) {
       _IDB.set(this.KEY, this.data).catch(function (e) { console.warn('DB._persist: IDB فشل — البيانات في الذاكرة/السحابة:', e && e.message); });
       return;

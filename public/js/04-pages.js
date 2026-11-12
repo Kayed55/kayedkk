@@ -45,6 +45,28 @@ const app = document.getElementById('app');
 if (page === 'login') { app.innerHTML = renderLogin(); attachLogin(); return; }
 if (!currentUser) { navigate('login'); return; }
 
+const sync = window.SupabaseSync;
+if (window.sb && sync && getSessionToken()) {
+  const missing = sync.tablesForPage(page).filter(table =>
+    !sync._tableAppliedSeq[table] || Date.now() - sync._tableLoadedAt[table] > SUPABASE_CONFIG.syncInterval
+  );
+  if (missing.length) {
+    app.innerHTML = renderLayout('<div class="card"><div class="card-body" role="status" id="section-loading">جاري تحميل بيانات القسم…</div></div>');
+    attachLayoutHandlers();
+    const status = document.getElementById('section-loading');
+    sync.pullAll(false, missing).then(ok => {
+      if (!status.isConnected) return;
+      if (ok && missing.every(table => sync._tableAppliedSeq[table])) {
+        navigate(page, params);
+      } else {
+        status.innerHTML = 'تعذّر تحميل بيانات القسم. <button class="btn btn-secondary">إعادة المحاولة</button>';
+        status.querySelector('button').onclick = () => navigate(page, params);
+      }
+    });
+    return;
+  }
+}
+
 const pages = {
 'dashboard': renderDashboard,
 'employees': renderEmployees,
@@ -976,8 +998,6 @@ document.body.classList.remove('sidebar-open');
 // Dashboard
 // ============================================
 function renderDashboard() {
-const isEmp = currentUser.role === 'employee';
-const s = DB.getDashboardStats(isEmp ? currentUser.id : null);
 const greeting = (() => {
 const h = new Date().getHours();
 if (h < 12) return 'صباح الخير';
@@ -986,80 +1006,6 @@ return 'مساء الخير';
 })();
 
 const welcomeBanner = `<div class="dashboard-heading"><div><div class="page-subtitle">${new Date().toLocaleDateString('ar-SA',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</div><h1>${greeting}، ${Utils.escape(currentUser.full_name)}</h1></div>${dashQuickAction()}</div>`;
-
-const cards = `
-<div class="stats-grid">
-<div class="stat-card" style="background:linear-gradient(135deg,#1D5BD8,#2378c4);color:white;border:none"><div class="stat-icon" style="background:rgba(255,255,255,0.25)">📋</div><div class="stat-value" style="color:white">${s.total}</div><div class="stat-label" style="color:rgba(255,255,255,0.9)">إجمالي التقييمات</div></div>
-<div class="stat-card" style="background:linear-gradient(135deg,#10b981,#059669);color:white;border:none"><div class="stat-icon" style="background:rgba(255,255,255,0.25)">⭐</div><div class="stat-value" style="color:white">${s.avg}%</div><div class="stat-label" style="color:rgba(255,255,255,0.9)">متوسط الجودة</div></div>
-<div class="stat-card" style="background:linear-gradient(135deg,#06b6d4,#0891b2);color:white;border:none"><div class="stat-icon" style="background:rgba(255,255,255,0.25)">📅</div><div class="stat-value" style="color:white">${s.today}</div><div class="stat-label" style="color:rgba(255,255,255,0.9)">تقييمات اليوم</div></div>
-<div class="stat-card" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:white;border:none"><div class="stat-icon" style="background:rgba(255,255,255,0.25)">📆</div><div class="stat-value" style="color:white">${s.month}</div><div class="stat-label" style="color:rgba(255,255,255,0.9)">تقييمات الشهر</div></div>
-${!isEmp ? `<div class="stat-card" style="background:linear-gradient(135deg,#f59e0b,#dc2626);color:white;border:none;cursor:pointer" data-nav="objections"><div class="stat-icon" style="background:rgba(255,255,255,0.25)">⚖️</div><div class="stat-value" style="color:white">${s.objOpen||0}</div><div class="stat-label" style="color:rgba(255,255,255,0.9)">اعتراضات مفتوحة</div></div>
-<div class="stat-card" style="background:linear-gradient(135deg,#64748b,#475569);color:white;border:none;cursor:pointer" data-nav="objections"><div class="stat-icon" style="background:rgba(255,255,255,0.25)">📁</div><div class="stat-value" style="color:white">${s.objClosed||0}</div><div class="stat-label" style="color:rgba(255,255,255,0.9)">اعتراضات مغلقة</div></div>` : ''}
-</div>`;
-
-const recentRows = s.recent.length ? s.recent.map(e => {
-const emp = DB.getUser(e.employee_id);
-const evr = DB.getUser(e.evaluator_id);
-return `<tr style="cursor:pointer" data-nav-eval="${e.id}">
-<td><div style="display:flex;align-items:center;gap:10px"><div class="user-avatar">${Utils.getInitials(emp?emp.full_name:'-')}</div>${Utils.escape(emp ? emp.full_name : '-')}</div></td>
-<td>${Utils.escape(evr ? evr.full_name : '-')}</td>
-<td>${Utils.formatDate(e.evaluation_date)}</td>
-<td>${Utils.gradeBadge(e.percentage, e.pass_score_snapshot ?? 85)}</td>
-</tr>`;
-}).join('') : '<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--muted)">لا توجد تقييمات بعد</td></tr>';
-
-const performers = !isEmp ? `
-<div class="grid grid-2" style="margin-top:20px">
-<div class="card" style="border-top:4px solid var(--success)">
-<div class="card-header" style="background:linear-gradient(to left,#d1fae5,transparent)"><div class="card-title">🏆 أفضل الموظفين أداءً</div></div>
-<div class="card-body" style="padding:0">
-${s.top.length ? s.top.map((p, idx) => `
-<div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;${idx<s.top.length-1?'border-bottom:1px solid var(--border)':''}">
-<div style="display:flex;align-items:center;gap:12px">
-<div style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;background:${idx===0?'#fbbf24':idx===1?'#94a3b8':idx===2?'#cd7f32':'#e2e8f0'};color:white;font-weight:800;font-size:14px">${idx+1}</div>
-<div class="user-avatar" style="background:var(--success)">${Utils.getInitials(p.name)}</div>
-<div><div style="font-weight:700">${Utils.escape(p.name)}</div><div style="font-size:12px;color:var(--muted)">${p.count} تقييم</div></div>
-</div>
-<div style="text-align:center"><div style="font-size:20px;font-weight:800;color:var(--success)">${p.avg}%</div><div style="font-size:11px;color:var(--muted)">${Utils.gradeLabel(p.avg)}</div></div>
-</div>`).join('') : '<div style="padding:30px;text-align:center;color:var(--muted)">لا توجد بيانات بعد</div>'}
-</div>
-</div>
-<div class="card" style="border-top:4px solid var(--danger)">
-<div class="card-header" style="background:linear-gradient(to left,#fee2e2,transparent)">
-<div class="card-title">📉 يحتاجون متابعة <span style="font-size:11px;color:var(--muted);font-weight:600;margin-right:8px">(آخر تقييم أقل من 90%)</span></div>
-</div>
-<div class="card-body" style="padding:0">
-${s.low.length ? s.low.map((p, idx) => `
-<div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;${idx<s.low.length-1?'border-bottom:1px solid var(--border)':''};cursor:pointer" data-view-emp="${p.id}">
-<div style="display:flex;align-items:center;gap:12px">
-<div style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;background:var(--danger);color:white;font-weight:800;font-size:14px">⚠</div>
-<div class="user-avatar" style="background:var(--danger)">${Utils.getInitials(p.name)}</div>
-<div>
-<div style="font-weight:700">${Utils.escape(p.name)}</div>
-<div style="font-size:12px;color:var(--muted)">${p.count} تقييم • آخر تقييم: ${Utils.formatDate(p.lastEvalDate)} ${p.lastEvalApproved ? '<span style="color:var(--success);font-weight:700" title="معتمد">✓</span>' : '<span style="color:var(--muted)" title="غير معتمد">○</span>'}</div>
-</div>
-</div>
-<div style="text-align:center">
-<div style="font-size:20px;font-weight:800;color:var(--danger)">${p.lastEvalPct}%</div>
-<div style="font-size:11px"><span class="badge badge-danger" style="font-size:10px">${Utils.gradeLabel(p.lastEvalPct)}</span></div>
-</div>
-</div>`).join('') : '<div style="padding:30px;text-align:center;color:var(--muted)">✅ لا يوجد موظفون يحتاجون متابعة - النتائج مطابقة للمعيار 👍</div>'}
-</div>
-</div>
-</div>` : '';
-
-const quickActions = !isEmp ? `
-<div class="grid grid-3" style="margin-bottom:20px">
-<div class="card" style="cursor:pointer;border-right:4px solid var(--primary);transition:0.2s" data-nav="new-evaluation" onmouseover="this.style.transform='translateY(-3px)'" onmouseout="this.style.transform=''">
-<div class="card-body" style="display:flex;align-items:center;gap:14px"><div style="font-size:36px">➕</div><div><div style="font-weight:700;font-size:15px">تقييم جديد</div><div style="font-size:13px;color:var(--muted)">إضافة تقييم لموظف</div></div></div>
-</div>
-<div class="card" style="cursor:pointer;border-right:4px solid var(--info);transition:0.2s" data-nav="monthly-report" onmouseover="this.style.transform='translateY(-3px)'" onmouseout="this.style.transform=''">
-<div class="card-body" style="display:flex;align-items:center;gap:14px"><div style="font-size:36px">📅</div><div><div style="font-weight:700;font-size:15px">التقرير الشهري</div><div style="font-size:13px;color:var(--muted)">عرض النتائج الشهرية</div></div></div>
-</div>
-<div class="card" style="cursor:pointer;border-right:4px solid var(--success);transition:0.2s" data-nav="reports" onmouseover="this.style.transform='translateY(-3px)'" onmouseout="this.style.transform=''">
-<div class="card-body" style="display:flex;align-items:center;gap:14px"><div style="font-size:36px">📈</div><div><div style="font-weight:700;font-size:15px">التقارير الشاملة</div><div style="font-size:13px;color:var(--muted)">تحليلات تفصيلية</div></div></div>
-</div>
-</div>` : '';
 
 return `
 ${welcomeBanner}

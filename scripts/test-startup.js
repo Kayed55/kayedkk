@@ -5,7 +5,7 @@ const source = fs.readFileSync('public/js/05-app.js','utf8');
 const boot = source.slice(source.indexOf('async function bootApp('), source.indexOf('// تحديد الوجهة'));
 async function checkBoot(token, ok, sdk=true) {
   const calls=[];
-  const ctx={window:{sb:sdk?{}:null,getSessionToken:()=>token,SupabaseSync:{hookDBSave(){},pullAll:async()=>{calls.push('pull');return ok;}},showBootFailure:()=>calls.push('failure')},
+  const ctx={window:{sb:sdk?{}:null,getSessionToken:()=>token,SupabaseSync:{tablesForPage:()=>['users','notifications'],pullAll:async(force,tables)=>{assert.deepEqual(tables,['users','notifications']);calls.push('pull');return ok;}},showBootFailure:()=>calls.push('failure')},
     DB:{KEY:'test',init:()=>calls.push('init')},_IDB:{available:()=>true,remove:()=>new Promise(()=>{})},localStorage:{removeItem:()=>{}},
     _showBootOverlay:()=>calls.push('show'),_hideBootOverlay:()=>calls.push('hide'),routeInitial:()=>calls.push('route'),loadDepartments:()=>{},clearTimeout:()=>{},console:{warn:()=>{}}};
   vm.createContext(ctx);vm.runInContext(boot,ctx);
