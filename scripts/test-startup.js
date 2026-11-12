@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
 const source = fs.readFileSync('public/js/05-app.js','utf8');
-const boot = source.slice(source.indexOf('async function bootApp()'), source.indexOf('// تحديد الوجهة'));
+const boot = source.slice(source.indexOf('async function bootApp('), source.indexOf('// تحديد الوجهة'));
 async function checkBoot(token, ok, sdk=true) {
   const calls=[];
   const ctx={window:{sb:sdk?{}:null,getSessionToken:()=>token,SupabaseSync:{hookDBSave(){},pullAll:async()=>{calls.push('pull');return ok;}},showBootFailure:()=>calls.push('failure')},

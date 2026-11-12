@@ -43,8 +43,13 @@ window.addEventListener('error', function(e){ reportClientError(e.message || 'er
 window.addEventListener('unhandledrejection', function(e){ reportClientError((e.reason && e.reason.message) || e.reason || 'unhandledrejection', 'promise'); });
 
 // ★ #66: SWR عند الإقلاع — ارسم فوراً من كاش localStorage ثم حدّث بالخلفية (يزيل round-trip الحاجب من سيدني).
-async function bootApp() {
+async function bootApp(destination) {
   _showBootOverlay();
+  if (destination) {
+    document.getElementById('boot-message').textContent = 'تم التحقق. جاري تحميل بيانات حسابك…';
+    clearTimeout(window.bootWatchdog);
+    window.bootWatchdog = setTimeout(window.showBootFailure, 20000);
+  }
   try {
     // Never load a previous user's persisted data, or wait for IndexedDB to open.
     if (!window.sb) throw new Error('تعذّر تحميل خدمة الاتصال');
@@ -60,7 +65,7 @@ async function bootApp() {
       if (!ok) throw new Error('تعذّر تحميل البيانات');
       if (typeof loadDepartments === 'function') loadDepartments();
     }
-    routeInitial();
+    routeInitial(destination);
     clearTimeout(window.bootWatchdog);
     _hideBootOverlay();
   } catch (e) {
@@ -71,10 +76,14 @@ async function bootApp() {
 }
 
 // تحديد الوجهة وفق وجود جلسة محفوظة (منطق الإقلاع الأصلي — يُعاد استخدامه في المسارين).
-function routeInitial() {
+function routeInitial(destination) {
   const saved = localStorage.getItem('qe_current_user');
   if (saved && (!window.sb || (window.getSessionToken && window.getSessionToken()))) {
-    try { currentUser = JSON.parse(saved); navigate('dashboard'); }
+    try {
+      currentUser = JSON.parse(saved);
+      const user = DB.getUser(currentUser.id);
+      navigate(destination === 'profile' || (user && user.must_change_password) ? 'profile' : 'dashboard');
+    }
     catch (e) { navigate('login'); }
   } else {
     navigate('login');
@@ -119,7 +128,7 @@ function _hideBootOverlay() { const o = document.getElementById('boot-overlay');
 
 // تشغيل بعد جاهزية DOM فقط — لتفادي race condition مع 00-supabase-sync.js
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', bootApp);
+  document.addEventListener('DOMContentLoaded', () => bootApp());
 } else {
   bootApp();
 }
