@@ -1098,6 +1098,7 @@ _dashCache = j; _dashCacheAt = Date.now();
 try { localStorage.setItem(_DASH_KEY, JSON.stringify({ j: j, at: _dashCacheAt })); } catch (_) {}   // ★ #67-B: احفظ للنجاة من Hard Refresh
 } catch (e) { host.innerHTML = `<div class="alert alert-danger">${Utils.escape(e.message||'خطأ')}</div>`; return; }
 }
+if (!host.isConnected) return;
 const sections = j.sections || {};
 const order = ['mahzam','cg','azwa'].filter(k => sections[k]);
 let html = order.map(k => sectionBlockHTML(k, sections[k])).join('');
@@ -2392,10 +2393,19 @@ function paintEvalPage() {
   });
 }
 
+function listEvaluations() {
+  if (!window.sb || !Array.isArray(DB.data.evaluation_list)) {
+    return DB.getEvaluations(currentUser.role === 'employee' ? {employee_id:currentUser.id} : {});
+  }
+  return DB.data.evaluation_list
+    .filter(e => currentUser.role !== 'employee' || e.employee_id === currentUser.id)
+    .sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+}
+
 function renderEvaluations() {
 const isEmp = currentUser.role === 'employee';
 const isSup = currentUser.role === 'supervisor';
-let evals = DB.getEvaluations(isEmp ? { employee_id: currentUser.id } : {});
+let evals = listEvaluations();
 const deptF = currentParams.dept ? parseInt(currentParams.dept) : null;
 if (deptF) evals = evals.filter(e => { const u = DB.getUser(e.employee_id); return u && u.department_id == deptF; });
 if (!window._departments && !isEmp) loadDepartments(true).then(() => { if (currentPage === 'evaluations') navigate('evaluations', currentParams); });
@@ -5479,7 +5489,7 @@ ${c.is_resolution ? '<div style="margin-top:6px"><span class="badge badge-warnin
 </div>`).join('');
 
 const attachHTML = (o.attachments || []).map((a, i) => `
-<a href="${a.data}" download="${Utils.escape(a.name)}" style="display:inline-block;padding:10px 14px;background:#dbeafe;color:#1D5BD8;border-radius:8px;text-decoration:none;font-weight:600;margin:4px">📎 ${Utils.escape(a.name)} (${Utils.formatBytes(a.size)})</a>
+<button type="button" class="btn btn-secondary" data-objection-file="${i}">📎 ${Utils.escape(a.name)} (${Utils.formatBytes(a.size)})</button>
 `).join('');
 
 const resolveButtons = (canManage && isOpen) ? `
@@ -5554,6 +5564,28 @@ ${addCommentArea}
 
 function attachObjectionHandlers(id) {
 const oid = parseInt(id);
+document.querySelectorAll('[data-objection-file]').forEach(button => {
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    try {
+      const local = DB.getObjection(oid);
+      const index = Number(button.dataset.objectionFile);
+      let file = local?.attachments?.[index];
+      if (!file?.data && window.sb) {
+        const {data, error} = await window.secureRead('objections').eq('id',oid).maybeSingle();
+        if (error) throw error;
+        file = data?.attachments?.[index];
+      }
+      if (!file?.data?.startsWith('data:')) throw new Error('missing attachment');
+      const link = document.createElement('a');
+      link.href = file.data;
+      link.download = file.name;
+      link.click();
+    } catch {
+      Toast.error('تعذّر تحميل المرفق. أعد المحاولة.');
+    } finally { button.disabled = false; }
+  });
+});
 const review = document.getElementById('obj-mark-review');
 if (review) review.addEventListener('click', async (e) => {
 const btn = e.currentTarget;
@@ -5871,7 +5903,7 @@ ${notifs.length ? notifs.map(n => `
 // ============================================
 function exportListXLSX() {
 const isEmp = currentUser.role === 'employee';
-let evals = DB.getEvaluations(isEmp ? { employee_id: currentUser.id } : {});
+let evals = listEvaluations();
 const deptF = currentParams.dept ? parseInt(currentParams.dept) : null;
 if (deptF) evals = evals.filter(e => { const u = DB.getUser(e.employee_id); return u && u.department_id == deptF; });
 const rows = evals.map(e => {
@@ -6080,7 +6112,7 @@ document.body.removeChild(footerEl);
 
 function exportListPDF() {
 const isEmp = currentUser.role === 'employee';
-let evals = DB.getEvaluations(isEmp ? { employee_id: currentUser.id } : {});
+let evals = listEvaluations();
 const deptF = currentParams.dept ? parseInt(currentParams.dept) : null;
 if (deptF) evals = evals.filter(e => { const u = DB.getUser(e.employee_id); return u && u.department_id == deptF; });
 const today = new Date();

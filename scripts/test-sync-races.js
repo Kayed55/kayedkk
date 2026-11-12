@@ -7,7 +7,12 @@ function fixture() {
   const timers=[], intervals=[], navigations=[];
   const window={addEventListener(){}, getSessionToken:()=> 'test', sb:{
     from(table){return {select(){return this;},order(){return this;},range(){return read(table);}};},
-    rpc:async()=>({data:[],error:null})
+    rpc:async(name,args)=>{
+      if (name!=='read_section_page') return {data:[],error:null};
+      const result=await read(args.p_kind);
+      return args.p_kind==='evaluations' && !result.error
+        ? {data:[{rows:result.data,items:null,template_snapshot:null}],error:null} : result;
+    }
   }};
   window.secureRead=window.sb.from;
   const ctx={window,DB:{data:{},_persist(){}},localStorage:{getItem(){return null;},setItem(){}},navigator:{}, console:{log(){},warn(){},error(){}},setTimeout:fn=>{timers.push(fn);return timers.length;},clearTimeout(){},setInterval:fn=>intervals.push(fn),currentPage:'evaluations',currentParams:{dept:2},navigate:(...args)=>navigations.push(args),_formDirty:false};
