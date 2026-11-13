@@ -1,0 +1,7 @@
+{
+  "name": "quality-system-manual",
+  "version": "1.0.0",
+  "private": true,
+  "description": "دليل استخدام نظام الجودة — مولّد PDF (Chrome/puppeteer-core)",
+  "scripts": { "build": "node build.js" }
+}
