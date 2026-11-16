@@ -4464,7 +4464,7 @@ rows.push(...data); offset += data.length;
 }
 async function cgReadByIds(table, column, ids) {
 const rows = [], unique = [...new Set(ids)];
-for (let i=0; i<unique.length; i+=100) rows.push(...await cgReadPages(table, q => q.in(column, unique.slice(i,i+100))));
+for (let i=0; i<unique.length; i+=500) rows.push(...await cgReadPages(table, q => q.in(column, unique.slice(i,i+500))));
 return rows;
 }
 function cgInReportPeriod(value, params) {
