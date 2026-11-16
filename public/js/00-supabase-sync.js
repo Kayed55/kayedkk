@@ -31,6 +31,19 @@ const SUPABASE_CONFIG = {
 // ============================================
 // تهيئة Supabase Client
 // ============================================
+async function fetchWithReadDeadline(url, opts = {}) {
+  const request = Object.assign({}, opts, {cache:'no-store'});
+  const name = String(url).split('/rpc/')[1]?.split('?')[0];
+  // Only reads are bounded here: never abort/retry a write with an unknown outcome.
+  if (!/^(read_|list_|get_|fetch_)/.test(name || '')) return fetch(url, request);
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (opts.signal?.aborted) abort();
+  else opts.signal?.addEventListener('abort', abort, {once:true});
+  const timer = setTimeout(abort, 20000);
+  try { return await fetch(url, {...request, signal:controller.signal}); }
+  finally { clearTimeout(timer); opts.signal?.removeEventListener('abort', abort); }
+}
 (function initSupabase() {
   if (typeof window.supabase === 'undefined') {
     console.warn('⚠️ Supabase SDK غير محمّل. أضف <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script> في index.html');
@@ -45,7 +58,7 @@ const SUPABASE_CONFIG = {
   window.sb = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
     realtime: { params: { eventsPerSecond: 10 } },
     // تجاوز كاش المتصفّح لطلبات REST — كل قراءة تُجلب طازجة من القاعدة
-    global: { fetch: (url, opts) => fetch(url, Object.assign({}, opts, { cache: 'no-store' })) }
+    global: { fetch: fetchWithReadDeadline }
   });
   console.log('✓ Supabase client جاهز');
 })();
@@ -67,6 +80,71 @@ window.SupabaseSync = {
   _appliedSeq: 0,                // invalidation barrier for logout/local mutations
   _tableLoadedAt: {},
   _tableAppliedSeq: {},         // independent ordering for each table
+  _detailLoadedAt: {},
+  _detailAppliedSeq: {},
+  _detailPending: new Map(),
+  _readPending: new Map(),
+  _dataVersion: 0,
+
+  // A detail read must never make the complete evaluation collection look loaded.
+  detailIdForPage(page, params = {}) {
+    if (['view-evaluation', 'edit-evaluation', 'cg-eval'].includes(page)) return Number(params.id) || null;
+    if (page === 'new-objection') return Number(params.evaluation_id) || null;
+    return null;
+  },
+
+  async loadEvaluation(id, force = false) {
+    const token = window.getSessionToken && window.getSessionToken();
+    if (!token || this.suspended) return false;
+    const existing = (DB.data.evaluations || []).find(e => e.id === id);
+    const loadedAt = Math.max(this._detailLoadedAt[id] || 0, this._tableLoadedAt.evaluations || 0);
+    if (!force && existing && Date.now() - loadedAt < SUPABASE_CONFIG.syncInterval) return true;
+    const key = token + ':' + id;
+    const pending = this._detailPending.get(key);
+    if (!force && pending && pending.seq >= this._appliedSeq) return pending.promise;
+    const seq = ++this._pullSeq;
+    const promise = (async () => {
+      try {
+        const {data, error} = await window.secureRead('evaluations').select('*').eq('id', id).maybeSingle();
+        if (error) throw new Error(error.message);
+        if (this.suspended || token !== window.getSessionToken() || seq < this._appliedSeq || seq < (this._detailAppliedSeq[id] || 0) || seq < (this._tableAppliedSeq.evaluations || 0)) return false;
+        DB.data.evaluations = (DB.data.evaluations || []).filter(e => e.id !== id);
+        if (data) DB.data.evaluations.push(data);
+        if (Array.isArray(DB.data.evaluation_list) && this._tableAppliedSeq.evaluation_list) {
+          DB.data.evaluation_list = DB.data.evaluation_list.filter(e => e.id !== id);
+          if (data) {
+            const {template_snapshot, items, section_scores, tasks, kpis, ...summary} = data;
+            DB.data.evaluation_list.push(summary);
+          }
+        }
+        this._detailLoadedAt[id] = Date.now();
+        this._detailAppliedSeq[id] = seq;
+        this._dataVersion++;
+        return true; // A deleted/inaccessible record is an authoritative empty result.
+      } catch (e) {
+        this._lastPullError = {table:'evaluations', message:e.message, at:new Date().toISOString()};
+        return false;
+      }
+    })();
+    this._detailPending.set(key, {seq, promise});
+    try { return await promise; }
+    finally { if (this._detailPending.get(key)?.promise === promise) this._detailPending.delete(key); }
+  },
+
+  async refreshAfterWrite({tables = ['users', 'evaluation_list', 'objections', 'notifications'], evaluationId = null} = {}) {
+    // Fence off responses started before the committed mutation. Keep existing list
+    // content visible, but require new reads for details and complete report data.
+    this._appliedSeq = ++this._pullSeq;
+    this._tableLoadedAt = {};
+    this._detailLoadedAt = {};
+    this.invalidateTTL('users_public');
+    this.invalidateTTL('evaluation_templates');
+    if (window.invalidateDashCache) window.invalidateDashCache();
+    const jobs = [];
+    if (tables.length) jobs.push(this.pullAll(true, tables));
+    if (evaluationId) jobs.push(this.loadEvaluation(Number(evaluationId), true));
+    return (await Promise.all(jobs)).every(Boolean);
+  },
 
   // قائمة الجداول التي ستتم مزامنتها (الترتيب مهم بسبب foreign keys)
   // audit_logs مُزال عمداً: كبير (آلاف الصفوف) وغير مستخدم يومياً — يُجلب عند الطلب في صفحة السجل.
@@ -122,6 +200,10 @@ window.SupabaseSync = {
         return base;
       case 'departments': case 'new-evaluation':
         return [...base, 'evaluation_templates'];
+      case 'view-evaluation': case 'edit-evaluation': case 'cg-eval': case 'new-objection':
+        return [...base, 'evaluation_templates', 'objections'];
+      case 'cg-frequent-errors': case 'cg-my-team': case 'cg-week':
+        return [...base, 'cg_evaluations', 'evaluation_templates'];
       case 'employees':
         return [...base, 'evaluation_list', 'evaluation_templates'];
       case 'evaluations': case 'errors-report': case 'actions-report': case 'monthly-report':
@@ -131,9 +213,7 @@ window.SupabaseSync = {
         return [...base, 'evaluation_list', 'objections'];
       case 'reports':
         return params.reportTab === 'cg' || !params.reportTab
-          ? [...base, 'evaluations', 'evaluation_templates'] : [...base, 'evaluation_list'];
-      case 'new-objection': case 'view-evaluation':
-        return this.TABLES;
+          ? [...base, 'cg_evaluations', 'evaluation_templates'] : [...base, 'evaluation_list'];
       default:
         return [...base, 'evaluations', 'evaluation_templates'];
     }
@@ -147,7 +227,7 @@ window.SupabaseSync = {
         p_token: token, p_kind: kind, p_offset: offset, p_limit: limit
       });
       if (error || !Array.isArray(data)) throw new Error(error?.message || 'تعذّر تحميل بيانات القسم');
-      const batch = kind === 'evaluations' ? data.flatMap(group => group.rows.map(row => ({
+      const batch = ['evaluations','cg_evaluations'].includes(kind) ? data.flatMap(group => group.rows.map(row => ({
         ...row, template_snapshot: group.template_snapshot, items: group.items
       }))).sort((a,b) => a.id-b.id) : data;
       rows.push(...batch);
@@ -158,7 +238,7 @@ window.SupabaseSync = {
   async pullAll(force, tables = this.TABLES) {
     if (!window.sb || this.suspended || !window.getSessionToken || !window.getSessionToken()) return false;
     // مع force: لا نُعيد عملية سحب قديمة قد تكون بدأت قبل آخر كتابة (تفادي بيانات غير محدّثة)
-    if (this.pendingPull && !force && tables.every(table => this.pendingTables.includes(table))) return this.pendingPull;
+    if (this.pendingPull && !force && this._pendingSeq >= this._appliedSeq && tables.every(table => this.pendingTables.includes(table))) return this.pendingPull;
 
     const token = window.getSessionToken();
     const self = this;
@@ -169,9 +249,16 @@ window.SupabaseSync = {
         const results = {};
 
         await Promise.all(tables.map(async (table) => {
+          const key = token + ':' + table;
+          const pending = this._readPending.get(key);
+          if (!force && pending && pending.seq >= this._appliedSeq) {
+            results[table] = await pending.promise;
+            return;
+          }
+          const read = (async () => {
           // أمان: نقرأ من users_public (view بدون كلمات السر) بدلاً من users
           // كلمات السر يجب ألا تصل للمتصفح أبداً عبر anon key.
-          if (['evaluation_list','evaluations','objections'].includes(table)) {
+          if (['evaluation_list','evaluations','cg_evaluations','objections'].includes(table)) {
             results[table] = await this.readSectionRows(table, token);
             return;
           }
@@ -256,6 +343,11 @@ window.SupabaseSync = {
           if (pages >= MAX_PAGES && all.length === PAGE * MAX_PAGES) throw new Error('Incomplete source: ' + table + ' exceeded pagination safety limit');
           results[table] = data || [];
           if (ttlMs) localStorage.setItem('qe_ttl_' + readFrom, String(Date.now()));   // ★ #66
+          })();
+          const promise = read.then(() => results[table]);
+          this._readPending.set(key, {seq, promise});
+          try { await promise; }
+          finally { if (this._readPending.get(key)?.promise === promise) this._readPending.delete(key); }
         }));
 
         // مصدر CRITERIA الآن = نموذج قسم محزم (section_based) من evaluation_templates
@@ -308,7 +400,25 @@ window.SupabaseSync = {
             for (const table of tables) {
               // A newer users refresh must not discard evaluations from this pull.
               if (seq < (self._tableAppliedSeq[table] || 0)) continue;
-              d[table] = results[table];
+              if (table === 'cg_evaluations' && seq < (self._tableAppliedSeq.evaluations || 0)) continue;
+              let next = results[table];
+              if (['evaluations','cg_evaluations'].includes(table)) {
+                // Preserve details read after this whole-report request started.
+                const newer = (d.evaluations || []).filter(e => (self._detailAppliedSeq[e.id] || 0) > seq && (table === 'evaluations' || ['pdf_based_weekly','task_based_weekly'].includes(e.template_type)));
+                next = next.filter(e => (self._detailAppliedSeq[e.id] || 0) <= seq).concat(newer);
+                if (table === 'evaluations' && seq < (self._tableAppliedSeq.cg_evaluations || 0)) {
+                  next = next.filter(e => !['pdf_based_weekly','task_based_weekly'].includes(e.template_type))
+                    .concat((d.evaluations || []).filter(e => ['pdf_based_weekly','task_based_weekly'].includes(e.template_type)));
+                }
+              }
+              if (['evaluations','cg_evaluations'].includes(table) || JSON.stringify(d[table]) !== JSON.stringify(next)) self._dataVersion++;
+              d[table] = next;
+              if (table === 'cg_evaluations') d.evaluations = (d.evaluations || []).filter(e => !['pdf_based_weekly','task_based_weekly'].includes(e.template_type)).concat(next);
+              if (table === 'evaluations' && seq >= (self._tableAppliedSeq.cg_evaluations || 0)) {
+                d.cg_evaluations = next.filter(e => ['pdf_based_weekly','task_based_weekly'].includes(e.template_type));
+                self._tableAppliedSeq.cg_evaluations = seq;
+                self._tableLoadedAt.cg_evaluations = Date.now();
+              }
               self._tableAppliedSeq[table] = seq;
               self._tableLoadedAt[table] = Date.now();
               if (nextIds[table]) d[nextIds[table]] = dbData[nextIds[table]];
@@ -341,6 +451,7 @@ window.SupabaseSync = {
     })();
 
     this.pendingTables = tables;
+    this._pendingSeq = seq;
     this.pendingPull = p;
     // ننظّف pendingPull فقط إن كان لا يزال يشير لهذه العملية (يحمي عمليات force المتزامنة)
     p.then(function(){}, function(){}).then(function(){ if (self.pendingPull === p) self.pendingPull = null; });
@@ -355,7 +466,7 @@ window.SupabaseSync = {
    */
   async pullTable(table) {
     if (!window.sb || this.suspended || !window.getSessionToken || !window.getSessionToken() || !this.TABLES.includes(table)) return false;
-    if (table === 'notifications') return this.pullAll(true);
+    if (table === 'notifications') return this.pullAll(true, ['notifications']);
     if (['evaluations','objections'].includes(table)) return this.pullAll(true, [table]);
     const self = this;
     const seq = ++this._pullSeq;
@@ -477,9 +588,17 @@ window.SupabaseSync = {
     if (!SUPABASE_CONFIG.enableAutoSync) return;
     setInterval(async () => {
       if (this.syncInProgress || this.pendingPull) return;
+      if (typeof document !== 'undefined' && document.hidden) return;
+      if (typeof hasUnsavedWork === 'function' && hasUnsavedWork()) return;
+      if (typeof _FORM_PAGES !== 'undefined' && _FORM_PAGES.includes(currentPage)) return;
+      const version = this._dataVersion;
       await this.pushAll();
       const pulled = await this.pullAll(false, this.tablesForPage(currentPage, currentParams));
-      if (pulled !== false) this.scheduleUIRefresh();
+      const detailId = this.detailIdForPage(currentPage, currentParams);
+      if (detailId) await this.loadEvaluation(detailId);
+      // Dashboard/workflow views have their own small RPC, so keep their refresh.
+      const rpcPage = ['dashboard','quality-report','cg-requests','cg-objections','cg-actions-report','audit-log'].includes(currentPage);
+      if (pulled !== false && (version !== this._dataVersion || rpcPage)) this.scheduleUIRefresh();
     }, SUPABASE_CONFIG.syncInterval);
     console.log(`🔄 Auto-sync enabled (every ${SUPABASE_CONFIG.syncInterval / 1000}s)`);
   },

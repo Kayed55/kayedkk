@@ -41,6 +41,8 @@ await db.exec(`
 `);
 await db.exec(await readFile('security-migration/82_section_reads.sql','utf8'));
 await db.exec(await readFile('security-migration/78_scoped_reads.sql','utf8'));
+await db.exec(`ALTER TABLE evaluations ADD week_start date, ADD week_end date, ADD supervisor_action text, ADD supervisor_action_other text, ADD supervisor_notes text, ADD supervisor_action_at timestamptz, ADD supervisor_action_by_name text, ADD approved boolean, ADD approved_at timestamptz, ADD approved_by bigint;`);
+await db.exec(await readFile('security-migration/83_navigation_performance.sql','utf8'));
 const read=async(token,table,filters=[],order='id',asc=true,offset=0,limit=1000)=>(await db.query('select read_scoped_data($1,$2,$3,$4,$5,$6,$7) as v',[token,table,JSON.stringify(filters),order,asc,offset,limit])).rows[0].v;
 const eq=(a,b)=>{assert.deepEqual(a,b);checks++};
 const section=async(token,kind,offset=0,limit=4000)=>(await db.query('select read_section_page($1,$2,$3,$4) as v',[token,kind,offset,limit])).rows[0].v;
@@ -52,6 +54,11 @@ for (const token of ['1','2','3','4','5','6']) {
  const objections=await read(token,'objections');
  eq(await section(token,'objections'),objections.map(o=>({...o,attachments:[{name:'fixture'}]})));
 }
+await db.exec("UPDATE evaluations SET template_type='pdf_based_weekly' WHERE id=11");
+eq((await section('1','cg_evaluations')).flatMap(g=>g.rows).map(x=>x.id),[11]);
+eq(await section('4','cg_evaluations'),[]);
+eq((await read('1','evaluations',[{column:'id',op:'in',value:[]}])).length,0);
+eq((await read('1','evaluation_templates',[{column:'is_active',op:'eq',value:true}])).length,2);
 eq((await section('1','evaluation_list',1,1)).map(x=>x.id),[11]);
 for(const kind of ['evaluation_list','evaluations','objections']) await assert.rejects(section('7',kind));
 eq((await read('4','evaluations')).map(x=>x.id),[10]);
