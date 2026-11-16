@@ -43,7 +43,7 @@ async function overlap(table) {
   const pending=g.sync.pullAll(true);g.sync._appliedSeq=++g.sync._pullSeq;g.sync.suspended=true;
   gate.resolve({data:[{id:99}],error:null});await pending;
   assert.equal(g.ctx.DB.data.evaluations,undefined);
-  const h=fixture();h.sync.startAutoSync();h.sync.pullAll=async()=>true;
+  const h=fixture();h.sync.startAutoSync();h.sync.pullAll=async()=>{h.sync._dataVersion++;return true;};
   await h.intervals[0]();h.timers.pop()();assert.equal(h.navigations.length,1);
   h.ctx._formDirty=true;await h.intervals[0]();h.timers.pop()();assert.equal(h.navigations.length,1);
   h.sync.pullAll=async()=>false;await h.intervals[0]();assert.equal(h.timers.length,0);

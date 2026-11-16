@@ -63,6 +63,9 @@ async function bootApp(destination) {
       // Only authorized, complete results may become visible.
       const sync = window.SupabaseSync;
       sync._tableAppliedSeq = {};
+      sync._tableLoadedAt = {};
+      sync._detailLoadedAt = {};
+      sync._detailAppliedSeq = {};
       const ok = await sync.pullAll(true, sync.tablesForPage('dashboard'));
       if (!ok) throw new Error('تعذّر تحميل البيانات');
       if (typeof loadDepartments === 'function') loadDepartments();
